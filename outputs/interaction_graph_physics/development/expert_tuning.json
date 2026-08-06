@@ -1,0 +1,27 @@
+{
+  "development_seed_namespaces": {
+    "crowded": [1100, 1101, 1102, 1103, 1104, 1105, 1106, 1107, 1108, 1109],
+    "normal": [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009]
+  },
+  "final_results": {
+    "crowded": {"success": 9, "total": 10},
+    "normal": {"success": 9, "total": 10}
+  },
+  "initial_results": {
+    "crowded": {"success": 1, "total": 10},
+    "normal": {"success": 3, "total": 10}
+  },
+  "tuning_changes": [
+    "Anchor each 7D delta-pose target to the measured TCP pose to eliminate target wind-up.",
+    "Keep correcting TCP-to-object alignment while the fingers close.",
+    "Keep lifting to a fixed world-frame safe height before starting transport.",
+    "During transport, tolerate a transient stable-frame counter reset while bilateral contact remains."
+  ],
+  "unchanged_physics": {
+    "gravity": [0.0, 0.0, -9.81],
+    "policy_hz": 20,
+    "substeps": 25,
+    "timestep": 0.002
+  },
+  "validation_seeds_used_for_tuning": false
+}

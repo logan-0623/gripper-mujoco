@@ -1,0 +1,26 @@
+[
+  {
+    "frames": 74,
+    "kind": "wrong_way_transport",
+    "object_count": 2,
+    "reason": "timeout",
+    "source_seed": 2985471799,
+    "variant_id": 12
+  },
+  {
+    "frames": 36,
+    "kind": "receptacle_misalignment",
+    "object_count": 2,
+    "reason": "timeout",
+    "source_seed": 2985471799,
+    "variant_id": 14
+  },
+  {
+    "frames": 8,
+    "kind": "post_placement_reclose",
+    "object_count": 2,
+    "reason": "timeout",
+    "source_seed": 2985471799,
+    "variant_id": 15
+  }
+]

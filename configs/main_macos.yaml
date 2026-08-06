@@ -1,0 +1,29 @@
+name: interaction_graph_main
+seed: 42
+device: auto
+max_objects: 5
+data_dir: outputs/interaction_vla/main/data
+output_dir: outputs/interaction_vla/main
+train:
+  object_counts: [2, 3]
+  episodes: 300
+  batch_size: 128
+  epochs: 160
+  learning_rate: 0.0005
+  model_seeds: [0, 1, 2]
+eval:
+  object_counts: [2, 3, 4, 5]
+  ood_object_counts: [4, 5]
+  crowded_object_counts: [4, 5]
+  episodes_per_count: 100
+  max_steps: 140
+model:
+  embedding_dim: 96
+  hidden_dim: 96
+  message_rounds: 3
+  action_dim: 4
+environment:
+  max_steps: 140
+  workspace_low: [-0.45, -0.35, 0.02]
+  workspace_high: [0.45, 0.35, 0.55]
+  min_object_distance: 0.12

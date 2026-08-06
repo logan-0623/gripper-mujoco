@@ -1,0 +1,205 @@
+[
+  {
+    "attempt": 3,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 966349478
+  },
+  {
+    "attempt": 5,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 3569022167
+  },
+  {
+    "attempt": 31,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 227217661
+  },
+  {
+    "attempt": 36,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 1856536093
+  },
+  {
+    "attempt": 44,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 3577442179
+  },
+  {
+    "attempt": 53,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 1287180939
+  },
+  {
+    "attempt": 58,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 3639196703
+  },
+  {
+    "attempt": 64,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 1271898772
+  },
+  {
+    "attempt": 75,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 2704757809
+  },
+  {
+    "attempt": 84,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 596196893
+  },
+  {
+    "attempt": 88,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 3492826890
+  },
+  {
+    "attempt": 94,
+    "frames": 83,
+    "object_count": 2,
+    "reason": "dropped",
+    "seed": 1844038242
+  },
+  {
+    "attempt": 110,
+    "frames": 70,
+    "object_count": 2,
+    "reason": "dropped",
+    "seed": 2541772518
+  },
+  {
+    "attempt": 128,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 2952201557
+  },
+  {
+    "attempt": 129,
+    "frames": 63,
+    "object_count": 3,
+    "reason": "dropped",
+    "seed": 775200806
+  },
+  {
+    "attempt": 132,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 3090347585
+  },
+  {
+    "attempt": 133,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 4290216166
+  },
+  {
+    "attempt": 148,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 3307176260
+  },
+  {
+    "attempt": 152,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 3093064192
+  },
+  {
+    "attempt": 164,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 234819181
+  },
+  {
+    "attempt": 170,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 1171086734
+  },
+  {
+    "attempt": 182,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 3330009577
+  },
+  {
+    "attempt": 183,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 3100238643
+  },
+  {
+    "attempt": 185,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 1963062730
+  },
+  {
+    "attempt": 205,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 3756602055
+  },
+  {
+    "attempt": 206,
+    "frames": 63,
+    "object_count": 2,
+    "reason": "dropped",
+    "seed": 1000396094
+  },
+  {
+    "attempt": 208,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 1974701300
+  },
+  {
+    "attempt": 216,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 731080146
+  },
+  {
+    "attempt": 219,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 767746540
+  }
+]

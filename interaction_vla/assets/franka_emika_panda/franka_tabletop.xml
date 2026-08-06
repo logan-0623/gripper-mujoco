@@ -1,0 +1,78 @@
+<mujoco model="interaction graph franka tabletop">
+  <include file="panda_integration.xml"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"
+          cone="elliptic" iterations="80" tolerance="1e-10"/>
+
+  <visual>
+    <headlight diffuse="0.7 0.7 0.7" ambient="0.35 0.35 0.35" specular="0 0 0"/>
+    <global offwidth="640" offheight="480"/>
+  </visual>
+
+  <worldbody>
+    <light pos="0.5 0 1.5" dir="0 0 -1" directional="true"/>
+    <body name="table_focus" pos="0.5 0 0.30"/>
+    <geom name="table" type="box" pos="0.5 0 0.205" size="0.30 0.24 0.02"
+          rgba="0.65 0.55 0.45 1" contype="1" conaffinity="1" condim="6"
+          friction="1.0 0.02 0.001" solref="0.01 1"/>
+
+    <body name="receptacle" pos="0.67 -0.12 0.245">
+      <geom name="receptacle_base" type="box" size="0.065 0.065 0.006"
+            rgba="0.10 0.70 0.75 0.65" contype="1" conaffinity="1" condim="6"
+            friction="1.0 0.02 0.001" solref="0.01 1"/>
+      <geom name="receptacle_wall_pos_x" type="box" pos="0.060 0 0.025"
+            size="0.005 0.065 0.025" rgba="0.10 0.70 0.75 0.65"
+            friction="1.0 0.02 0.001"/>
+      <geom name="receptacle_wall_neg_x" type="box" pos="-0.060 0 0.025"
+            size="0.005 0.065 0.025" rgba="0.10 0.70 0.75 0.65"
+            friction="1.0 0.02 0.001"/>
+      <geom name="receptacle_wall_pos_y" type="box" pos="0 0.060 0.025"
+            size="0.065 0.005 0.025" rgba="0.10 0.70 0.75 0.65"
+            friction="1.0 0.02 0.001"/>
+      <geom name="receptacle_wall_neg_y" type="box" pos="0 -0.060 0.025"
+            size="0.065 0.005 0.025" rgba="0.10 0.70 0.75 0.65"
+            friction="1.0 0.02 0.001"/>
+    </body>
+
+    <body name="wrist_camera_rig" mocap="true" pos="0.3 0 0.45">
+      <camera name="wristview" pos="0 0 0" quat="0 1 0 0" fovy="75"/>
+    </body>
+    <camera name="agentview" mode="targetbody" target="table_focus"
+            pos="1.15 -1.05 0.95" fovy="45"/>
+    <camera name="sideview" mode="targetbody" target="table_focus"
+            pos="0.5 -1.25 0.58" fovy="50"/>
+    <camera name="topview" mode="targetbody" target="table_focus"
+            pos="0.5 0 1.45" fovy="42"/>
+
+    <body name="object_0" pos="0 0 -2">
+      <freejoint name="object_0_joint"/>
+      <geom name="object_0_geom" type="box" size="0.022 0.022 0.022"
+            mass="0.1" rgba="0.2 0.4 0.9 1" contype="1" conaffinity="1"
+            condim="6" friction="1.0 0.02 0.001" solref="0.01 1"/>
+    </body>
+    <body name="object_1" pos="0 0 -2">
+      <freejoint name="object_1_joint"/>
+      <geom name="object_1_geom" type="box" size="0.022 0.022 0.022"
+            mass="0.1" rgba="0.2 0.4 0.9 1" contype="1" conaffinity="1"
+            condim="6" friction="1.0 0.02 0.001" solref="0.01 1"/>
+    </body>
+    <body name="object_2" pos="0 0 -2">
+      <freejoint name="object_2_joint"/>
+      <geom name="object_2_geom" type="box" size="0.022 0.022 0.022"
+            mass="0.1" rgba="0.2 0.4 0.9 1" contype="1" conaffinity="1"
+            condim="6" friction="1.0 0.02 0.001" solref="0.01 1"/>
+    </body>
+    <body name="object_3" pos="0 0 -2">
+      <freejoint name="object_3_joint"/>
+      <geom name="object_3_geom" type="box" size="0.022 0.022 0.022"
+            mass="0.1" rgba="0.2 0.4 0.9 1" contype="1" conaffinity="1"
+            condim="6" friction="1.0 0.02 0.001" solref="0.01 1"/>
+    </body>
+    <body name="object_4" pos="0 0 -2">
+      <freejoint name="object_4_joint"/>
+      <geom name="object_4_geom" type="box" size="0.022 0.022 0.022"
+            mass="0.1" rgba="0.2 0.4 0.9 1" contype="1" conaffinity="1"
+            condim="6" friction="1.0 0.02 0.001" solref="0.01 1"/>
+    </body>
+  </worldbody>
+</mujoco>

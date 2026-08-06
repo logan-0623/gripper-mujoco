@@ -1,0 +1,23 @@
+{
+  "base_training_episodes": 4,
+  "checkpoint": "outputs/interaction_graph_physics/smoke/graph/seed_0/checkpoint.pt",
+  "device": "cpu",
+  "final_normalized_mse": 8.07263469696045,
+  "global_step": 20,
+  "recovery_episodes": 0,
+  "training_episodes": 4,
+  "training_provenance": {
+    "backend": "franka_contact",
+    "base_train_seeds": [
+      2985471799,
+      4193101081,
+      2959043758,
+      4204374023
+    ],
+    "dataset_content_hash": "f14569fbeaf90f9b02d836504ba122e2b22a05fbee1fcc008a6b8927f84a141d",
+    "expert_gate_hash": "91576371cd4aba86f64397bc36fe18189fe285958c614204276430801873d4a1",
+    "manifest_hash": "232d5c55c529a2dc1616f5206c1035a845ba85df32c05b05e223ef6f78c72bcd",
+    "recovery_count": 0,
+    "recovery_filenames": []
+  }
+}

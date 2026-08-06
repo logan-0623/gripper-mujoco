@@ -1,0 +1,1 @@
+{"base_per_batch": 6, "base_train_mse": 7.389915059442106, "epoch": 1, "global_step": 184, "recovery_per_batch": 2, "recovery_train_mse": 9.691716530400774, "total_train_mse": 7.965365395597789}

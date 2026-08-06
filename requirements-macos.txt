@@ -1,0 +1,8 @@
+# Lightweight interaction-representation pilot (Apple Silicon / CPU)
+numpy>=1.26
+torch>=2.2
+PyYAML>=6.0
+pytest>=8.0
+mujoco>=3.1.6
+Pillow>=10.0
+tqdm>=4.66

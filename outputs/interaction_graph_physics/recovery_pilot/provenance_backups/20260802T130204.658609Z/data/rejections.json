@@ -1,0 +1,44 @@
+[
+  {
+    "attempt": 3,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 966349478
+  },
+  {
+    "attempt": 5,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 3569022167
+  },
+  {
+    "attempt": 31,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 227217661
+  },
+  {
+    "attempt": 36,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 1856536093
+  },
+  {
+    "attempt": 44,
+    "frames": 180,
+    "object_count": 2,
+    "reason": "timeout",
+    "seed": 3577442179
+  },
+  {
+    "attempt": 53,
+    "frames": 180,
+    "object_count": 3,
+    "reason": "timeout",
+    "seed": 1287180939
+  }
+]

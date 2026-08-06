@@ -1,0 +1,11 @@
+[
+  {
+    "frames": 8,
+    "kind": "post_placement_reclose",
+    "object_count": 2,
+    "reason": "timeout",
+    "source_seed": 2802115066,
+    "source_split": "train",
+    "variant_id": 7
+  }
+]

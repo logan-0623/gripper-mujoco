@@ -1,0 +1,29 @@
+name: interaction_graph_smoke
+seed: 42
+device: auto
+max_objects: 5
+data_dir: outputs/interaction_vla/smoke/data
+output_dir: outputs/interaction_vla/smoke
+train:
+  object_counts: [2, 3]
+  episodes: 6
+  batch_size: 64
+  epochs: 3
+  learning_rate: 0.003
+  model_seeds: [0]
+eval:
+  object_counts: [2, 4]
+  ood_object_counts: [4]
+  crowded_object_counts: [4]
+  episodes_per_count: 1
+  max_steps: 20
+model:
+  embedding_dim: 16
+  hidden_dim: 16
+  message_rounds: 1
+  action_dim: 4
+environment:
+  max_steps: 120
+  workspace_low: [-0.45, -0.35, 0.02]
+  workspace_high: [0.45, 0.35, 0.55]
+  min_object_distance: 0.12

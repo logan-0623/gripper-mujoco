@@ -1,0 +1,34 @@
+name: interaction_graph_recovery
+seed: 42
+device: auto
+max_objects: 5
+data_dir: outputs/interaction_vla/pilot/data
+output_dir: outputs/interaction_vla/recovery
+train:
+  object_counts: [2, 3]
+  episodes: 50
+  batch_size: 64
+  epochs: 80
+  learning_rate: 0.001
+  model_seeds: [0, 1, 2]
+eval:
+  object_counts: [2, 3, 4, 5]
+  ood_object_counts: [4, 5]
+  crowded_object_counts: [4, 5]
+  episodes_per_count: 20
+  max_steps: 120
+model:
+  embedding_dim: 64
+  hidden_dim: 64
+  message_rounds: 2
+  action_dim: 4
+environment:
+  max_steps: 120
+  workspace_low: [-0.45, -0.35, 0.02]
+  workspace_high: [0.45, 0.35, 0.55]
+  min_object_distance: 0.12
+  crowded_anchor_min_distance: 0.085
+  crowded_anchor_max_distance: 0.105
+recovery:
+  enabled: true
+  variants_per_episode: 1

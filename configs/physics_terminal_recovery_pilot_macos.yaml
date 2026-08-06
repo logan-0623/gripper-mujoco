@@ -1,0 +1,60 @@
+name: interaction_graph_physics_terminal_recovery_pilot
+seed: 42
+device: auto
+backend: franka_contact
+max_objects: 5
+data_dir: outputs/interaction_graph_physics/terminal_recovery_pilot/data
+output_dir: outputs/interaction_graph_physics/terminal_recovery_pilot
+train:
+  object_counts: [2, 3]
+  episodes: 50
+  batch_size: 64
+  epochs: 80
+  learning_rate: 0.001
+  model_seeds: [0, 1, 2]
+eval:
+  object_counts: [2, 3, 4, 5]
+  ood_object_counts: [4, 5]
+  crowded_object_counts: [4, 5]
+  episodes_per_count: 20
+  max_steps: 180
+model:
+  embedding_dim: 64
+  hidden_dim: 64
+  message_rounds: 2
+  action_dim: 7
+environment:
+  max_steps: 180
+  workspace_low: [0.25, -0.35, 0.23]
+  workspace_high: [0.78, 0.35, 0.75]
+  min_object_distance: 0.12
+  crowded_anchor_min_distance: 0.055
+  crowded_anchor_max_distance: 0.075
+recovery:
+  enabled: true
+  variants_per_episode: 4
+  min_acceptance_rate: 0.8
+physics:
+  timestep: 0.002
+  policy_hz: 20
+  substeps: 25
+  translation_delta: 0.02
+  rotation_delta: 0.05235987755982988
+  settle_steps: 250
+  stable_grasp_frames: 10
+  stable_lift_height: 0.01
+  ik_damping: 0.05
+  ik_iterations: 20
+  ik_position_tolerance: 0.002
+  ik_orientation_tolerance: 0.03490658503988659
+  expert_gate_cases_per_condition: 20
+  randomization:
+    enabled: false
+    object_mass_scale: [0.8, 1.2]
+    friction_scale: [0.8, 1.2]
+    joint_damping_scale: [0.9, 1.1]
+recording:
+  enabled: false
+  width: 256
+  height: 256
+  cameras: [agentview, wristview, sideview, topview]

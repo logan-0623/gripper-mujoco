@@ -1,0 +1,276 @@
+{
+  "by_policy": {
+    "flat_seed_0": {
+      "bilateral_contact_rate": 0.0,
+      "drop_rate": 0.0,
+      "episodes": 8,
+      "ik_failure_rate": 0.0,
+      "mean_steps": 180.0,
+      "physics_failure_rate": 0.0,
+      "placement_rate": 0.0,
+      "stable_lift_rate": 0.0,
+      "success_rate": 0.0,
+      "wrong_object_stable_grasp_rate": 0.0
+    },
+    "graph_edge_shuffle_seed_0": {
+      "bilateral_contact_rate": 0.25,
+      "drop_rate": 0.0,
+      "episodes": 8,
+      "ik_failure_rate": 0.875,
+      "mean_steps": 64.5,
+      "physics_failure_rate": 1.0,
+      "placement_rate": 0.0,
+      "stable_lift_rate": 0.0,
+      "success_rate": 0.0,
+      "wrong_object_stable_grasp_rate": 0.0
+    },
+    "graph_seed_0": {
+      "bilateral_contact_rate": 0.25,
+      "drop_rate": 0.0,
+      "episodes": 8,
+      "ik_failure_rate": 0.875,
+      "mean_steps": 64.5,
+      "physics_failure_rate": 1.0,
+      "placement_rate": 0.0,
+      "stable_lift_rate": 0.0,
+      "success_rate": 0.0,
+      "wrong_object_stable_grasp_rate": 0.0
+    }
+  },
+  "by_policy_and_condition": {
+    "flat_seed_0": {
+      "controlled_randomization": {
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 0.0,
+        "mean_steps": 180.0,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "count_ood": {
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 0.0,
+        "mean_steps": 180.0,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "crowded_ood": {
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 0.0,
+        "mean_steps": 180.0,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "id_normal": {
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 0.0,
+        "mean_steps": 180.0,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      }
+    },
+    "graph_edge_shuffle_seed_0": {
+      "controlled_randomization": {
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 1.0,
+        "mean_steps": 69.0,
+        "physics_failure_rate": 1.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "count_ood": {
+        "bilateral_contact_rate": 0.5,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 1.0,
+        "mean_steps": 69.0,
+        "physics_failure_rate": 1.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "crowded_ood": {
+        "bilateral_contact_rate": 0.5,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 0.5,
+        "mean_steps": 51.0,
+        "physics_failure_rate": 1.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "id_normal": {
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 1.0,
+        "mean_steps": 69.0,
+        "physics_failure_rate": 1.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      }
+    },
+    "graph_seed_0": {
+      "controlled_randomization": {
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 1.0,
+        "mean_steps": 69.0,
+        "physics_failure_rate": 1.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "count_ood": {
+        "bilateral_contact_rate": 0.5,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 1.0,
+        "mean_steps": 69.0,
+        "physics_failure_rate": 1.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "crowded_ood": {
+        "bilateral_contact_rate": 0.5,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 0.5,
+        "mean_steps": 51.0,
+        "physics_failure_rate": 1.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "id_normal": {
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 2,
+        "ik_failure_rate": 1.0,
+        "mean_steps": 69.0,
+        "physics_failure_rate": 1.0,
+        "placement_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      }
+    }
+  },
+  "graph_vs_edge_shuffle": {
+    "by_model_seed": {
+      "0": {
+        "by_condition": {
+          "controlled_randomization": {
+            "paired_cases": 2,
+            "stable_lift_delta": 0.0,
+            "success_delta": 0.0,
+            "wrong_object_delta": 0.0
+          },
+          "count_ood": {
+            "paired_cases": 2,
+            "stable_lift_delta": 0.0,
+            "success_delta": 0.0,
+            "wrong_object_delta": 0.0
+          },
+          "crowded_ood": {
+            "paired_cases": 2,
+            "stable_lift_delta": 0.0,
+            "success_delta": 0.0,
+            "wrong_object_delta": 0.0
+          },
+          "id_normal": {
+            "paired_cases": 2,
+            "stable_lift_delta": 0.0,
+            "success_delta": 0.0,
+            "wrong_object_delta": 0.0
+          }
+        },
+        "paired_cases": 8,
+        "stable_lift_delta": 0.0,
+        "success_delta": 0.0,
+        "wrong_object_delta": 0.0
+      }
+    }
+  },
+  "graph_vs_flat": {
+    "by_model_seed": {
+      "0": {
+        "by_condition": {
+          "controlled_randomization": {
+            "paired_cases": 2,
+            "stable_lift_delta": 0.0,
+            "success_delta": 0.0,
+            "wrong_object_delta": 0.0
+          },
+          "count_ood": {
+            "paired_cases": 2,
+            "stable_lift_delta": 0.0,
+            "success_delta": 0.0,
+            "wrong_object_delta": 0.0
+          },
+          "crowded_ood": {
+            "paired_cases": 2,
+            "stable_lift_delta": 0.0,
+            "success_delta": 0.0,
+            "wrong_object_delta": 0.0
+          },
+          "id_normal": {
+            "paired_cases": 2,
+            "stable_lift_delta": 0.0,
+            "success_delta": 0.0,
+            "wrong_object_delta": 0.0
+          }
+        },
+        "paired_cases": 8,
+        "stable_lift_delta": 0.0,
+        "success_delta": 0.0,
+        "wrong_object_delta": 0.0
+      }
+    }
+  },
+  "overall": {
+    "bilateral_contact_rate": 0.16666666666666666,
+    "drop_rate": 0.0,
+    "episodes": 24,
+    "ik_failure_rate": 0.5833333333333334,
+    "mean_steps": 103.0,
+    "physics_failure_rate": 0.6666666666666666,
+    "placement_rate": 0.0,
+    "stable_lift_rate": 0.0,
+    "success_rate": 0.0,
+    "wrong_object_stable_grasp_rate": 0.0
+  }
+}

@@ -1,0 +1,119 @@
+[
+  {
+    "frames": 56,
+    "kind": "wrong_way_transport",
+    "object_count": 2,
+    "path": "recovery_4204374023_v000.npz",
+    "reason": "success",
+    "source_seed": 4204374023,
+    "variant_id": 0
+  },
+  {
+    "frames": 50,
+    "kind": "premature_open",
+    "object_count": 2,
+    "path": "recovery_4204374023_v001.npz",
+    "reason": "success",
+    "source_seed": 4204374023,
+    "variant_id": 1
+  },
+  {
+    "frames": 30,
+    "kind": "receptacle_misalignment",
+    "object_count": 2,
+    "path": "recovery_4204374023_v002.npz",
+    "reason": "success",
+    "source_seed": 4204374023,
+    "variant_id": 2
+  },
+  {
+    "frames": 12,
+    "kind": "post_placement_reclose",
+    "object_count": 2,
+    "path": "recovery_4204374023_v003.npz",
+    "reason": "success",
+    "source_seed": 4204374023,
+    "variant_id": 3
+  },
+  {
+    "frames": 80,
+    "kind": "wrong_way_transport",
+    "object_count": 3,
+    "path": "recovery_2959043758_v004.npz",
+    "reason": "success",
+    "source_seed": 2959043758,
+    "variant_id": 4
+  },
+  {
+    "frames": 76,
+    "kind": "premature_open",
+    "object_count": 3,
+    "path": "recovery_2959043758_v005.npz",
+    "reason": "success",
+    "source_seed": 2959043758,
+    "variant_id": 5
+  },
+  {
+    "frames": 30,
+    "kind": "receptacle_misalignment",
+    "object_count": 3,
+    "path": "recovery_2959043758_v006.npz",
+    "reason": "success",
+    "source_seed": 2959043758,
+    "variant_id": 6
+  },
+  {
+    "frames": 12,
+    "kind": "post_placement_reclose",
+    "object_count": 3,
+    "path": "recovery_2959043758_v007.npz",
+    "reason": "success",
+    "source_seed": 2959043758,
+    "variant_id": 7
+  },
+  {
+    "frames": 60,
+    "kind": "wrong_way_transport",
+    "object_count": 2,
+    "path": "recovery_4193101081_v008.npz",
+    "reason": "success",
+    "source_seed": 4193101081,
+    "variant_id": 8
+  },
+  {
+    "frames": 54,
+    "kind": "premature_open",
+    "object_count": 2,
+    "path": "recovery_4193101081_v009.npz",
+    "reason": "success",
+    "source_seed": 4193101081,
+    "variant_id": 9
+  },
+  {
+    "frames": 30,
+    "kind": "receptacle_misalignment",
+    "object_count": 2,
+    "path": "recovery_4193101081_v010.npz",
+    "reason": "success",
+    "source_seed": 4193101081,
+    "variant_id": 10
+  },
+  {
+    "frames": 12,
+    "kind": "post_placement_reclose",
+    "object_count": 2,
+    "path": "recovery_4193101081_v011.npz",
+    "reason": "success",
+    "source_seed": 4193101081,
+    "variant_id": 11
+  },
+  {
+    "frames": 67,
+    "kind": "premature_open",
+    "object_count": 2,
+    "path": "recovery_2985471799_v013.npz",
+    "reason": "success",
+    "source_seed": 2985471799,
+    "variant_id": 13
+  }
+]

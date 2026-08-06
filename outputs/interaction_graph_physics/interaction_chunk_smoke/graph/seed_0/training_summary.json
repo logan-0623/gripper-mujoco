@@ -1,0 +1,93 @@
+{
+  "base_training_episodes": 8,
+  "checkpoint": "outputs/interaction_graph_physics/interaction_chunk_smoke/graph/seed_0/checkpoint.pt",
+  "device": "cpu",
+  "effective_loss_mass": {
+    "base": 0.75,
+    "recovery": 0.25
+  },
+  "final_base_mse": 7.123661966103574,
+  "final_normalized_mse": 7.255995788651964,
+  "final_recovery_mse": 7.652997036019097,
+  "global_step": 184,
+  "recovery_episodes": 7,
+  "recovery_training_episodes": 7,
+  "representation_contract": {
+    "experimental_variable": "encoder_only",
+    "rollout_controller": "identical",
+    "state_information": "identical",
+    "temporal_head": "identical"
+  },
+  "temporal_contract": {
+    "contribution": "shared_infrastructure",
+    "future_loss_decay": 0.9,
+    "gripper_close_threshold": 0.35,
+    "gripper_open_threshold": 0.65,
+    "horizon": 8,
+    "recovery_loss_fraction": 0.25,
+    "rollout_device": "cpu",
+    "temporal_decay": 0.25
+  },
+  "training_episodes": 15,
+  "training_provenance": {
+    "backend": "franka_contact",
+    "base_per_batch": 6,
+    "base_phase_counts": {
+      "align": 62,
+      "approach": 140,
+      "close": 98,
+      "descend": 106,
+      "lift": 171,
+      "open_recover": 30,
+      "release": 32,
+      "retreat": 11,
+      "transport": 449
+    },
+    "base_train_seeds": [
+      892272164,
+      2509045399,
+      2769590625,
+      2802115066,
+      2959043758,
+      2985471799,
+      4193101081,
+      4204374023
+    ],
+    "base_window_count": 1099,
+    "dataset_content_hash": "9b5d739322dfe8fe8bd433da6e91e61bcb5c239c99dde61335a75dc84c66a088",
+    "expert_gate_hash": "963466b8925dc1371a7cdd53dca8fb6b78a1e8c14d9ccdee7dcddf82c84a81b8",
+    "manifest_hash": "e711a4a5eb8388761e2ad71de8518bb6e84d2e5659b1228e2552f7bbbcf92422",
+    "recovery_benchmark_filenames": [
+      "benchmark_recovery_0373526269_v000.npz",
+      "benchmark_recovery_0373526269_v001.npz",
+      "benchmark_recovery_0373526269_v002.npz",
+      "benchmark_recovery_0373526269_v003.npz",
+      "benchmark_recovery_1527517246_v004.npz",
+      "benchmark_recovery_1527517246_v005.npz",
+      "benchmark_recovery_1527517246_v006.npz",
+      "benchmark_recovery_1527517246_v007.npz"
+    ],
+    "recovery_benchmark_manifest_hash": "f8e1122dea0640c0d405e5b5b3ec83588bb89fa6c810956c42dd259738f80251",
+    "recovery_count": 7,
+    "recovery_filenames": [
+      "train_recovery_2509045399_v000.npz",
+      "train_recovery_2509045399_v001.npz",
+      "train_recovery_2509045399_v002.npz",
+      "train_recovery_2509045399_v003.npz",
+      "train_recovery_2802115066_v004.npz",
+      "train_recovery_2802115066_v005.npz",
+      "train_recovery_2802115066_v006.npz"
+    ],
+    "recovery_manifest_hash": "cd6255b3cdc6dd9db3dea2ee72cdf91a5f4307fbc8df9f053c63a32c66509a5d",
+    "recovery_per_batch": 2,
+    "recovery_phase_counts": {
+      "lift": 6,
+      "release": 24,
+      "retreat": 21,
+      "transport": 285
+    },
+    "recovery_window_count": 336,
+    "source_split_hash": "6bb81f676baa7aade406de5b2865d8a8b959844cebc889d257dd5447d0cc964a",
+    "statistics_hash": "86e1ba0155783ee1eed8aae1d8a8ccbed2195b7f25225eac643acffde72ec446"
+  }
+}

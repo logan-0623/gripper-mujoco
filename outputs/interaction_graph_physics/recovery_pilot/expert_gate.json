@@ -1,0 +1,425 @@
+{
+  "attachment_audit_passed": true,
+  "conditions": {
+    "crowded": {
+      "rate": 0.9,
+      "success": 18,
+      "total": 20
+    },
+    "normal": {
+      "rate": 0.9,
+      "success": 18,
+      "total": 20
+    }
+  },
+  "config_hash": "d8527ac0c857ca2c6aa6a01d483a2608b50a1f4265fbf7fc8175fc5dfd07a495",
+  "controller_hash": "420431f92ca1269b7a4f2bbd318b1453002cc436f81771f17727a48d26fc5e52",
+  "episodes": [
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "timeout",
+      "seed": 1781450443,
+      "stable_lift": true,
+      "steps": 180,
+      "success": false
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 3122597283,
+      "stable_lift": true,
+      "steps": 146,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1060653050,
+      "stable_lift": true,
+      "steps": 170,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1829953592,
+      "stable_lift": true,
+      "steps": 99,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 40048144,
+      "stable_lift": true,
+      "steps": 120,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 2234520487,
+      "stable_lift": true,
+      "steps": 119,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 797775367,
+      "stable_lift": true,
+      "steps": 127,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "timeout",
+      "seed": 3945321756,
+      "stable_lift": true,
+      "steps": 180,
+      "success": false
+    },
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1144179334,
+      "stable_lift": true,
+      "steps": 150,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 4249328912,
+      "stable_lift": true,
+      "steps": 156,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 975494736,
+      "stable_lift": true,
+      "steps": 167,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 2624824044,
+      "stable_lift": true,
+      "steps": 163,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 859746353,
+      "stable_lift": true,
+      "steps": 127,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1729225212,
+      "stable_lift": true,
+      "steps": 121,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1977685373,
+      "stable_lift": true,
+      "steps": 165,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1189626624,
+      "stable_lift": true,
+      "steps": 143,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1726577865,
+      "stable_lift": true,
+      "steps": 155,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 3925106033,
+      "stable_lift": true,
+      "steps": 135,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 3496865382,
+      "stable_lift": true,
+      "steps": 171,
+      "success": true
+    },
+    {
+      "condition": "normal",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 149400613,
+      "stable_lift": true,
+      "steps": 120,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 739963044,
+      "stable_lift": true,
+      "steps": 152,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 4294494746,
+      "stable_lift": true,
+      "steps": 173,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1806745789,
+      "stable_lift": true,
+      "steps": 120,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 495086211,
+      "stable_lift": true,
+      "steps": 151,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1649543723,
+      "stable_lift": true,
+      "steps": 153,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1386225664,
+      "stable_lift": true,
+      "steps": 109,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 2923416698,
+      "stable_lift": true,
+      "steps": 99,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "dropped",
+      "seed": 1690445683,
+      "stable_lift": true,
+      "steps": 97,
+      "success": false
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 1215204187,
+      "stable_lift": true,
+      "steps": 124,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 2021820135,
+      "stable_lift": true,
+      "steps": 129,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 2982229418,
+      "stable_lift": true,
+      "steps": 164,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 3244695642,
+      "stable_lift": true,
+      "steps": 108,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 2688766998,
+      "stable_lift": true,
+      "steps": 101,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 4001416933,
+      "stable_lift": true,
+      "steps": 161,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 3636988797,
+      "stable_lift": true,
+      "steps": 127,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "timeout",
+      "seed": 1083217337,
+      "stable_lift": true,
+      "steps": 180,
+      "success": false
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 64060915,
+      "stable_lift": true,
+      "steps": 173,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 3248721554,
+      "stable_lift": true,
+      "steps": 105,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 2,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 2803312086,
+      "stable_lift": true,
+      "steps": 144,
+      "success": true
+    },
+    {
+      "condition": "crowded",
+      "object_count": 3,
+      "physics_failure": false,
+      "reason": "success",
+      "seed": 3114354926,
+      "stable_lift": true,
+      "steps": 140,
+      "success": true
+    }
+  ],
+  "no_physics_failure": true,
+  "passed": true,
+  "scene_hash": "9fff3ad58ab81dc190dda11bfdb30d5ab7d5219abf64269060513cb88356a9ad",
+  "success_rate": 0.9,
+  "successful_lifts_are_physical": true,
+  "threshold": 0.9
+}
