@@ -1,0 +1,39 @@
+seed: 42
+source_config: configs/physics_pilot_macos.yaml
+expert_gate: outputs/interaction_graph_physics/pilot/expert_gate.json
+required_smoke_report: outputs/lerobot/act_smoke/smoke_report.json
+dataset:
+  repo_id: local/franka_lerobot_act_pilot
+  root: outputs/lerobot/franka_lerobot_act_pilot
+  episodes: 50
+  object_counts: [2, 3]
+  task: Pick up the green target object and place it inside the receptacle.
+  fps: 20
+  image_size: [256, 256]
+  state_dim: 10
+  action_dim: 7
+  max_attempt_multiplier: 10
+teacher:
+  distractor_count: 2
+  replacement_margin: 0.10
+  replacement_frames: 3
+  dropout_frames: 3
+  safety_margin_m: 0.01
+  goal_horizon: 8
+  goal_improvement_margin: 0.05
+act:
+  output_dir: outputs/lerobot/act_pilot
+  device: auto
+  chunk_size: 8
+  n_action_steps: 8
+  batch_size: 2
+  num_workers: 0
+  steps: null
+  epochs: 5
+  maximum_epochs: 10
+  learning_rate: 0.00001
+  seed: 0
+  dim_model: 256
+  dim_feedforward: 1024
+  encoder_layers: 2
+  vae_encoder_layers: 2
