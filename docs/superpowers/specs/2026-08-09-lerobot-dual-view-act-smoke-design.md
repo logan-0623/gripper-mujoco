@@ -1,6 +1,6 @@
 # LeRobot v3 Dual-View Dataset and ACT Smoke Integration
 
-Status: implementation design approved; awaiting written-spec review
+Status: approved
 
 Date: 2026-08-09
 
@@ -129,7 +129,8 @@ The root remains loadable by the standard LeRobotDataset v3 reader:
   meta/
     info.json
     stats.json
-    tasks.jsonl
+    tasks.parquet
+    episodes/
     tc_tig_calibration.json
     tc_tig_teacher_schema.json
     provenance.json
