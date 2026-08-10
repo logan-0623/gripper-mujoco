@@ -6,10 +6,12 @@ import pytest
 from interaction_vla.lerobot_bridge.config import load_bridge_config
 
 
-def test_lerobot_environment_pins_the_validated_mujoco_runtime() -> None:
+def test_macos_environments_pin_the_validated_mujoco_runtime() -> None:
+    base_requirements = Path("requirements-macos.txt").read_text(encoding="utf-8")
     requirements = Path("requirements-lerobot-macos.txt").read_text(encoding="utf-8")
     lock = Path("requirements-lerobot-macos.lock.txt").read_text(encoding="utf-8")
 
+    assert "mujoco==3.3.4" in base_requirements.splitlines()
     assert "mujoco==3.3.4" in requirements.splitlines()
     assert "mujoco==3.3.4" in lock.splitlines()
 
