@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import hashlib
+import importlib.metadata
+from pathlib import Path
+import platform
+import subprocess
+import sys
+from typing import Iterable
+
+
+_EXCLUDED_NAMES = {"INCOMPLETE", ".DS_Store"}
+_EXCLUDED_ACT_DIRECTORIES = {"act", "act_smoke", "act_pilot", "checkpoints"}
+
+
+def sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _fingerprint_files(
+    root: Path,
+    files: Iterable[Path],
+) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(files, key=lambda value: value.relative_to(root).as_posix()):
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        size = path.stat().st_size
+        content_hash = bytes.fromhex(sha256_file(path))
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(size.to_bytes(8, "big"))
+        digest.update(content_hash)
+    return digest.hexdigest()
+
+
+def fingerprint_tree(root: str | Path) -> str:
+    directory = Path(root)
+    if not directory.is_dir():
+        raise ValueError(f"fingerprint root must be a directory: {directory}")
+    files = (
+        path
+        for path in directory.rglob("*")
+        if path.is_file()
+        and path.name not in _EXCLUDED_NAMES
+        and not any(part in _EXCLUDED_ACT_DIRECTORIES for part in path.relative_to(directory).parts)
+    )
+    return _fingerprint_files(directory, files)
+
+
+def _distribution_version(name: str) -> str:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return "unavailable"
+
+
+def runtime_versions(*, requested_device: str = "auto") -> dict[str, object]:
+    import numpy
+    import torch
+
+    from interaction_vla.device import resolve_device
+
+    try:
+        ffmpeg = subprocess.run(
+            ["ffmpeg", "-version"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.splitlines()[0]
+    except (FileNotFoundError, subprocess.SubprocessError, IndexError):
+        ffmpeg = "unavailable"
+    try:
+        resolved_device = str(resolve_device(requested_device))
+    except RuntimeError as error:
+        resolved_device = f"unavailable: {error}"
+    return {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "architecture": platform.machine(),
+        "lerobot": _distribution_version("lerobot"),
+        "torch": torch.__version__,
+        "torchvision": _distribution_version("torchvision"),
+        "mujoco": _distribution_version("mujoco"),
+        "numpy": numpy.__version__,
+        "ffmpeg": ffmpeg,
+        "requested_device": requested_device,
+        "resolved_device": resolved_device,
+        "mps_built": bool(torch.backends.mps.is_built()),
+        "mps_available": bool(torch.backends.mps.is_available()),
+    }
+
+
+def git_commit(root: str | Path = ".") -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(root),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return "unavailable"
+
+
+def source_fingerprint(root: str | Path = ".") -> str:
+    repository = Path(root)
+    candidates = (
+        repository / "interaction_vla" / "lerobot_bridge",
+        repository / "configs",
+    )
+    files: list[Path] = []
+    for directory in candidates:
+        if directory.is_dir():
+            files.extend(
+                path
+                for path in directory.rglob("*")
+                if path.is_file()
+                and path.name not in _EXCLUDED_NAMES
+                and (directory.name != "configs" or path.name.startswith("lerobot_"))
+            )
+    for name in ("requirements-lerobot-macos.txt", "requirements-lerobot-macos.lock.txt"):
+        path = repository / name
+        if path.is_file():
+            files.append(path)
+    return _fingerprint_files(repository, files)
