@@ -124,6 +124,19 @@ python3.12 -m venv .venv-lerobot
   --config configs/lerobot_act_smoke_macos.yaml
 ```
 
+生成 ACT 闭环双视角 GIF：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge rollout \
+  --config configs/lerobot_act_smoke_macos.yaml \
+  --checkpoint outputs/lerobot/act_smoke/checkpoint \
+  --object-count 2 \
+  --gif outputs/lerobot/act_smoke/rollout.gif
+```
+
+GIF 展示实际送入 ACT 的 agent/wrist RGB 和执行状态。500-step checkpoint
+只通过工程 smoke；GIF 中的 timeout 或失败状态不是任务性能成功证据。
+
 标准 LeRobotDataset 样本只有 agent RGB、wrist RGB、10D 末端状态、7D
 局部动作和 task metadata。深度、分割、相机矩阵与 TC-TIG 标签只存在于
 `teacher/` sidecar，ACT 和 VLA 的标准 batch 不会读取它们。
