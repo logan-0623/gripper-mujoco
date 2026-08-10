@@ -14,6 +14,16 @@ def test_lerobot_environment_pins_the_validated_mujoco_runtime() -> None:
     assert "mujoco==3.3.4" in lock.splitlines()
 
 
+def test_lerobot_environment_pairs_torch_2_10_with_torchcodec_0_10() -> None:
+    requirements = Path("requirements-lerobot-macos.txt").read_text(encoding="utf-8")
+    lock = Path("requirements-lerobot-macos.lock.txt").read_text(encoding="utf-8")
+
+    assert "torch>=2.10,<2.11" in requirements.splitlines()
+    assert "torchcodec>=0.10,<0.11" in requirements.splitlines()
+    assert "torch==2.10.0" in lock.splitlines()
+    assert "torchcodec==0.10.0" in lock.splitlines()
+
+
 def test_smoke_config_locks_the_model_visible_contract() -> None:
     config = load_bridge_config("configs/lerobot_act_smoke_macos.yaml")
 
