@@ -35,3 +35,17 @@ def test_hash_mismatch_is_rejected(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="SHA-256"):
         load_teacher_sidecar(path, expected_sha256="0" * 64)
+
+
+def test_staged_sidecar_is_hidden_until_atomic_commit(tmp_path) -> None:
+    writer = TeacherSidecarWriter(tmp_path)
+    frames = [
+        TeacherFrame.zeros(frame_index=0, timestamp=0.0, state_hash="state-0")
+    ]
+
+    record = writer.stage_episode(0, frames, np.zeros((1, 5), dtype=np.float32))
+
+    assert (tmp_path / "teacher" / ".episode_000000.pending.npz").is_file()
+    assert not (tmp_path / record.path).exists()
+    writer.commit_staged(record)
+    assert (tmp_path / record.path).is_file()

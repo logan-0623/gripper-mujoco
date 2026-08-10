@@ -58,6 +58,7 @@ class DualViewFrame:
     timestamp: float
     state_hash: str
     views: dict[str, CameraFrame | PolicyCameraFrame]
+    calibration: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         if self.policy_step < 0:
@@ -193,6 +194,7 @@ class DualViewCapture:
             timestamp=env.step_count / env.policy_hz,
             state_hash=MultiViewRecorder.state_hash(env),
             views=views,
+            calibration=self.camera_calibration(env),
         )
 
     def camera_calibration(self, env: FrankaContactEnv) -> dict[str, object]:

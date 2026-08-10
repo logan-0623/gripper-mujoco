@@ -42,6 +42,27 @@ class TeacherSidecarWriter:
         object_count: int = 0,
         task_id: int = 0,
     ) -> TeacherSidecarRecord:
+        record = self.stage_episode(
+            episode_index,
+            frames,
+            relation_goals,
+            seed=seed,
+            object_count=object_count,
+            task_id=task_id,
+        )
+        self.commit_staged(record)
+        return record
+
+    def stage_episode(
+        self,
+        episode_index: int,
+        frames: Iterable[TeacherFrame],
+        relation_goals: np.ndarray,
+        *,
+        seed: int = 0,
+        object_count: int = 0,
+        task_id: int = 0,
+    ) -> TeacherSidecarRecord:
         values = tuple(frames)
         if not values:
             raise ValueError("cannot write an empty teacher sidecar")
@@ -101,7 +122,10 @@ class TeacherSidecarWriter:
             raise ValueError("teacher sidecars must never contain object arrays")
 
         relative_path = Path("teacher") / f"episode_{episode_index:06d}.npz"
-        destination = self.root / relative_path
+        pending_relative_path = (
+            Path("teacher") / f".episode_{episode_index:06d}.pending.npz"
+        )
+        destination = self.root / pending_relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_suffix(".npz.tmp")
         try:
@@ -126,6 +150,30 @@ class TeacherSidecarWriter:
             object_count=int(object_count),
             task_id=int(task_id),
         )
+
+    def commit_staged(self, record: TeacherSidecarRecord) -> Path:
+        expected_relative = Path("teacher") / f"episode_{record.episode_index:06d}.npz"
+        if Path(record.path) != expected_relative:
+            raise ValueError("staged sidecar record path does not match its episode")
+        pending = (
+            self.root
+            / "teacher"
+            / f".episode_{record.episode_index:06d}.pending.npz"
+        )
+        destination = self.root / expected_relative
+        if destination.exists():
+            raise FileExistsError(f"teacher sidecar already exists: {destination}")
+        if not pending.is_file():
+            raise FileNotFoundError(f"staged teacher sidecar is missing: {pending}")
+        if sha256_file(pending) != record.sha256:
+            raise ValueError("staged teacher sidecar SHA-256 mismatch")
+        os.replace(pending, destination)
+        directory_fd = os.open(destination.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        return destination
 
     @staticmethod
     def _stack(frames: tuple[TeacherFrame, ...], field_name: str) -> np.ndarray:

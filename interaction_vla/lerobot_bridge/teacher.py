@@ -498,11 +498,12 @@ class TCTIGTeacherExtractor:
             state_hash=camera_frame.state_hash,
         )
         assert self._last_slot_entities is not None
+        frame_calibration = getattr(camera_frame, "calibration", None)
         return _with_visual_observations(
             frame,
             camera_frame=camera_frame,
             model=self.model,
-            calibration=self.calibration,
+            calibration=frame_calibration or self.calibration,
             slot_entities=self._last_slot_entities,
         )
 
