@@ -1,7 +1,11 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import torch
 
+from interaction_vla.lerobot_bridge import rollout as rollout_module
 from interaction_vla.lerobot_bridge.rollout import (
     ActionChunkQueue,
     BinaryGripperHysteresis,
@@ -63,3 +67,66 @@ def test_chunk_queue_rejects_nonfinite_or_wrong_shape() -> None:
         queue.next(lambda: np.zeros((7, 7), dtype=np.float32))
     with pytest.raises(ValueError, match="finite"):
         queue.next(lambda: np.full((8, 7), np.nan, dtype=np.float32))
+
+
+def test_rollout_from_config_forwards_optional_gif_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    gif_path = tmp_path / "rollout.gif"
+    received = {}
+    monkeypatch.setattr(
+        rollout_module,
+        "load_bridge_config",
+        lambda path: SimpleNamespace(seed=42),
+    )
+
+    def fake_rollout_checkpoint(*args, **kwargs):
+        received.update(kwargs)
+        return {"passed": True}
+
+    monkeypatch.setattr(
+        rollout_module, "rollout_checkpoint", fake_rollout_checkpoint
+    )
+
+    result = rollout_module.rollout_from_config(
+        "config.yaml",
+        "checkpoint",
+        seed=7,
+        gif_path=gif_path,
+    )
+
+    assert result == {"passed": True}
+    assert received["gif_path"] == gif_path
+
+
+def test_record_rollout_gif_frame_uses_exact_views_and_status() -> None:
+    agent = np.zeros((256, 256, 3), dtype=np.uint8)
+    wrist = np.ones((256, 256, 3), dtype=np.uint8)
+    camera_frame = SimpleNamespace(
+        views={
+            "agent": SimpleNamespace(rgb=agent),
+            "wrist": SimpleNamespace(rgb=wrist),
+        }
+    )
+
+    class Recorder:
+        def add(self, *args, **kwargs) -> None:
+            self.args = args
+            self.kwargs = kwargs
+
+    recorder = Recorder()
+
+    rollout_module.record_rollout_gif_frame(
+        recorder,
+        camera_frame,
+        step=17,
+        gripper_open=False,
+        terminal_reason="timeout",
+    )
+
+    assert recorder.args == (agent, wrist)
+    assert recorder.kwargs == {
+        "step": 17,
+        "gripper_open": False,
+        "terminal_reason": "timeout",
+    }

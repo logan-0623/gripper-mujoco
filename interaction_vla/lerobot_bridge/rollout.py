@@ -28,6 +28,7 @@ from interaction_vla.lerobot_bridge.provenance import (
     sha256_file,
     source_fingerprint,
 )
+from interaction_vla.lerobot_bridge.rollout_gif import RolloutGIFRecorder
 from interaction_vla.lerobot_bridge.validator import validate_dataset_root
 from interaction_vla.physics_action_safety import project_cartesian_action
 from interaction_vla.physics_env import FrankaContactEnv
@@ -270,12 +271,32 @@ def _predict_chunk(
     return values
 
 
+def record_rollout_gif_frame(
+    recorder: RolloutGIFRecorder | None,
+    camera_frame: Any,
+    *,
+    step: int,
+    gripper_open: bool,
+    terminal_reason: str,
+) -> None:
+    if recorder is None:
+        return
+    recorder.add(
+        camera_frame.views["agent"].rgb,
+        camera_frame.views["wrist"].rgb,
+        step=step,
+        gripper_open=gripper_open,
+        terminal_reason=terminal_reason,
+    )
+
+
 def rollout_checkpoint(
     config_path: str | Path,
     checkpoint: str | Path,
     *,
     seed: int,
     object_count: int = 2,
+    gif_path: str | Path | None = None,
 ) -> dict[str, object]:
     config = load_bridge_config(config_path)
     validate_dataset_root(
@@ -306,6 +327,15 @@ def rollout_checkpoint(
         env.model,
         width=config.dataset.image_size[1],
         height=config.dataset.image_size[0],
+    )
+    gif_recorder = (
+        RolloutGIFRecorder(
+            gif_path,
+            source_fps=config.dataset.fps,
+            playback_fps=10,
+        )
+        if gif_path is not None
+        else None
     )
     queue = ActionChunkQueue(chunk_size=8)
     gripper = BinaryGripperHysteresis(
@@ -368,11 +398,19 @@ def rollout_checkpoint(
                     "terminal_reason": final_reason,
                 }
             )
+            record_rollout_gif_frame(
+                gif_recorder,
+                camera_frame,
+                step=step,
+                gripper_open=gripper.is_open,
+                terminal_reason=final_reason,
+            )
             snapshot = transition.snapshot
             if transition.done:
                 break
     finally:
         capture.close()
+    gif_frame_count = gif_recorder.write() if gif_recorder is not None else None
     result: dict[str, object] = {
         "passed": True,
         "finite_rollout": True,
@@ -386,6 +424,9 @@ def rollout_checkpoint(
         "checkpoint_dataset_fingerprint": metadata["dataset_fingerprint"],
         "diagnostics": diagnostics,
     }
+    if gif_recorder is not None:
+        result["gif"] = gif_recorder.destination
+        result["gif_frames"] = gif_frame_count
     _write_json_atomic(config.act.output_dir / "rollout.json", result)
     return result
 
@@ -396,6 +437,7 @@ def rollout_from_config(
     *,
     seed: int | None = None,
     object_count: int = 2,
+    gif_path: str | Path | None = None,
 ) -> dict[str, object]:
     config = load_bridge_config(config_path)
     if seed is None:
@@ -409,4 +451,5 @@ def rollout_from_config(
         checkpoint,
         seed=seed,
         object_count=object_count,
+        gif_path=gif_path,
     )

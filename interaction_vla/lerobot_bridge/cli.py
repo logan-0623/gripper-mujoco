@@ -69,6 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
     rollout.add_argument("--checkpoint", required=True, type=Path)
     rollout.add_argument("--seed", type=int)
     rollout.add_argument("--object-count", type=int, default=2)
+    rollout.add_argument(
+        "--gif",
+        dest="gif_path",
+        type=Path,
+        help="write a 10 FPS side-by-side ACT rollout GIF",
+    )
 
     smoke = commands.add_parser("smoke", help="run the bounded local ACT smoke gate")
     _add_config_argument(smoke)
@@ -203,6 +209,7 @@ def _dispatch(args: argparse.Namespace) -> Any:
             args.checkpoint,
             seed=args.seed,
             object_count=args.object_count,
+            gif_path=args.gif_path,
         )
     if args.command == "smoke":
         validation = validate_from_config(args.config)

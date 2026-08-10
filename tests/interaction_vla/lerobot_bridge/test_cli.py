@@ -105,3 +105,44 @@ def test_cli_usage_failure_is_one_json_object(capsys) -> None:
     assert raised.value.code == 2
     assert payload["passed"] is False
     assert payload["error"] == "CLIUsageError"
+
+
+def test_rollout_cli_forwards_gif_destination(monkeypatch, capsys) -> None:
+    received = {}
+
+    def fake_rollout(*args, **kwargs):
+        received.update(kwargs)
+        return {"passed": True}
+
+    monkeypatch.setattr(
+        "interaction_vla.lerobot_bridge.cli.rollout_from_config", fake_rollout
+    )
+
+    main(
+        [
+            "rollout",
+            "--config",
+            "configs/lerobot_act_smoke_macos.yaml",
+            "--checkpoint",
+            "outputs/lerobot/act_smoke/checkpoint",
+            "--gif",
+            "outputs/lerobot/act_smoke/rollout.gif",
+        ]
+    )
+
+    assert received["gif_path"] == Path("outputs/lerobot/act_smoke/rollout.gif")
+    assert json.loads(capsys.readouterr().out)["passed"] is True
+
+
+def test_rollout_cli_defaults_to_no_gif() -> None:
+    args = build_parser().parse_args(
+        [
+            "rollout",
+            "--config",
+            "configs/lerobot_act_smoke_macos.yaml",
+            "--checkpoint",
+            "outputs/lerobot/act_smoke/checkpoint",
+        ]
+    )
+
+    assert args.gif_path is None
