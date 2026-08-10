@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
+import gc
+import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
 import random
+import time
 from typing import Any
 
 import numpy as np
@@ -55,7 +58,12 @@ def _seed_all(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def load_act_dataset(*, dataset_root: str | Path, repo_id: str):
+def load_act_dataset(
+    *,
+    dataset_root: str | Path,
+    repo_id: str,
+    episodes: list[int] | None = None,
+):
     from lerobot.datasets import LeRobotDataset
     from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
 
@@ -67,6 +75,7 @@ def load_act_dataset(*, dataset_root: str | Path, repo_id: str):
         repo_id,
         root=Path(dataset_root),
         delta_timestamps=delta_timestamps,
+        episodes=episodes,
     )
 
 
@@ -112,10 +121,15 @@ def build_act_bundle(
     device: torch.device,
     architecture: str,
     bridge_config: BridgeConfig | None = None,
+    episodes: list[int] | None = None,
 ) -> ACTBundle:
     from lerobot.policies import make_policy, make_pre_post_processors
 
-    dataset = load_act_dataset(dataset_root=dataset_root, repo_id=repo_id)
+    dataset = load_act_dataset(
+        dataset_root=dataset_root,
+        repo_id=repo_id,
+        episodes=episodes,
+    )
     config = _act_config(
         device=device,
         architecture=architecture,
@@ -322,4 +336,352 @@ def check_from_config(
         architecture="configured",
         bridge_config=config,
         checkpoint_metadata=metadata,
+    )
+
+
+def bounded_batches(loader_factory, *, steps: int):
+    if steps < 1:
+        raise ValueError("steps must be positive")
+    completed = 0
+    while completed < steps:
+        iterator = iter(loader_factory())
+        produced = False
+        for batch in iterator:
+            produced = True
+            yield completed, batch
+            completed += 1
+            if completed == steps:
+                return
+        if not produced:
+            raise ValueError("ACT dataset loader is empty")
+
+
+def _is_oom(error: RuntimeError) -> bool:
+    message = str(error).lower()
+    return "out of memory" in message or "mps backend out of memory" in message
+
+
+def run_training_with_fallback(
+    config: Any,
+    *,
+    batch_size: int,
+    **kwargs,
+) -> dict[str, object]:
+    try:
+        result = train_once(config=config, batch_size=batch_size, **kwargs)
+        result["batch_size"] = batch_size
+        return result
+    except RuntimeError as error:
+        if batch_size != 2 or not _is_oom(error):
+            raise
+    gc.collect()
+    if (
+        torch.backends.mps.is_available()
+        and hasattr(torch, "mps")
+        and hasattr(torch.mps, "empty_cache")
+    ):
+        try:
+            torch.mps.empty_cache()
+        except RuntimeError:
+            pass
+    result = train_once(config=config, batch_size=1, **kwargs)
+    result["fallback_from_batch_size"] = 2
+    result["batch_size"] = 1
+    return result
+
+
+def pilot_episode_split(*, total_episodes: int, seed: int) -> dict[str, list[int]]:
+    if total_episodes != 50:
+        raise ValueError("the first ACT pilot requires exactly 50 episodes")
+    indices = np.random.default_rng(seed).permutation(total_episodes).tolist()
+    return {
+        "train": indices[:40],
+        "validation": indices[40:45],
+        "test": indices[45:50],
+    }
+
+
+def _initial_state_hash(policy: Any) -> str:
+    digest = hashlib.sha256()
+    for name, value in sorted(policy.state_dict().items()):
+        encoded_name = name.encode("utf-8")
+        digest.update(len(encoded_name).to_bytes(8, "big"))
+        digest.update(encoded_name)
+        digest.update(value.detach().cpu().contiguous().numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _loss_value(loss_dict: dict[str, Any], key: str) -> float:
+    value = loss_dict.get(key, 0.0)
+    if isinstance(value, torch.Tensor):
+        return float(value.detach().item())
+    return float(value)
+
+
+def _optimizer_update(
+    *,
+    bundle: ACTBundle,
+    optimizer: torch.optim.Optimizer,
+    raw_batch: dict[str, Any],
+) -> dict[str, object]:
+    started = time.perf_counter()
+    _audit_batch(raw_batch, stage="raw")
+    processed = bundle.preprocessor(raw_batch)
+    _audit_batch(processed, stage="processed")
+    bundle.policy.train()
+    optimizer.zero_grad(set_to_none=True)
+    loss, loss_dict = bundle.policy.forward(processed)
+    if not torch.isfinite(loss):
+        raise FloatingPointError("ACT loss is not finite")
+    loss.backward()
+    gradient_norm = torch.nn.utils.clip_grad_norm_(
+        bundle.policy.parameters(), max_norm=10.0
+    )
+    if not torch.isfinite(gradient_norm):
+        raise FloatingPointError("ACT gradient norm is not finite")
+    optimizer.step()
+    episode_indices = raw_batch.get("episode_index")
+    if isinstance(episode_indices, torch.Tensor):
+        sources = sorted(
+            {int(value) for value in episode_indices.detach().cpu().reshape(-1)}
+        )
+    else:
+        sources = []
+    return {
+        "loss": float(loss.detach().item()),
+        "l1_loss": _loss_value(loss_dict, "l1_loss"),
+        "kl_loss": _loss_value(loss_dict, "kl_loss"),
+        "gradient_norm": float(gradient_norm.detach().item()),
+        "wall_time_s": time.perf_counter() - started,
+        "source_episode_indices": sources,
+    }
+
+
+def _validation_loss(
+    *,
+    bundle: ACTBundle,
+    loader: DataLoader,
+) -> float:
+    losses: list[float] = []
+    bundle.policy.eval()
+    with torch.no_grad():
+        for raw_batch in loader:
+            _audit_batch(raw_batch, stage="validation raw")
+            processed = bundle.preprocessor(raw_batch)
+            _audit_batch(processed, stage="validation processed")
+            loss, _ = bundle.policy.forward(processed)
+            if not torch.isfinite(loss):
+                raise FloatingPointError("ACT validation loss is not finite")
+            losses.append(float(loss.item()))
+    if not losses:
+        raise ValueError("ACT validation loader is empty")
+    return float(np.mean(losses))
+
+
+def _save_training_checkpoint(
+    *,
+    bundle: ACTBundle,
+    output_dir: Path,
+    dataset_root: Path,
+    device: torch.device,
+    summary: dict[str, object],
+    config: BridgeConfig,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    bundle.policy.save_pretrained(output_dir, push_to_hub=False)
+    bundle.preprocessor.save_pretrained(output_dir, push_to_hub=False)
+    bundle.postprocessor.save_pretrained(output_dir, push_to_hub=False)
+    _write_checkpoint_metadata(
+        output_dir,
+        bundle=bundle,
+        dataset_root=dataset_root,
+        device=device,
+        extra={
+            "bridge_config_sha256": sha256_file(config.config_path),
+            "source_config_sha256": sha256_file(config.source_config_path),
+            "expert_gate_sha256": sha256_file(config.expert_gate),
+        },
+    )
+    (output_dir / "training_summary.json").write_text(
+        json.dumps(_jsonable(summary), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def train_once(
+    config: BridgeConfig,
+    *,
+    batch_size: int,
+    output_dir: str | Path | None = None,
+) -> dict[str, object]:
+    _seed_all(config.act.seed)
+    device = resolve_device(config.act.device)
+    full_dataset = load_act_dataset(
+        dataset_root=config.dataset.root,
+        repo_id=config.dataset.repo_id,
+    )
+    splits: dict[str, list[int]] | None = None
+    train_episodes: list[int] | None = None
+    validation_episodes: list[int] | None = None
+    if config.act.epochs is not None:
+        splits = pilot_episode_split(
+            total_episodes=full_dataset.meta.total_episodes,
+            seed=config.act.seed,
+        )
+        train_episodes = splits["train"]
+        validation_episodes = splits["validation"]
+    del full_dataset
+    bundle = build_act_bundle(
+        dataset_root=config.dataset.root,
+        repo_id=config.dataset.repo_id,
+        device=device,
+        architecture="configured",
+        bridge_config=config,
+        episodes=train_episodes,
+    )
+    loader = DataLoader(
+        bundle.dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        drop_last=True,
+        num_workers=0,
+    )
+    optimizer = torch.optim.AdamW(
+        bundle.policy.get_optim_params(),
+        lr=bundle.config.optimizer_lr,
+        weight_decay=bundle.config.optimizer_weight_decay,
+    )
+    initial_hash = _initial_state_hash(bundle.policy)
+    metrics: list[dict[str, object]] = []
+    validation_losses: list[float] = []
+    extension_decisions: list[dict[str, object]] = []
+    epochs_completed = 0
+
+    if config.act.steps is not None:
+        for step, raw_batch in bounded_batches(
+            lambda: iter(loader), steps=config.act.steps
+        ):
+            metric = _optimizer_update(
+                bundle=bundle,
+                optimizer=optimizer,
+                raw_batch=raw_batch,
+            )
+            metric["step"] = step
+            metrics.append(metric)
+    else:
+        assert config.act.epochs is not None
+        assert validation_episodes is not None
+        validation_dataset = load_act_dataset(
+            dataset_root=config.dataset.root,
+            repo_id=config.dataset.repo_id,
+            episodes=validation_episodes,
+        )
+        validation_loader = DataLoader(
+            validation_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            drop_last=False,
+            num_workers=0,
+        )
+        target_epochs = config.act.epochs
+        while epochs_completed < target_epochs:
+            for raw_batch in loader:
+                metric = _optimizer_update(
+                    bundle=bundle,
+                    optimizer=optimizer,
+                    raw_batch=raw_batch,
+                )
+                metric["step"] = len(metrics)
+                metric["epoch"] = epochs_completed
+                metrics.append(metric)
+            epochs_completed += 1
+            validation_losses.append(
+                _validation_loss(bundle=bundle, loader=validation_loader)
+            )
+            if (
+                epochs_completed == target_epochs
+                and target_epochs < config.act.maximum_epochs
+            ):
+                improve = (
+                    len(validation_losses) >= 3
+                    and validation_losses[-2] <= validation_losses[-3] - 1e-4
+                    and validation_losses[-1] <= validation_losses[-2] - 1e-4
+                )
+                extension_decisions.append(
+                    {
+                        "after_epoch": epochs_completed,
+                        "extended": improve,
+                        "recent_validation_losses": validation_losses[-3:],
+                    }
+                )
+                if improve:
+                    target_epochs += 1
+
+    summary: dict[str, object] = {
+        "steps": len(metrics),
+        "epochs": epochs_completed,
+        "losses": [metric["loss"] for metric in metrics],
+        "metrics": metrics,
+        "validation_losses": validation_losses,
+        "extension_decisions": extension_decisions,
+        "initial_state_hash": initial_hash,
+        "device": str(device),
+        "batch_size": batch_size,
+        "episode_split": splits,
+    }
+    if output_dir is not None:
+        _save_training_checkpoint(
+            bundle=bundle,
+            output_dir=Path(output_dir),
+            dataset_root=config.dataset.root,
+            device=device,
+            summary=summary,
+            config=config,
+        )
+    return summary
+
+
+def _validate_required_smoke_report(config: BridgeConfig) -> None:
+    path = config.required_smoke_report
+    if path is None:
+        return
+    if not path.is_file():
+        raise FileNotFoundError(f"required smoke report not found: {path}")
+    report = json.loads(path.read_text(encoding="utf-8"))
+    expected = {
+        "passed": True,
+        "state_codec_version": STATE_CODEC_VERSION,
+        "action_codec_version": ACTION_CODEC_VERSION,
+        "source_fingerprint": source_fingerprint(),
+    }
+    differing = [key for key, value in expected.items() if report.get(key) != value]
+    if differing:
+        raise ValueError(
+            f"required smoke report is stale or incompatible: {', '.join(differing)}"
+        )
+
+
+def train_from_config(
+    config_path: str | Path,
+    *,
+    output: str | Path | None = None,
+) -> dict[str, object]:
+    config = load_bridge_config(config_path)
+    validate_dataset_root(
+        config.dataset.root,
+        repo_id=config.dataset.repo_id,
+        allow_incomplete=False,
+        require_bridge_metadata=True,
+        replay=True,
+        bridge_config=config,
+    )
+    _validate_required_smoke_report(config)
+    destination = Path(output) if output is not None else config.act.output_dir / "checkpoint"
+    if destination.exists() and any(destination.iterdir()):
+        raise FileExistsError(f"ACT training output must be empty: {destination}")
+    destination.mkdir(parents=True, exist_ok=True)
+    return run_training_with_fallback(
+        config,
+        batch_size=config.act.batch_size,
+        output_dir=destination,
     )
