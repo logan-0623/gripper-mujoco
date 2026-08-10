@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -130,3 +131,163 @@ def test_record_rollout_gif_frame_uses_exact_views_and_status() -> None:
         "gripper_open": False,
         "terminal_reason": "timeout",
     }
+
+
+def test_rollout_checkpoint_records_gif_lifecycle_and_json(
+    tmp_path: Path, monkeypatch
+) -> None:
+    events: list[object] = []
+    agent = np.zeros((256, 256, 3), dtype=np.uint8)
+    wrist = np.full((256, 256, 3), 7, dtype=np.uint8)
+    snapshot = SimpleNamespace(
+        gripper=SimpleNamespace(orientation=np.asarray((1.0, 0.0, 0.0, 0.0)))
+    )
+    transition = SimpleNamespace(
+        snapshot=snapshot,
+        reason=rollout_module.TerminationReason.TIMEOUT,
+        done=True,
+    )
+
+    class Environment:
+        model = object()
+        controller = object()
+
+        def reset(self, **kwargs):
+            return snapshot
+
+        def proprioception(self):
+            return object()
+
+        def step(self, action):
+            events.append("step")
+            return transition
+
+    class Capture:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def capture(self, env, *, include_teacher: bool):
+            events.append("capture")
+            assert include_teacher is False
+            return SimpleNamespace(
+                state_hash="a" * 64,
+                views={
+                    "agent": SimpleNamespace(rgb=agent),
+                    "wrist": SimpleNamespace(rgb=wrist),
+                },
+            )
+
+        def close(self) -> None:
+            events.append("close")
+
+    class Recorder:
+        def __init__(self, destination, **kwargs) -> None:
+            self.destination = Path(destination)
+            events.append(("init", self.destination, kwargs))
+
+        def add(self, *args, **kwargs) -> None:
+            events.append(("add", args, kwargs))
+
+        def write(self) -> int:
+            events.append("write")
+            return 1
+
+    config = SimpleNamespace(
+        dataset=SimpleNamespace(
+            root=tmp_path / "dataset",
+            repo_id="local/test",
+            fps=20,
+            image_size=(256, 256),
+        ),
+        act=SimpleNamespace(device="cpu", output_dir=tmp_path / "output"),
+        source=SimpleNamespace(max_objects=4),
+    )
+    projection = SimpleNamespace(
+        action=np.zeros(7, dtype=np.float32),
+        scale=1.0,
+        projected_diagnostics=SimpleNamespace(
+            position_error=0.0,
+            orientation_error=0.0,
+        ),
+    )
+    monkeypatch.setattr(rollout_module, "load_bridge_config", lambda path: config)
+    monkeypatch.setattr(rollout_module, "validate_dataset_root", lambda *a, **k: None)
+    monkeypatch.setattr(
+        rollout_module, "resolve_device", lambda requested: torch.device("cpu")
+    )
+    monkeypatch.setattr(
+        rollout_module,
+        "_load_checkpoint_bundle",
+        lambda **kwargs: (object(), object(), object(), {"dataset_fingerprint": "d" * 64}),
+    )
+    monkeypatch.setattr(rollout_module, "_make_env", lambda config: Environment())
+    monkeypatch.setattr(
+        rollout_module, "validate_finger_joint_ranges", lambda model: None
+    )
+    monkeypatch.setattr(rollout_module, "DualViewCapture", Capture)
+    monkeypatch.setattr(rollout_module, "RolloutGIFRecorder", Recorder)
+    monkeypatch.setattr(
+        rollout_module,
+        "EndEffectorStateCodec",
+        SimpleNamespace(
+            encode_snapshot=lambda snapshot, proprioception: np.zeros(
+                10, dtype=np.float32
+            ),
+            quaternion_to_matrix=lambda quaternion: np.eye(3, dtype=np.float32),
+        ),
+    )
+    monkeypatch.setattr(
+        rollout_module,
+        "policy_observation",
+        lambda **kwargs: {"observation.state": torch.zeros(10)},
+    )
+    monkeypatch.setattr(
+        rollout_module,
+        "_predict_chunk",
+        lambda **kwargs: np.ones((8, 7), dtype=np.float32),
+    )
+    monkeypatch.setattr(
+        rollout_module,
+        "LocalCartesianActionCodec",
+        SimpleNamespace(
+            decode=lambda local_action, rotation: np.zeros(7, dtype=np.float32)
+        ),
+    )
+    monkeypatch.setattr(
+        rollout_module, "project_cartesian_action", lambda *a, **k: projection
+    )
+    gif_path = tmp_path / "output" / "rollout.gif"
+
+    result = rollout_module.rollout_checkpoint(
+        "config.yaml",
+        tmp_path / "checkpoint",
+        seed=7,
+        gif_path=gif_path,
+    )
+
+    assert [event if isinstance(event, str) else event[0] for event in events] == [
+        "init",
+        "capture",
+        "step",
+        "add",
+        "close",
+        "write",
+    ]
+    add_event = events[3]
+    assert add_event[1] == (agent, wrist)
+    assert add_event[2]["terminal_reason"] == "timeout"
+    assert result["gif"] == gif_path
+    assert result["gif_frames"] == 1
+    saved = json.loads((config.act.output_dir / "rollout.json").read_text())
+    assert saved["gif"] == gif_path.as_posix()
+    assert saved["gif_frames"] == 1
+
+    events.clear()
+    legacy = rollout_module.rollout_checkpoint(
+        "config.yaml",
+        tmp_path / "checkpoint",
+        seed=7,
+    )
+    assert "gif" not in legacy
+    assert "gif_frames" not in legacy
+    assert "write" not in events

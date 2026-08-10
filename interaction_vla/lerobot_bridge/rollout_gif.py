@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import tempfile
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -100,7 +101,13 @@ class RolloutGIFRecorder:
             for _, frame in self._frames
         ]
         self.destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.destination.with_name(f".{self.destination.name}.tmp")
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=self.destination.parent,
+            prefix=f".{self.destination.name}.",
+            suffix=".tmp",
+        )
+        os.close(descriptor)
+        temporary = Path(temporary_name)
         try:
             images[0].save(
                 temporary,
@@ -114,11 +121,6 @@ class RolloutGIFRecorder:
             with temporary.open("rb") as handle:
                 os.fsync(handle.fileno())
             os.replace(temporary, self.destination)
-            directory_fd = os.open(self.destination.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
         finally:
             if temporary.exists():
                 temporary.unlink()
