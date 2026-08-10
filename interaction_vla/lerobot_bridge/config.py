@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,8 @@ class ACTBridgeConfig:
             raise ValueError("macOS ACT requires batch size 1/2 and num_workers=0")
         if self.device not in {"auto", "cpu", "mps"}:
             raise ValueError("ACT device must be auto, cpu, or mps")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0.0:
+            raise ValueError("ACT learning_rate must be finite and positive")
 
 
 @dataclass(frozen=True)

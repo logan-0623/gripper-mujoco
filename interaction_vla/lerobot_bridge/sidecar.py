@@ -8,7 +8,40 @@ from typing import Iterable
 import numpy as np
 
 from interaction_vla.lerobot_bridge.provenance import sha256_file
-from interaction_vla.lerobot_bridge.teacher_schema import SCHEMA_VERSION, TeacherFrame
+from interaction_vla.lerobot_bridge.teacher_schema import (
+    CONFIDENCE,
+    ENTITY_ROLE_IDS,
+    RELATION_TYPE_IDS,
+    SCHEMA_VERSION,
+    VISIBILITY,
+    TeacherFrame,
+)
+
+
+_FIXED_ARRAY_SPECS = {
+    "frame_index": ((), np.dtype(np.int32)),
+    "timestamp": ((), np.dtype(np.float64)),
+    "annotation.tc_tig.entity_pose": ((6, 9), np.dtype(np.float32)),
+    "annotation.tc_tig.entity_size": ((6, 3), np.dtype(np.float32)),
+    "annotation.tc_tig.entity_role": ((6,), np.dtype(np.int32)),
+    "annotation.tc_tig.entity_visibility": ((6, 2), np.dtype(np.float32)),
+    "annotation.tc_tig.entity_mask": ((6,), np.dtype(np.bool_)),
+    "annotation.tc_tig.relation_values": ((8, 24), np.dtype(np.float32)),
+    "annotation.tc_tig.relation_type": ((8,), np.dtype(np.int32)),
+    "annotation.tc_tig.relation_mask": ((8,), np.dtype(np.bool_)),
+    "annotation.tc_tig.camera_intrinsics": ((2, 3, 3), np.dtype(np.float32)),
+    "annotation.tc_tig.camera_extrinsics_base": ((2, 4, 4), np.dtype(np.float32)),
+    "annotation.tc_tig.relation_goal": ((5,), np.dtype(np.float32)),
+}
+_IMAGE_ARRAY_SPECS = {
+    "annotation.tc_tig.instance_agent": np.dtype(np.int32),
+    "annotation.tc_tig.instance_wrist": np.dtype(np.int32),
+    "annotation.tc_tig.depth_agent": np.dtype(np.float32),
+    "annotation.tc_tig.depth_wrist": np.dtype(np.float32),
+}
+_EXPECTED_ARRAY_KEYS = set(_FIXED_ARRAY_SPECS) | set(_IMAGE_ARRAY_SPECS) | {
+    "state_hash"
+}
 
 
 @dataclass(frozen=True)
@@ -201,4 +234,86 @@ def load_teacher_sidecar(
     for name, array in arrays.items():
         if array.ndim < 1 or len(array) != len(frame_index):
             raise ValueError(f"teacher sidecar array has inconsistent rows: {name}")
+    validate_teacher_sidecar_arrays(arrays)
     return arrays
+
+
+def validate_teacher_sidecar_arrays(arrays: dict[str, np.ndarray]) -> None:
+    actual_keys = set(arrays)
+    if actual_keys != _EXPECTED_ARRAY_KEYS:
+        missing = sorted(_EXPECTED_ARRAY_KEYS - actual_keys)
+        extra = sorted(actual_keys - _EXPECTED_ARRAY_KEYS)
+        raise ValueError(f"teacher sidecar keys mismatch; missing={missing}, extra={extra}")
+    frame_count = len(arrays["frame_index"])
+    for name, (tail_shape, dtype) in _FIXED_ARRAY_SPECS.items():
+        array = arrays[name]
+        expected_shape = (frame_count, *tail_shape)
+        if array.shape != expected_shape or array.dtype != dtype:
+            raise ValueError(
+                f"teacher sidecar schema mismatch for {name}: "
+                f"expected {expected_shape} {dtype}"
+            )
+    state_hash = arrays["state_hash"]
+    if state_hash.shape != (frame_count,) or state_hash.dtype.kind not in {"U", "S"}:
+        raise ValueError("teacher sidecar state_hash must be a one-dimensional string array")
+
+    image_shape: tuple[int, int] | None = None
+    for name, dtype in _IMAGE_ARRAY_SPECS.items():
+        array = arrays[name]
+        if array.ndim != 3 or array.shape[0] != frame_count or array.dtype != dtype:
+            raise ValueError(f"teacher sidecar image schema mismatch for {name}")
+        if image_shape is None:
+            image_shape = array.shape[1:]
+        elif array.shape[1:] != image_shape:
+            raise ValueError("teacher sidecar image arrays must share one resolution")
+
+    for name, array in arrays.items():
+        if np.issubdtype(array.dtype, np.floating) and not np.isfinite(array).all():
+            raise ValueError(f"teacher sidecar contains non-finite values: {name}")
+    if np.any(arrays["annotation.tc_tig.depth_agent"] < 0.0) or np.any(
+        arrays["annotation.tc_tig.depth_wrist"] < 0.0
+    ):
+        raise ValueError("teacher sidecar depth must be non-negative")
+    for name in (
+        "annotation.tc_tig.instance_agent",
+        "annotation.tc_tig.instance_wrist",
+    ):
+        if np.any(arrays[name] < 0) or np.any(arrays[name] > 6):
+            raise ValueError("teacher sidecar instance IDs must lie within [0, 6]")
+
+    expected_roles = np.broadcast_to(
+        np.asarray(list(ENTITY_ROLE_IDS.values()), dtype=np.int32),
+        (frame_count, 6),
+    )
+    expected_relations = np.broadcast_to(
+        np.asarray(list(RELATION_TYPE_IDS.values()), dtype=np.int32),
+        (frame_count, 8),
+    )
+    if not np.array_equal(arrays["annotation.tc_tig.entity_role"], expected_roles):
+        raise ValueError("teacher sidecar entity role IDs violate the schema")
+    if not np.array_equal(
+        arrays["annotation.tc_tig.relation_type"], expected_relations
+    ):
+        raise ValueError("teacher sidecar relation type IDs violate the schema")
+
+    entity_mask = arrays["annotation.tc_tig.entity_mask"]
+    relation_mask = arrays["annotation.tc_tig.relation_mask"]
+    relation_pairs = ((0, 1), (2, 1), (3, 1), (0, 4), (1, 4), (0, 5), (1, 5), (2, 0))
+    expected_mask = np.stack(
+        [entity_mask[:, first] & entity_mask[:, second] for first, second in relation_pairs],
+        axis=1,
+    )
+    if not np.array_equal(relation_mask, expected_mask):
+        raise ValueError("teacher sidecar relation masks do not match entity masks")
+
+    visibility = arrays["annotation.tc_tig.entity_visibility"]
+    relation_values = arrays["annotation.tc_tig.relation_values"]
+    goals = arrays["annotation.tc_tig.relation_goal"]
+    bounded = (
+        visibility,
+        relation_values[:, :, VISIBILITY],
+        relation_values[:, :, CONFIDENCE],
+        goals[:, 4],
+    )
+    if any(np.any(values < 0.0) or np.any(values > 1.0) for values in bounded):
+        raise ValueError("teacher sidecar confidence/visibility values must lie within [0, 1]")

@@ -15,6 +15,8 @@ from interaction_vla.lerobot_bridge.teacher_schema import (
     ENTITY_ROLE_IDS,
     ERROR_0,
     ERROR_1,
+    OPERATOR_IDS,
+    PREDICATE_IDS,
     PROBABILITY_0,
     PROBABILITY_1,
     RELATION_TYPE_IDS,
@@ -34,19 +36,30 @@ from interaction_vla.lerobot_bridge.teacher_schema import (
 )
 
 
-ESTABLISH = 0
-BREAK = 1
-INCREASE = 2
-PRESERVE = 3
-DECREASE = 4
+ESTABLISH = OPERATOR_IDS["establish"]
+BREAK = OPERATOR_IDS["break"]
+INCREASE = OPERATOR_IDS["increase"]
+PRESERVE = OPERATOR_IDS["preserve"]
+DECREASE = OPERATOR_IDS["decrease"]
 
-PROXIMITY = 0
-ALIGNMENT = 1
-ENCLOSURE = 2
-CO_MOTION = 3
-CONTAINMENT = 4
-SUPPORT = 5
-CLEARANCE = 6
+PROXIMITY = PREDICATE_IDS["proximity"]
+ALIGNMENT = PREDICATE_IDS["alignment"]
+ENCLOSURE = PREDICATE_IDS["enclosure"]
+CO_MOTION = PREDICATE_IDS["co_motion"]
+CONTAINMENT = PREDICATE_IDS["containment"]
+SUPPORT = PREDICATE_IDS["support"]
+CLEARANCE = PREDICATE_IDS["clearance"]
+
+GOAL_CANDIDATES = (
+    (0, ESTABLISH, PROXIMITY),
+    (0, ESTABLISH, ALIGNMENT),
+    (0, ESTABLISH, ENCLOSURE),
+    (0, ESTABLISH, CO_MOTION),
+    (1, ESTABLISH, CONTAINMENT),
+    (2, ESTABLISH, SUPPORT),
+    (0, BREAK, CO_MOTION),
+    (7, INCREASE, CLEARANCE),
+)
 
 
 def _rotation(entity: EntityState) -> np.ndarray:
@@ -618,10 +631,115 @@ def _geometry_frame(
     )
 
 
+def _typed_candidate_errors(relation_values: np.ndarray) -> np.ndarray:
+    values = np.asarray(relation_values, dtype=np.float32)
+    return np.stack(
+        (
+            values[:, 0, ERROR_0],
+            values[:, 0, ERROR_1],
+            1.0 - values[:, 0, PROBABILITY_0],
+            1.0 - values[:, 0, PROBABILITY_1],
+            values[:, 1, ERROR_0],
+            values[:, 2, ERROR_0],
+            values[:, 0, PROBABILITY_1],
+            values[:, 7, ERROR_0],
+        ),
+        axis=1,
+    ).astype(np.float32)
+
+
+def _typed_candidate_valid(relation_values: np.ndarray) -> np.ndarray:
+    values = np.asarray(relation_values, dtype=np.float32)
+    proximity_error = values[:, 0, ERROR_0]
+    enclosure_error = 1.0 - values[:, 0, PROBABILITY_0]
+    co_motion_error = 1.0 - values[:, 0, PROBABILITY_1]
+    co_motion_probability = values[:, 0, PROBABILITY_1]
+    containment_error = values[:, 1, ERROR_0]
+    support_error = values[:, 2, ERROR_0]
+    return np.stack(
+        (
+            np.ones(len(values), dtype=np.bool_),
+            np.ones(len(values), dtype=np.bool_),
+            proximity_error < 0.5,
+            enclosure_error < 0.5,
+            co_motion_error < 0.5,
+            containment_error < 0.5,
+            (containment_error < 0.25) & (support_error < 0.25),
+            (containment_error < 0.25) & (co_motion_probability < 0.25),
+        ),
+        axis=1,
+    )
+
+
+def _label_typed_relation_goals(
+    relation_values: np.ndarray,
+    confidence: np.ndarray,
+    *,
+    horizon: int,
+    minimum_improvement: float,
+) -> np.ndarray:
+    candidate_errors = _typed_candidate_errors(relation_values)
+    candidate_valid = _typed_candidate_valid(relation_values)
+    candidate_relations = np.asarray(
+        [candidate[0] for candidate in GOAL_CANDIDATES], dtype=np.int64
+    )
+    labels = np.zeros((len(relation_values), 5), dtype=np.float32)
+    previous_relation = 0
+    previous_predicate = PROXIMITY
+    for frame_index in range(len(relation_values)):
+        stop = min(len(relation_values), frame_index + horizon + 1)
+        improvements = np.full(len(GOAL_CANDIDATES), -np.inf, dtype=np.float32)
+        residuals = np.zeros(len(GOAL_CANDIDATES), dtype=np.float32)
+        selected_confidence = np.zeros(len(GOAL_CANDIDATES), dtype=np.float32)
+        if frame_index + 1 < stop:
+            future_errors = candidate_errors[frame_index + 1 : stop]
+            future_confidence = confidence[frame_index + 1 : stop]
+            for candidate_index, relation_index in enumerate(candidate_relations):
+                if not candidate_valid[frame_index, candidate_index]:
+                    continue
+                best_offset = int(np.argmin(future_errors[:, candidate_index]))
+                residual = (
+                    future_errors[best_offset, candidate_index]
+                    - candidate_errors[frame_index, candidate_index]
+                )
+                combined_confidence = min(
+                    confidence[frame_index, relation_index],
+                    future_confidence[best_offset, relation_index],
+                )
+                residuals[candidate_index] = residual
+                selected_confidence[candidate_index] = combined_confidence
+                improvements[candidate_index] = -residual * combined_confidence
+        candidate_index = int(np.argmax(improvements))
+        improvement = float(improvements[candidate_index])
+        if improvement >= minimum_improvement:
+            relation_index, operator_index, predicate_index = GOAL_CANDIDATES[
+                candidate_index
+            ]
+            previous_relation = relation_index
+            previous_predicate = predicate_index
+            labels[frame_index] = (
+                relation_index,
+                operator_index,
+                predicate_index,
+                residuals[candidate_index],
+                selected_confidence[candidate_index],
+            )
+        else:
+            labels[frame_index] = (
+                previous_relation,
+                PRESERVE,
+                previous_predicate,
+                0.0,
+                confidence[frame_index, previous_relation],
+            )
+    return labels
+
+
 def label_relation_goals(
     errors: np.ndarray,
     confidence: np.ndarray,
     *,
+    relation_values: np.ndarray | None = None,
     horizon: int,
     minimum_improvement: float,
 ) -> np.ndarray:
@@ -637,6 +755,33 @@ def label_relation_goals(
         raise ValueError("confidence must lie within [0, 1]")
     if horizon < 1 or not np.isfinite(minimum_improvement) or minimum_improvement < 0.0:
         raise ValueError("goal horizon must be positive and margin non-negative")
+
+    if relation_values is not None:
+        typed_values = np.asarray(relation_values, dtype=np.float32)
+        if typed_values.shape != (len(error_values), 8, 24):
+            raise ValueError("relation_values must have shape [T, 8, 24]")
+        if not np.isfinite(typed_values).all():
+            raise ValueError("relation_values must be finite")
+        if not np.allclose(
+            error_values,
+            typed_values[:, :, (ERROR_0, ERROR_1)],
+            rtol=0.0,
+            atol=1e-7,
+        ):
+            raise ValueError("errors must match relation_values error channels")
+        if not np.allclose(
+            confidence_values,
+            typed_values[:, :, CONFIDENCE],
+            rtol=0.0,
+            atol=1e-7,
+        ):
+            raise ValueError("confidence must match relation_values")
+        return _label_typed_relation_goals(
+            typed_values,
+            confidence_values,
+            horizon=horizon,
+            minimum_improvement=minimum_improvement,
+        )
 
     labels = np.zeros((len(error_values), 5), dtype=np.float32)
     previous_relation = 0
@@ -696,3 +841,28 @@ def label_relation_goals(
                 confidence_values[frame_index, previous_relation],
             )
     return labels
+
+
+def validate_typed_relation_goals(
+    relation_values: np.ndarray,
+    labels: np.ndarray,
+    *,
+    horizon: int,
+    minimum_improvement: float,
+) -> None:
+    values = np.asarray(relation_values)
+    goals = np.asarray(labels)
+    if values.ndim != 3 or values.shape[1:] != (8, 24):
+        raise ValueError("typed relation values must have shape [T, 8, 24]")
+    if goals.shape != (len(values), 5) or goals.dtype != np.float32:
+        raise ValueError("typed relation goals must be float32 with shape [T, 5]")
+    expected = label_relation_goals(
+        values[:, :, (ERROR_0, ERROR_1)],
+        values[:, :, CONFIDENCE],
+        relation_values=values,
+        horizon=horizon,
+        minimum_improvement=minimum_improvement,
+    )
+    if not np.allclose(goals, expected, rtol=0.0, atol=1e-7):
+        mismatch = int(np.flatnonzero(np.any(np.abs(goals - expected) > 1e-7, axis=1))[0])
+        raise ValueError(f"relation goal semantic mismatch at frame {mismatch}")

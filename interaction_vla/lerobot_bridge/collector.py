@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from interaction_vla.env import LayoutMode, TerminationReason
+from interaction_vla.lerobot_bridge.act_smoke import validate_smoke_report_compatibility
 from interaction_vla.lerobot_bridge.capture import DualViewCapture, camera_calibration
 from interaction_vla.lerobot_bridge.codecs import (
     EndEffectorStateCodec,
@@ -22,6 +23,7 @@ from interaction_vla.lerobot_bridge.provenance import (
     runtime_versions,
     sha256_file,
     source_fingerprint,
+    standard_dataset_fingerprint,
 )
 from interaction_vla.lerobot_bridge.sidecar import (
     TeacherSidecarRecord,
@@ -199,19 +201,10 @@ def _relation_goals(frames: tuple[TeacherFrame, ...], config: BridgeConfig) -> n
     return label_relation_goals(
         errors,
         confidence,
+        relation_values=relation_values,
         horizon=config.teacher.goal_horizon,
         minimum_improvement=config.teacher.goal_improvement_margin,
     )
-
-
-def _require_smoke_report(path: Path | None) -> None:
-    if path is None:
-        return
-    if not path.is_file():
-        raise FileNotFoundError(f"required smoke report not found: {path}")
-    report = json.loads(path.read_text(encoding="utf-8"))
-    if not report.get("passed", False):
-        raise ValueError(f"required smoke report did not pass: {path}")
 
 
 def _manifest_entry(
@@ -229,7 +222,7 @@ def _manifest_entry(
 def collect_from_config(config_path: str | Path) -> dict[str, object]:
     config = load_bridge_config(config_path)
     gate_hash = require_expert_gate(config.source_config_path, config.expert_gate)
-    _require_smoke_report(config.required_smoke_report)
+    validate_smoke_report_compatibility(config.required_smoke_report)
     root = require_new_root(config.dataset.root)
     writer = LeRobotEpisodeWriter.create(
         repo_id=config.dataset.repo_id,
@@ -281,6 +274,10 @@ def collect_from_config(config_path: str | Path) -> dict[str, object]:
         "requested_episodes": config.dataset.episodes,
         "accepted_episodes": 0,
         "rejected_attempts": 0,
+        "task": config.dataset.task,
+        "fps": config.dataset.fps,
+        "image_size": list(config.dataset.image_size),
+        "object_counts": list(config.dataset.object_counts),
     }
     _write_json_atomic(provenance_path, provenance)
 
@@ -377,6 +374,7 @@ def collect_from_config(config_path: str | Path) -> dict[str, object]:
             "rejected_attempts": len(rejections),
             "teacher_manifest_sha256": sha256_file(manifest_path),
             "rejections_sha256": sha256_file(rejections_path),
+            "standard_dataset_fingerprint": standard_dataset_fingerprint(root),
         }
     )
     _write_json_atomic(provenance_path, provenance)

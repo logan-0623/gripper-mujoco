@@ -175,6 +175,37 @@ def _make_env(config: BridgeConfig) -> FrankaContactEnv:
     )
 
 
+def load_act_runtime(
+    checkpoint: str | Path,
+    *,
+    device: torch.device,
+):
+    from lerobot.policies import make_pre_post_processors
+    from lerobot.policies.act.configuration_act import ACTConfig
+    from lerobot.policies.act.modeling_act import ACTPolicy
+
+    checkpoint_path = Path(checkpoint)
+    policy_config = ACTConfig.from_pretrained(
+        checkpoint_path,
+        local_files_only=True,
+    )
+    policy_config.device = device.type
+    policy = ACTPolicy.from_pretrained(
+        checkpoint_path,
+        config=policy_config,
+        local_files_only=True,
+    )
+    device_override = {"device": device.type}
+    preprocessor, postprocessor = make_pre_post_processors(
+        policy_config,
+        pretrained_path=str(checkpoint_path),
+        preprocessor_overrides={"device_processor": device_override},
+        postprocessor_overrides={"device_processor": device_override},
+    )
+    policy.eval()
+    return policy, preprocessor, postprocessor
+
+
 def _load_checkpoint_bundle(
     *,
     config: BridgeConfig,
@@ -200,24 +231,16 @@ def _load_checkpoint_bundle(
         raise ValueError(f"ACT checkpoint binding mismatch: {', '.join(differing)}")
 
     from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
-    from lerobot.policies import make_pre_post_processors
-    from lerobot.policies.act.modeling_act import ACTPolicy
-
     dataset_metadata = LeRobotDatasetMetadata(
         config.dataset.repo_id,
         root=config.dataset.root,
     )
     if _jsonable(metadata.get("features")) != _jsonable(dataset_metadata.features):
         raise ValueError("ACT checkpoint feature contract differs from the dataset")
-    policy = ACTPolicy.from_pretrained(
+    policy, preprocessor, postprocessor = load_act_runtime(
         checkpoint,
-        local_files_only=True,
-    ).to(device)
-    preprocessor, postprocessor = make_pre_post_processors(
-        policy.config,
-        pretrained_path=str(checkpoint),
+        device=device,
     )
-    policy.eval()
     return policy, preprocessor, postprocessor, metadata
 
 

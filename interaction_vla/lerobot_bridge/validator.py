@@ -15,11 +15,17 @@ from interaction_vla.lerobot_bridge.codecs import (
 )
 from interaction_vla.lerobot_bridge.config import BridgeConfig, load_bridge_config
 from interaction_vla.lerobot_bridge.dataset_writer import standard_features
-from interaction_vla.lerobot_bridge.provenance import sha256_file, source_fingerprint
+from interaction_vla.lerobot_bridge.provenance import (
+    sha256_file,
+    source_fingerprint,
+    standard_dataset_fingerprint,
+)
 from interaction_vla.lerobot_bridge.sidecar import load_teacher_sidecar
+from interaction_vla.lerobot_bridge.teacher import validate_typed_relation_goals
 from interaction_vla.lerobot_bridge.teacher_schema import (
     FORBIDDEN_FIELD_FRAGMENTS,
     SCHEMA_VERSION,
+    teacher_schema_payload,
 )
 from interaction_vla.physics_data import require_expert_gate
 from interaction_vla.physics_env import FrankaContactEnv
@@ -92,6 +98,50 @@ def validate_teacher_manifest(
             raise ValueError(f"teacher manifest path mismatch for episode {episode_index}")
         total += frames
     return total
+
+
+def validate_teacher_schema(schema: Mapping[str, Any]) -> None:
+    if dict(schema) != teacher_schema_payload():
+        raise ValueError("teacher schema differs from the TC-TIG contract")
+
+
+def validate_dataset_contract(
+    *,
+    resolved_repo_id: str,
+    tasks: list[str],
+    episode_lengths: Mapping[int, int],
+    records: list[Mapping[str, Any]],
+    provenance: Mapping[str, Any],
+    bridge_config: BridgeConfig,
+) -> None:
+    dataset = bridge_config.dataset
+    expected_provenance = {
+        "repo_id": dataset.repo_id,
+        "task": dataset.task,
+        "requested_episodes": dataset.episodes,
+        "accepted_episodes": dataset.episodes,
+        "fps": dataset.fps,
+        "image_size": list(dataset.image_size),
+        "object_counts": list(dataset.object_counts),
+    }
+    if resolved_repo_id != dataset.repo_id:
+        raise ValueError("standard dataset repo_id differs from the bridge config")
+    if tasks != [dataset.task]:
+        raise ValueError("standard dataset task metadata differs from the bridge config")
+    if len(episode_lengths) != dataset.episodes:
+        raise ValueError("standard dataset episode count differs from the bridge config")
+    differing = [
+        key for key, value in expected_provenance.items() if provenance.get(key) != value
+    ]
+    if differing:
+        raise ValueError(
+            "bridge provenance dataset contract mismatch: " + ", ".join(differing)
+        )
+    for record in records:
+        if record.get("task") != dataset.task or int(record.get("task_id", -1)) != 0:
+            raise ValueError("teacher manifest task metadata differs from the dataset")
+        if int(record.get("object_count", -1)) not in dataset.object_counts:
+            raise ValueError("teacher manifest object count is outside the bridge config")
 
 
 def _load_json(path: Path) -> Any:
@@ -231,8 +281,9 @@ def _validate_bridge_metadata(
         if not path.is_file():
             raise ValueError(f"missing bridge metadata: {path}")
     schema = _load_json(schema_path)
-    if schema.get("version") != SCHEMA_VERSION:
-        raise ValueError("teacher schema version mismatch")
+    if not isinstance(schema, dict):
+        raise ValueError("teacher schema must be a JSON object")
+    validate_teacher_schema(schema)
     _load_json(calibration_path)
     records = _load_json(manifest_path)
     if not isinstance(records, list):
@@ -254,6 +305,7 @@ def _validate_bridge_metadata(
             {
                 "teacher_manifest_sha256": sha256_file(manifest_path),
                 "rejections_sha256": sha256_file(rejections_path),
+                "standard_dataset_fingerprint": standard_dataset_fingerprint(root),
             }
         )
     for key, expected in expected_hashes.items():
@@ -290,6 +342,13 @@ def _validate_bridge_metadata(
             raise ValueError("teacher manifest first state hash mismatch")
         if record.get("last_state_hash") != state_hashes[-1]:
             raise ValueError("teacher manifest last state hash mismatch")
+        if bridge_config is not None:
+            validate_typed_relation_goals(
+                arrays["annotation.tc_tig.relation_values"],
+                arrays["annotation.tc_tig.relation_goal"],
+                horizon=bridge_config.teacher.goal_horizon,
+                minimum_improvement=bridge_config.teacher.goal_improvement_margin,
+            )
 
     if bridge_config is not None:
         config_hashes = {
@@ -398,14 +457,24 @@ def validate_dataset_root(
     dataset = LeRobotDataset(resolved_repo_id, root=dataset_root)
     episode_lengths, standard = _validate_standard_rows(dataset)
     records: list[dict[str, object]] = []
+    provenance: dict[str, object] = {}
     checked_hashes: list[str] = []
     if require_bridge_metadata:
-        records, _, checked_hashes = _validate_bridge_metadata(
+        records, provenance, checked_hashes = _validate_bridge_metadata(
             dataset_root,
             episode_lengths=episode_lengths,
             allow_incomplete=allow_incomplete,
             bridge_config=bridge_config,
         )
+        if bridge_config is not None and provenance.get("complete", False):
+            validate_dataset_contract(
+                resolved_repo_id=resolved_repo_id,
+                tasks=dataset.meta.tasks.index.tolist(),
+                episode_lengths=episode_lengths,
+                records=records,
+                provenance=provenance,
+                bridge_config=bridge_config,
+            )
     replay_error = 0.0
     if replay:
         if bridge_config is None or not records:

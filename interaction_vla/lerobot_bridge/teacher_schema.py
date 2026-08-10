@@ -31,6 +31,29 @@ RELATION_FEATURE_DIM = 24
 
 ENTITY_ROLE_IDS = {name: index for index, name in enumerate(ENTITY_SLOTS)}
 RELATION_TYPE_IDS = {name: index for index, name in enumerate(RELATION_SLOTS)}
+OPERATOR_IDS = {
+    "establish": 0,
+    "break": 1,
+    "increase": 2,
+    "preserve": 3,
+    "decrease": 4,
+}
+PREDICATE_IDS = {
+    "proximity": 0,
+    "alignment": 1,
+    "enclosure": 2,
+    "co_motion": 3,
+    "containment": 4,
+    "support": 5,
+    "clearance": 6,
+}
+RELATION_GOAL_LAYOUT = (
+    "relation_id",
+    "operator_id",
+    "predicate_id",
+    "signed_future_residual",
+    "confidence",
+)
 
 RELATIVE_POSITION = slice(0, 3)
 RELATIVE_ROTATION = slice(3, 6)
@@ -68,6 +91,9 @@ def teacher_schema_payload() -> dict[str, object]:
         "relation_slots": list(RELATION_SLOTS),
         "entity_role_ids": dict(ENTITY_ROLE_IDS),
         "relation_type_ids": dict(RELATION_TYPE_IDS),
+        "operator_ids": dict(OPERATOR_IDS),
+        "predicate_ids": dict(PREDICATE_IDS),
+        "relation_goal_layout": list(RELATION_GOAL_LAYOUT),
         "entity_pose_layout": ["position_x", "position_y", "position_z", "rotation_6d"],
         "entity_size_layout": ["extent_x", "extent_y", "extent_z"],
         "relation_feature_layout": [

@@ -49,3 +49,17 @@ def test_staged_sidecar_is_hidden_until_atomic_commit(tmp_path) -> None:
     assert not (tmp_path / record.path).exists()
     writer.commit_staged(record)
     assert (tmp_path / record.path).is_file()
+
+
+def test_sidecar_loader_rejects_a_missing_fixed_schema_array(tmp_path) -> None:
+    writer = TeacherSidecarWriter(tmp_path)
+    frame = TeacherFrame.zeros(frame_index=0, timestamp=0.0, state_hash="state-0")
+    record = writer.write_episode(0, [frame], np.zeros((1, 5), dtype=np.float32))
+    path = tmp_path / record.path
+    with np.load(path, allow_pickle=False) as loaded:
+        arrays = {name: loaded[name] for name in loaded.files}
+    arrays.pop("annotation.tc_tig.relation_mask")
+    np.savez_compressed(path, **arrays)
+
+    with pytest.raises(ValueError, match="keys"):
+        load_teacher_sidecar(path)

@@ -194,7 +194,7 @@ class DualViewCapture:
             timestamp=env.step_count / env.policy_hz,
             state_hash=MultiViewRecorder.state_hash(env),
             views=views,
-            calibration=self.camera_calibration(env),
+            calibration=self.camera_calibration(env) if include_teacher else None,
         )
 
     def camera_calibration(self, env: FrankaContactEnv) -> dict[str, object]:

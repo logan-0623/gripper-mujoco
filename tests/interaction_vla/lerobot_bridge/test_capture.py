@@ -54,12 +54,15 @@ def test_capture_has_two_views_and_does_not_advance_mujoco() -> None:
     capture = DualViewCapture(env.model, width=64, height=64)
     try:
         frame = capture.capture(env, include_teacher=True)
+        policy_frame = capture.capture(env, include_teacher=False)
     finally:
         capture.close()
 
     assert tuple(frame.views) == ("agent", "wrist")
     assert frame.policy_step == 0
     assert frame.timestamp == pytest.approx(0.0)
+    assert frame.calibration is not None
+    assert policy_frame.calibration is None
     for view in frame.views.values():
         assert view.rgb.shape == (64, 64, 3)
         assert view.depth.shape == (64, 64)

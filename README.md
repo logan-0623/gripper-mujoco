@@ -108,6 +108,32 @@ macOS 若再次出现 `libpython3.12.dylib` 错误，先运行本 README 安装�
 `.venv/bin/python -m interaction_vla.macos_mjpython`；它只修复 `.venv/lib` 链接，
 不会删除缓存或重建环境。
 
+### LeRobot 双视角数据与 ACT smoke
+
+这个桥接使用独立的 Python 环境，不升级项目原有 `.venv`：
+
+```bash
+python3.12 -m venv .venv-lerobot
+.venv-lerobot/bin/python -m pip install -r requirements-lerobot-macos.txt
+
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge collect \
+  --config configs/lerobot_act_smoke_macos.yaml
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge validate \
+  --config configs/lerobot_act_smoke_macos.yaml
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge smoke \
+  --config configs/lerobot_act_smoke_macos.yaml
+```
+
+标准 LeRobotDataset 样本只有 agent RGB、wrist RGB、10D 末端状态、7D
+局部动作和 task metadata。深度、分割、相机矩阵与 TC-TIG 标签只存在于
+`teacher/` sidecar，ACT 和 VLA 的标准 batch 不会读取它们。
+
+首个数据集使用一条固定语言指令，用来验证 language-conditioned dataset
+兼容性；ACT 本身不使用语言。设备在进程启动时探测：MPS 可用则使用 MPS，
+否则回退 CPU。5 个 episode 与 500-step 训练只验证工程闭环，不构成任务性能
+或语言泛化证据。所有命令仅写本地 Hugging Face 兼容数据和 checkpoint，当前
+CLI 不提供 Hub upload。
+
 ## Mac 安装
 
 已针对 macOS / Apple Silicon 使用 Python 3.12、MuJoCo 3.3.4 测试：

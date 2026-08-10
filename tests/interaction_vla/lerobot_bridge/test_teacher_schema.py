@@ -3,6 +3,8 @@ import numpy as np
 from interaction_vla.lerobot_bridge.teacher_schema import (
     ENTITY_SLOTS,
     FORBIDDEN_FIELD_FRAGMENTS,
+    OPERATOR_IDS,
+    PREDICATE_IDS,
     RELATION_FEATURE_DIM,
     RELATION_SLOTS,
     TeacherFrame,
@@ -33,8 +35,18 @@ def test_teacher_schema_has_six_entities_and_eight_sparse_relations() -> None:
 
 
 def test_teacher_payload_contains_no_privileged_forbidden_name() -> None:
-    flattened = str(teacher_schema_payload()).lower()
+    payload = teacher_schema_payload()
+    flattened = str(payload).lower()
     assert all(fragment not in flattened for fragment in FORBIDDEN_FIELD_FRAGMENTS)
+    assert payload["relation_goal_layout"] == [
+        "relation_id",
+        "operator_id",
+        "predicate_id",
+        "signed_future_residual",
+        "confidence",
+    ]
+    assert payload["operator_ids"] == OPERATOR_IDS
+    assert payload["predicate_ids"] == PREDICATE_IDS
 
 
 def test_teacher_frame_validates_fixed_shapes() -> None:

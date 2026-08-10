@@ -10,6 +10,8 @@ from typing import Iterable
 
 
 _EXCLUDED_NAMES = {"INCOMPLETE", ".DS_Store"}
+_EXCLUDED_SOURCE_DIRECTORIES = {"__pycache__"}
+_EXCLUDED_SOURCE_SUFFIXES = {".pyc", ".pyo"}
 _EXCLUDED_ACT_DIRECTORIES = {"act", "act_smoke", "act_pilot", "checkpoints"}
 
 
@@ -48,6 +50,36 @@ def fingerprint_tree(root: str | Path) -> str:
         and path.name not in _EXCLUDED_NAMES
         and not any(part in _EXCLUDED_ACT_DIRECTORIES for part in path.relative_to(directory).parts)
     )
+    return _fingerprint_files(directory, files)
+
+
+def standard_dataset_fingerprint(root: str | Path) -> str:
+    directory = Path(root)
+    if not directory.is_dir():
+        raise ValueError(f"standard dataset root must be a directory: {directory}")
+    files: list[Path] = []
+    for name in ("data", "videos"):
+        subtree = directory / name
+        if subtree.is_dir():
+            files.extend(
+                path
+                for path in subtree.rglob("*")
+                if path.is_file() and path.name not in _EXCLUDED_NAMES
+            )
+    meta = directory / "meta"
+    for name in ("info.json", "stats.json", "tasks.parquet"):
+        path = meta / name
+        if path.is_file():
+            files.append(path)
+    episodes = meta / "episodes"
+    if episodes.is_dir():
+        files.extend(
+            path
+            for path in episodes.rglob("*")
+            if path.is_file() and path.name not in _EXCLUDED_NAMES
+        )
+    if not files:
+        raise ValueError(f"standard dataset contains no fingerprintable files: {directory}")
     return _fingerprint_files(directory, files)
 
 
@@ -123,6 +155,11 @@ def source_fingerprint(root: str | Path = ".") -> str:
                 for path in directory.rglob("*")
                 if path.is_file()
                 and path.name not in _EXCLUDED_NAMES
+                and path.suffix not in _EXCLUDED_SOURCE_SUFFIXES
+                and not any(
+                    part in _EXCLUDED_SOURCE_DIRECTORIES
+                    for part in path.relative_to(directory).parts
+                )
                 and (directory.name != "configs" or path.name.startswith("lerobot_"))
             )
     for name in ("requirements-lerobot-macos.txt", "requirements-lerobot-macos.lock.txt"):

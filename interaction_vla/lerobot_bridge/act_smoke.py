@@ -22,17 +22,61 @@ from interaction_vla.lerobot_bridge.provenance import (
     sha256_file,
     source_fingerprint,
 )
-from interaction_vla.lerobot_bridge.teacher_schema import FORBIDDEN_FIELD_FRAGMENTS
+from interaction_vla.lerobot_bridge.teacher_schema import (
+    FORBIDDEN_FIELD_FRAGMENTS,
+    SCHEMA_VERSION,
+)
 from interaction_vla.lerobot_bridge.validator import validate_dataset_root
 
 
 STATE_CODEC_VERSION = "ee_position_rotation6d_aperture_v1"
 ACTION_CODEC_VERSION = "local_translation_world_rotvec_binary_gripper_v1"
+POLICY_FEATURE_CONTRACT = {
+    "observation.images.agent": {"shape": [3, 256, 256], "dtype": "float32"},
+    "observation.images.wrist": {"shape": [3, 256, 256], "dtype": "float32"},
+    "observation.state": {"shape": [10], "dtype": "float32"},
+    "action": {"shape": [7], "dtype": "float32"},
+    "task": {"kind": "language_metadata", "act_model_input": False},
+}
 FORBIDDEN_BATCH_FRAGMENTS = (
     "annotation",
     "depth",
     "segmentation",
 ) + FORBIDDEN_FIELD_FRAGMENTS
+
+
+def expected_smoke_report_contract() -> dict[str, object]:
+    try:
+        lerobot_version = importlib.metadata.version("lerobot")
+    except importlib.metadata.PackageNotFoundError:
+        lerobot_version = "unavailable"
+    return {
+        "state_codec_version": STATE_CODEC_VERSION,
+        "action_codec_version": ACTION_CODEC_VERSION,
+        "schema_version": SCHEMA_VERSION,
+        "lerobot_version": lerobot_version,
+        "policy_feature_contract": POLICY_FEATURE_CONTRACT,
+        "source_fingerprint": source_fingerprint(),
+    }
+
+
+def validate_smoke_report_compatibility(path: str | Path | None) -> None:
+    if path is None:
+        return
+    report_path = Path(path)
+    if not report_path.is_file():
+        raise FileNotFoundError(f"required smoke report not found: {report_path}")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid required smoke report: {report_path}") from error
+    expected = {"passed": True, **expected_smoke_report_contract()}
+    differing = [key for key, value in expected.items() if report.get(key) != value]
+    if differing:
+        raise ValueError(
+            "required smoke report is stale or incompatible: "
+            + ", ".join(differing)
+        )
 
 
 @dataclass(frozen=True)
@@ -111,6 +155,11 @@ def _act_config(
         n_encoder_layers=encoder_layers,
         n_vae_encoder_layers=vae_encoder_layers,
         use_vae=True,
+        optimizer_lr=(
+            bridge_config.act.learning_rate
+            if architecture == "configured" and bridge_config is not None
+            else 1e-5
+        ),
     )
 
 
@@ -642,23 +691,7 @@ def train_once(
 
 
 def _validate_required_smoke_report(config: BridgeConfig) -> None:
-    path = config.required_smoke_report
-    if path is None:
-        return
-    if not path.is_file():
-        raise FileNotFoundError(f"required smoke report not found: {path}")
-    report = json.loads(path.read_text(encoding="utf-8"))
-    expected = {
-        "passed": True,
-        "state_codec_version": STATE_CODEC_VERSION,
-        "action_codec_version": ACTION_CODEC_VERSION,
-        "source_fingerprint": source_fingerprint(),
-    }
-    differing = [key for key, value in expected.items() if report.get(key) != value]
-    if differing:
-        raise ValueError(
-            f"required smoke report is stale or incompatible: {', '.join(differing)}"
-        )
+    validate_smoke_report_compatibility(config.required_smoke_report)
 
 
 def train_from_config(
@@ -680,8 +713,14 @@ def train_from_config(
     if destination.exists() and any(destination.iterdir()):
         raise FileExistsError(f"ACT training output must be empty: {destination}")
     destination.mkdir(parents=True, exist_ok=True)
-    return run_training_with_fallback(
+    summary = run_training_with_fallback(
         config,
         batch_size=config.act.batch_size,
         output_dir=destination,
     )
+    summary["checkpoint"] = destination
+    (destination / "training_summary.json").write_text(
+        json.dumps(_jsonable(summary), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return summary

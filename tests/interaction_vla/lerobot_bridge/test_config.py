@@ -1,8 +1,17 @@
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from interaction_vla.lerobot_bridge.config import load_bridge_config
+
+
+def test_lerobot_environment_pins_the_validated_mujoco_runtime() -> None:
+    requirements = Path("requirements-lerobot-macos.txt").read_text(encoding="utf-8")
+    lock = Path("requirements-lerobot-macos.lock.txt").read_text(encoding="utf-8")
+
+    assert "mujoco==3.3.4" in requirements.splitlines()
+    assert "mujoco==3.3.4" in lock.splitlines()
 
 
 def test_smoke_config_locks_the_model_visible_contract() -> None:
@@ -38,3 +47,5 @@ def test_act_schedule_requires_exactly_one_stop_condition() -> None:
         replace(config.act, steps=500, epochs=5)
     with pytest.raises(ValueError, match="exactly one"):
         replace(config.act, steps=None, epochs=None)
+    with pytest.raises(ValueError, match="learning_rate"):
+        replace(config.act, learning_rate=0.0)
