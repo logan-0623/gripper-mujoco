@@ -10,15 +10,23 @@ import torch
 pytest.importorskip("lerobot")
 
 from interaction_vla.graph_control.cache import CacheProvenance, write_token_cache
+from interaction_vla.graph_control.dataset import GraphConditionedDataset
 from interaction_vla.graph_control.schema import CONDITIONS, TOKEN_DIM
 from interaction_vla.graph_control.training import (
+    _control_source_files,
     assert_checkpoint_split,
     assert_paired_summaries,
+    expected_graph_checkpoint_metadata,
+    graph_checkpoint_bindings,
     load_control_split,
     load_graph_act_checkpoint,
     train_paired_seed,
 )
-from interaction_vla.lerobot_bridge.act_smoke import load_act_dataset, pilot_episode_split
+from interaction_vla.lerobot_bridge.act_smoke import (
+    _act_config,
+    load_act_dataset,
+    pilot_episode_split,
+)
 
 
 def _write_split(path: Path) -> None:
@@ -161,20 +169,62 @@ def test_one_update_per_condition_is_paired_and_reloadable(
     assert len({tuple(summary["source_row_indices"]) for summary in summaries.values()}) == 1
 
     checkpoint = tmp_path / "runs" / "flat" / "checkpoint"
-    metadata = json.loads((checkpoint / "bridge_checkpoint.json").read_text())
+    bindings = graph_checkpoint_bindings("flat", 7, caches["flat"])
+    expected = expected_graph_checkpoint_metadata(
+        dataset_root=dataset_root,
+        features=GraphConditionedDataset(base, caches["flat"]).features,
+        act_config=_act_config(device=torch.device("cpu"), architecture="test"),
+        device=torch.device("cpu"),
+        bindings=bindings,
+    )
     load_graph_act_checkpoint(
         checkpoint,
         device=torch.device("cpu"),
-        expected_bindings=metadata["graph_control"],
+        expected_metadata=expected,
     )
-    altered = dict(metadata["graph_control"])
-    altered["cache_sha256"] = "f" * 64
-    with pytest.raises(ValueError, match="cache_sha256"):
-        load_graph_act_checkpoint(
-            checkpoint,
-            device=torch.device("cpu"),
-            expected_bindings=altered,
-        )
+
+    metadata_path = checkpoint / "bridge_checkpoint.json"
+    original = json.loads(metadata_path.read_text(encoding="utf-8"))
+    mutations = {
+        "dataset_fingerprint": lambda value: "f" * 64,
+        "features": lambda value: {**value, "observation.environment_state": {
+            **value["observation.environment_state"], "names": ["wrong"] * TOKEN_DIM
+        }},
+        "state_codec_version": lambda value: "wrong-state-codec",
+        "action_codec_version": lambda value: "wrong-action-codec",
+        "lerobot_version": lambda value: "0.0.0-tampered",
+        "act_config": lambda value: {**value, "optimizer_lr": 0.5},
+        "device": lambda value: "mps",
+        "source_fingerprint": lambda value: "e" * 64,
+        "graph_control": lambda value: {**value, "cache_sha256": "d" * 64},
+    }
+    for field, mutate in mutations.items():
+        altered = dict(original)
+        altered[field] = mutate(original[field])
+        metadata_path.write_text(json.dumps(altered), encoding="utf-8")
+        with pytest.raises(ValueError, match=field):
+            load_graph_act_checkpoint(
+                checkpoint,
+                device=torch.device("cpu"),
+                expected_metadata=expected,
+            )
+    metadata_path.write_text(json.dumps(original), encoding="utf-8")
+
+
+def test_control_source_fingerprint_covers_transitive_graph_inference_code() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    relative = {
+        path.relative_to(repository).as_posix()
+        for path in _control_source_files(repository)
+    }
+    assert "interaction_vla/graph_finetune/data.py" in relative
+    assert "interaction_vla/graph_finetune/pipeline.py" in relative
+    assert "interaction_vla/graph_pretrain/reflectvlm.py" in relative
+    assert "interaction_vla/env.py" in relative
+    assert "interaction_vla/franka.py" in relative
+    assert "interaction_vla/physics_action_safety.py" in relative
+    assert "interaction_vla/physics_env.py" in relative
+    assert "interaction_vla/physics_evaluate.py" in relative
 
 
 def test_pairing_audit_rejects_different_initialization_or_rows() -> None:

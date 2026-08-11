@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -192,6 +192,9 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
         "condition",
         "policy_seed",
         "case_id",
+        "environment_seed",
+        "layout",
+        "object_count",
         *_AGGREGATE_FIELDS.values(),
     }
     for record in values:
@@ -201,13 +204,59 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
         if record["condition"] not in CONDITIONS:
             raise ValueError("rollout record condition is invalid")
     groups: dict[tuple[int, str], set[str]] = {}
+    identities: dict[tuple[int, str], tuple[int, str, int]] = {}
     for record in values:
         key = (int(record["policy_seed"]), str(record["case_id"]))
         groups.setdefault(key, set()).add(str(record["condition"]))
+        identity = (
+            int(record["environment_seed"]),
+            str(record["layout"]),
+            int(record["object_count"]),
+        )
+        if key in identities and identities[key] != identity:
+            fields = ("environment_seed", "layout", "object_count")
+            differing = [
+                field
+                for field, expected, actual in zip(fields, identities[key], identity)
+                if expected != actual
+            ]
+            raise ValueError(
+                "rollout paired case identity mismatch: " + ", ".join(differing)
+            )
+        identities[key] = identity
     if any(group != set(CONDITIONS) for group in groups.values()):
         raise ValueError("rollout records are not paired across all conditions")
     if len(values) != len(groups) * len(CONDITIONS):
         raise ValueError("rollout records contain duplicate paired cases")
+
+    records_by_case = {
+        key: {
+            str(record["condition"]): record
+            for record in values
+            if (int(record["policy_seed"]), str(record["case_id"])) == key
+        }
+        for key in groups
+    }
+    paired_case_deltas: list[dict[str, object]] = []
+    for key in sorted(records_by_case):
+        policy_seed, case_id = key
+        paired = records_by_case[key]
+        environment_seed, layout, object_count = identities[key]
+        for first, second in _CONTRASTS:
+            for metric, source_name in _AGGREGATE_FIELDS.items():
+                paired_case_deltas.append(
+                    {
+                        "policy_seed": policy_seed,
+                        "case_id": case_id,
+                        "environment_seed": environment_seed,
+                        "layout": layout,
+                        "object_count": object_count,
+                        "contrast": f"{first}-{second}",
+                        "metric": metric,
+                        "delta": float(paired[first][source_name])
+                        - float(paired[second][source_name]),
+                    }
+                )
 
     by_condition = {
         condition: _means(
@@ -250,6 +299,7 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
         "paired_cases": len(groups),
         "policy_seeds": policy_seeds,
         "replication_unit": "policy_seed",
+        "paired_case_deltas": paired_case_deltas,
         "by_condition": by_condition,
         "contrasts": contrasts,
     }
@@ -298,6 +348,14 @@ def _predict_chunk(runtime: GraphPolicyRuntime, observation: dict[str, torch.Ten
     return result
 
 
+def _next_queued_action(
+    queue: ActionChunkQueue,
+    runtime: GraphPolicyRuntime | Any,
+    observation_factory: Callable[[], dict[str, torch.Tensor]],
+):
+    return queue.next(lambda: _predict_chunk(runtime, observation_factory()))
+
+
 def rollout_case(
     config: BridgeConfig,
     runtime: GraphPolicyRuntime,
@@ -340,19 +398,22 @@ def rollout_case(
             state = EndEffectorStateCodec.encode_snapshot(
                 snapshot, env.proprioception()
             )
-            token = runtime.token_provider.token(
-                snapshot=snapshot,
-                camera_frame=camera_frame,
-                state=state,
-                task=config.dataset.task,
-            )
-            observation = augment_policy_observation(
-                agent_rgb=camera_frame.views["agent"].rgb,
-                wrist_rgb=camera_frame.views["wrist"].rgb,
-                state=state,
-                token=token,
-            )
-            selected = queue.next(lambda: _predict_chunk(runtime, observation))
+
+            def observation_factory() -> dict[str, torch.Tensor]:
+                token = runtime.token_provider.token(
+                    snapshot=snapshot,
+                    camera_frame=camera_frame,
+                    state=state,
+                    task=config.dataset.task,
+                )
+                return augment_policy_observation(
+                    agent_rgb=camera_frame.views["agent"].rgb,
+                    wrist_rgb=camera_frame.views["wrist"].rgb,
+                    state=state,
+                    token=token,
+                )
+
+            selected = _next_queued_action(queue, runtime, observation_factory)
             raw = selected.action.copy()
             action = raw.copy()
             action[:6] = np.clip(action[:6], -1.0, 1.0)

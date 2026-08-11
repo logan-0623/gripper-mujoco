@@ -13,10 +13,10 @@ cache:
 training:
   output_dir: outputs/graph_control/act_smoke/runs
   smoke_steps: 1
+  formal_epochs: 5
 evaluation:
   layouts: [normal, crowded]
   object_counts: [2, 3]
   cases_per_cell: 1
   master_seed: 2057736129
   max_steps: 180
-

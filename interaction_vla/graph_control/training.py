@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import gc
 import hashlib
+import importlib.metadata
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -25,7 +26,11 @@ from interaction_vla.lerobot_bridge.act_smoke import (
     build_act_bundle_from_dataset,
 )
 from interaction_vla.lerobot_bridge.config import BridgeConfig
-from interaction_vla.lerobot_bridge.provenance import sha256_file
+from interaction_vla.lerobot_bridge.provenance import (
+    fingerprint_tree,
+    sha256_file,
+    source_fingerprint,
+)
 from interaction_vla.lerobot_bridge.rollout import load_act_runtime
 
 from .cache import TokenCache
@@ -122,12 +127,24 @@ def assert_checkpoint_split(
         raise ValueError("Graph checkpoint split mismatch: " + ", ".join(differing))
 
 
+def _control_source_files(repository: Path) -> tuple[Path, ...]:
+    package_root = repository / "interaction_vla"
+    files = tuple(
+        sorted(
+            path
+            for path in package_root.rglob("*.py")
+            if "__pycache__" not in path.parts
+        )
+    )
+    if not files:
+        raise FileNotFoundError(f"Graph control source tree is empty: {package_root}")
+    return files
+
+
 def _control_source_fingerprint() -> str:
     repository = Path(__file__).resolve().parents[2]
-    files = list((repository / "interaction_vla" / "graph_control").glob("*.py"))
-    files.append(repository / "interaction_vla" / "lerobot_bridge" / "act_smoke.py")
     digest = hashlib.sha256()
-    for path in sorted(files):
+    for path in _control_source_files(repository):
         relative = path.relative_to(repository).as_posix().encode("utf-8")
         content = path.read_bytes()
         digest.update(len(relative).to_bytes(8, "big"))
@@ -157,11 +174,48 @@ def graph_checkpoint_bindings(
     return _graph_bindings(condition, seed, cache)
 
 
+def expected_graph_checkpoint_metadata(
+    *,
+    dataset_root: str | Path,
+    features: Mapping[str, object],
+    act_config: object,
+    device: torch.device,
+    bindings: Mapping[str, object],
+) -> dict[str, object]:
+    from lerobot.configs import FeatureType
+    from lerobot.utils.feature_utils import dataset_to_policy_features
+
+    policy_features = dataset_to_policy_features(dict(features))
+    act_config.output_features = {
+        key: feature
+        for key, feature in policy_features.items()
+        if feature.type is FeatureType.ACTION
+    }
+    act_config.input_features = {
+        key: feature
+        for key, feature in policy_features.items()
+        if key not in act_config.output_features
+    }
+    return _jsonable(
+        {
+            "dataset_fingerprint": fingerprint_tree(dataset_root),
+            "features": features,
+            "state_codec_version": STATE_CODEC_VERSION,
+            "action_codec_version": ACTION_CODEC_VERSION,
+            "lerobot_version": importlib.metadata.version("lerobot"),
+            "act_config": act_config,
+            "device": str(device),
+            "source_fingerprint": source_fingerprint(),
+            "graph_control": dict(bindings),
+        }
+    )
+
+
 def load_graph_act_checkpoint(
     checkpoint: str | Path,
     *,
     device: torch.device,
-    expected_bindings: Mapping[str, object],
+    expected_metadata: Mapping[str, object],
 ):
     source = Path(checkpoint)
     metadata_path = source / "bridge_checkpoint.json"
@@ -171,15 +225,32 @@ def load_graph_act_checkpoint(
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError("Graph-conditioned ACT metadata is invalid") from error
-    actual = metadata.get("graph_control")
-    if not isinstance(actual, Mapping):
+    if not isinstance(metadata.get("graph_control"), Mapping):
         raise ValueError("Graph-conditioned ACT binding is missing")
-    differing = [
-        name for name, value in expected_bindings.items() if actual.get(name) != value
-    ]
+    expected = _jsonable(dict(expected_metadata))
+    training_device = metadata.get("device")
+    actual_act_config = metadata.get("act_config")
+    if training_device not in {"cpu", "mps"} or not isinstance(
+        actual_act_config, Mapping
+    ):
+        raise ValueError("Graph-conditioned ACT checkpoint device metadata is invalid")
+    if actual_act_config.get("device") != training_device:
+        raise ValueError(
+            "Graph-conditioned ACT checkpoint metadata mismatch: act_config, device"
+        )
+    expected_act_config = expected.get("act_config")
+    if not isinstance(expected_act_config, Mapping):
+        raise ValueError("expected Graph-conditioned ACT config metadata is invalid")
+    expected["device"] = training_device
+    expected["act_config"] = {**expected_act_config, "device": training_device}
+    differing = sorted(
+        name
+        for name in set(metadata) | set(expected)
+        if metadata.get(name) != expected.get(name)
+    )
     if differing:
         raise ValueError(
-            "Graph-conditioned ACT checkpoint binding mismatch: "
+            "Graph-conditioned ACT checkpoint metadata mismatch: "
             + ", ".join(differing)
         )
     policy, preprocessor, postprocessor = load_act_runtime(source, device=device)
@@ -213,10 +284,17 @@ def _save_condition(
         device=device,
         extra={"graph_control": bindings},
     )
+    expected_metadata = expected_graph_checkpoint_metadata(
+        dataset_root=dataset_root,
+        features=bundle.dataset.features,
+        act_config=bundle.config,
+        device=device,
+        bindings=bindings,
+    )
     policy, preprocessor, _, _ = load_graph_act_checkpoint(
         checkpoint,
         device=device,
-        expected_bindings=bindings,
+        expected_metadata=expected_metadata,
     )
     policy.eval()
     with torch.no_grad():

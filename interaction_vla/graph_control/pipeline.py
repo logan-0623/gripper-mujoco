@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import gc
 import hashlib
 import json
@@ -7,14 +8,18 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import numpy as np
 import torch
 
 from interaction_vla.device import resolve_device
 from interaction_vla.graph_finetune.pipeline import load_finetune_checkpoint
-from interaction_vla.lerobot_bridge.act_smoke import load_act_dataset
+from interaction_vla.lerobot_bridge.act_smoke import (
+    _act_config,
+    _is_oom,
+    load_act_dataset,
+)
 from interaction_vla.lerobot_bridge.config import BridgeConfig, load_bridge_config
 from interaction_vla.lerobot_bridge.provenance import (
     sha256_file,
@@ -32,6 +37,7 @@ from .cache import (
     write_token_cache,
 )
 from .config import GraphControlConfig, load_graph_control_config
+from .dataset import GraphDatasetMetadata
 from .features import CurrentGraphFields, FrozenGraphRuntime, pack_oracle_current
 from .rollout import (
     FlatTokenProvider,
@@ -46,6 +52,7 @@ from .schema import CONDITIONS, TOKEN_DIM
 from .training import (
     ControlSplit,
     assert_checkpoint_split,
+    expected_graph_checkpoint_metadata,
     graph_checkpoint_bindings,
     load_control_split,
     load_graph_act_checkpoint,
@@ -84,6 +91,91 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+@contextmanager
+def _atomic_output_directory(destination: Path):
+    if destination.exists():
+        if any(destination.iterdir()):
+            raise FileExistsError(f"output directory must be empty: {destination}")
+        destination.rmdir()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(prefix=f".{destination.name}-", dir=destination.parent)
+    )
+    try:
+        yield staging
+        os.replace(staging, destination)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+
+
+def _validate_formal_epochs(config: GraphControlConfig, bridge: BridgeConfig) -> None:
+    expected = config.training.formal_epochs
+    if expected != 5 or bridge.act.epochs != expected:
+        raise ValueError(
+            "formal Graph-conditioned ACT training requires exactly 5 epochs"
+        )
+
+
+def _clear_mps_memory() -> None:
+    gc.collect()
+    if (
+        torch.backends.mps.is_available()
+        and hasattr(torch, "mps")
+        and hasattr(torch.mps, "empty_cache")
+    ):
+        try:
+            torch.mps.empty_cache()
+        except RuntimeError:
+            pass
+
+
+def _train_seed_with_fallback(
+    destination: Path,
+    *,
+    batch_size: int,
+    train_attempt: Callable[[int, Path], Mapping[str, object]],
+) -> dict[str, object]:
+    try:
+        report = dict(train_attempt(batch_size, destination))
+        report["batch_size"] = batch_size
+        return report
+    except RuntimeError as error:
+        if batch_size != 2 or not _is_oom(error):
+            raise
+    if destination.exists():
+        shutil.rmtree(destination)
+    _clear_mps_memory()
+    report = dict(train_attempt(1, destination))
+    report["fallback_from_batch_size"] = 2
+    report["batch_size"] = 1
+    return report
+
+
+def _publish_evaluation(
+    destination: Path,
+    *,
+    records: list[dict[str, object]],
+    report: Mapping[str, object],
+) -> dict[str, object]:
+    records_path = destination / "episodes.jsonl"
+    report_path = destination / "report.json"
+    final = {
+        **report,
+        "episodes_path": records_path,
+        "report_path": report_path,
+    }
+    with _atomic_output_directory(destination) as staging:
+        staging_records = staging / "episodes.jsonl"
+        with staging_records.open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(_jsonable(record), sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        _write_json_atomic(staging / "report.json", final)
+    return final
 
 
 def _load_source(bridge: BridgeConfig):
@@ -478,10 +570,9 @@ def _load_cache_matrix(
 def _train_from_config(path: str | Path, *, smoke: bool) -> dict[str, object]:
     config, bridge, split, source = _context(path)
     del source
+    if not smoke:
+        _validate_formal_epochs(config, bridge)
     destination = config.training.output_dir
-    if destination.exists() and any(destination.iterdir()):
-        raise FileExistsError(f"Graph-conditioned ACT output must be empty: {destination}")
-    destination.mkdir(parents=True, exist_ok=True)
     train_dataset = load_act_dataset(
         dataset_root=bridge.dataset.root,
         repo_id=bridge.dataset.repo_id,
@@ -492,32 +583,44 @@ def _train_from_config(path: str | Path, *, smoke: bool) -> dict[str, object]:
         repo_id=bridge.dataset.repo_id,
         episodes=list(split.episodes["validation"]),
     )
-    reports: dict[str, object] = {}
-    for seed in config.seeds:
-        reports[str(seed)] = train_paired_seed(
-            train_dataset=train_dataset,
-            validation_dataset=validation_dataset,
-            caches=_load_cache_matrix(config, bridge, split, seed),
-            seed=seed,
-            output_dir=destination / f"seed_{seed}",
-            dataset_root=bridge.dataset.root,
-            device=resolve_device(bridge.act.device),
-            architecture="configured",
-            batch_size=bridge.act.batch_size,
-            smoke_steps=config.training.smoke_steps if smoke else None,
-            initial_epochs=None if smoke else bridge.act.epochs,
-            maximum_epochs=None if smoke else bridge.act.epochs,
-            bridge_config=bridge,
-        )
-    report: dict[str, object] = {
-        "passed": True,
-        "mode": "smoke" if smoke else "formal",
-        "conditions": list(CONDITIONS),
-        "seeds": list(config.seeds),
-        "fixed_epochs": None if smoke else bridge.act.epochs,
-        "reports": reports,
-    }
-    _write_json_atomic(destination / "comparison.json", report)
+    with _atomic_output_directory(destination) as staging:
+        reports: dict[str, object] = {}
+        for seed in config.seeds:
+            caches = _load_cache_matrix(config, bridge, split, seed)
+
+            def train_attempt(
+                batch_size: int, seed_output: Path
+            ) -> Mapping[str, object]:
+                return train_paired_seed(
+                    train_dataset=train_dataset,
+                    validation_dataset=validation_dataset,
+                    caches=caches,
+                    seed=seed,
+                    output_dir=seed_output,
+                    dataset_root=bridge.dataset.root,
+                    device=resolve_device(bridge.act.device),
+                    architecture="configured",
+                    batch_size=batch_size,
+                    smoke_steps=config.training.smoke_steps if smoke else None,
+                    initial_epochs=None if smoke else config.training.formal_epochs,
+                    maximum_epochs=None if smoke else config.training.formal_epochs,
+                    bridge_config=bridge,
+                )
+
+            reports[str(seed)] = _train_seed_with_fallback(
+                staging / f"seed_{seed}",
+                batch_size=bridge.act.batch_size,
+                train_attempt=train_attempt,
+            )
+        report: dict[str, object] = {
+            "passed": True,
+            "mode": "smoke" if smoke else "formal",
+            "conditions": list(CONDITIONS),
+            "seeds": list(config.seeds),
+            "fixed_epochs": None if smoke else config.training.formal_epochs,
+            "reports": reports,
+        }
+        _write_json_atomic(staging / "comparison.json", report)
     return report
 
 
@@ -546,10 +649,26 @@ def _runtime_for_condition(
         config.training.output_dir / f"seed_{seed}" / condition / "checkpoint"
     )
     device = resolve_device(bridge.act.device)
+    from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
+
+    base_metadata = LeRobotDatasetMetadata(
+        bridge.dataset.repo_id, root=bridge.dataset.root
+    )
+    expected_metadata = expected_graph_checkpoint_metadata(
+        dataset_root=bridge.dataset.root,
+        features=GraphDatasetMetadata(base_metadata).features,
+        act_config=_act_config(
+            device=device,
+            architecture="configured",
+            bridge_config=bridge,
+        ),
+        device=device,
+        bindings=bindings,
+    )
     policy, preprocessor, postprocessor, _ = load_graph_act_checkpoint(
         checkpoint,
         device=device,
-        expected_bindings=bindings,
+        expected_metadata=expected_metadata,
     )
     graph_checkpoint = config.graph_checkpoint(condition, seed)
     if condition == "flat":
@@ -575,6 +694,12 @@ def _runtime_for_condition(
 
 
 def evaluate_from_config(path: str | Path) -> dict[str, object]:
+    preliminary = load_graph_control_config(path)
+    evaluation_dir = preliminary.training.output_dir / "evaluation"
+    if evaluation_dir.exists() and (
+        not evaluation_dir.is_dir() or any(evaluation_dir.iterdir())
+    ):
+        raise FileExistsError("Graph-conditioned ACT evaluation output already exists")
     config, bridge, split, source = _context(path)
     del source
     cases = paired_evaluation_cases(
@@ -607,28 +732,8 @@ def evaluate_from_config(path: str | Path) -> dict[str, object]:
             del runtime
             gc.collect()
     report = aggregate_rollouts(records)
-    evaluation_dir = config.training.output_dir / "evaluation"
-    report_path = evaluation_dir / "report.json"
-    records_path = evaluation_dir / "episodes.jsonl"
-    if report_path.exists() or records_path.exists():
-        raise FileExistsError("Graph-conditioned ACT evaluation output already exists")
-    evaluation_dir.mkdir(parents=True, exist_ok=True)
-    temporary = records_path.with_suffix(".jsonl.tmp")
-    try:
-        with temporary.open("w", encoding="utf-8") as handle:
-            for record in records:
-                handle.write(json.dumps(_jsonable(record), sort_keys=True) + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, records_path)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
-    final = {
-        **report,
-        "cases": len(cases),
-        "episodes_path": records_path,
-        "report_path": report_path,
-    }
-    _write_json_atomic(report_path, final)
-    return final
+    return _publish_evaluation(
+        evaluation_dir,
+        records=records,
+        report={**report, "cases": len(cases)},
+    )

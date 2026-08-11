@@ -11,10 +11,12 @@ from interaction_vla.graph_control.rollout import (
     FlatTokenProvider,
     OracleCurrentTokenProvider,
     PredictedTokenProvider,
+    _next_queued_action,
     aggregate_rollouts,
     augment_policy_observation,
     paired_evaluation_cases,
 )
+from interaction_vla.lerobot_bridge.rollout import ActionChunkQueue
 from interaction_vla.graph_control.schema import TOKEN_DIM, TOKEN_SLICES
 
 
@@ -160,6 +162,9 @@ def _record(condition: str, seed: int, case: str, success: bool) -> dict[str, ob
         "condition": condition,
         "policy_seed": seed,
         "case_id": case,
+        "environment_seed": 100 if case == "a" else 200,
+        "layout": "normal" if case == "a" else "crowded",
+        "object_count": 2 if case == "a" else 3,
         "success": success,
         "wrong_object_interaction": not success,
         "wrong_object_stable_grasp": False,
@@ -192,6 +197,18 @@ def test_rollout_aggregation_keeps_policy_seed_as_replication_unit() -> None:
     assert primary["success_rate"]["per_seed"] == {"0": 1.0, "1": 1.0, "2": 1.0}
     assert primary["success_rate"]["mean"] == 1.0
     assert report["replication_unit"] == "policy_seed"
+    case_deltas = report["paired_case_deltas"]
+    assert len(case_deltas) == 3 * 2 * 3 * 9
+    assert {
+        "policy_seed": 0,
+        "case_id": "a",
+        "environment_seed": 100,
+        "layout": "normal",
+        "object_count": 2,
+        "contrast": "predicted_reflect-flat",
+        "metric": "success_rate",
+        "delta": 1.0,
+    } in case_deltas
 
 
 def test_rollout_aggregation_rejects_unpaired_cases() -> None:
@@ -200,3 +217,37 @@ def test_rollout_aggregation_rejects_unpaired_cases() -> None:
     )]
     with pytest.raises(ValueError, match="paired"):
         aggregate_rollouts(records)
+
+
+@pytest.mark.parametrize("field", ["environment_seed", "layout", "object_count"])
+def test_rollout_aggregation_rejects_mismatched_case_identity(field: str) -> None:
+    records = [_record(condition, 0, "a", True) for condition in (
+        "flat", "predicted_random", "predicted_reflect", "oracle_current"
+    )]
+    records[-1][field] = {
+        "environment_seed": 999,
+        "layout": "crowded",
+        "object_count": 3,
+    }[field]
+
+    with pytest.raises(ValueError, match=field):
+        aggregate_rollouts(records)
+
+
+def test_graph_observation_is_built_only_when_action_chunk_refills(monkeypatch) -> None:
+    calls = []
+
+    def observation_factory():
+        calls.append(len(calls))
+        return {"observation.state": torch.zeros(10)}
+
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.rollout._predict_chunk",
+        lambda runtime, observation: np.zeros((8, 7), dtype=np.float32),
+    )
+    queue = ActionChunkQueue(chunk_size=8)
+
+    for _ in range(9):
+        _next_queued_action(queue, object(), observation_factory)
+
+    assert len(calls) == 2

@@ -30,10 +30,13 @@ class CacheConfig:
 class TrainingConfig:
     output_dir: Path
     smoke_steps: int = 1
+    formal_epochs: int = 5
 
     def __post_init__(self) -> None:
         if self.smoke_steps < 1:
             raise ValueError("training.smoke_steps must be positive")
+        if self.formal_epochs != 5:
+            raise ValueError("training.formal_epochs must be exactly 5")
 
 
 @dataclass(frozen=True)
@@ -153,7 +156,9 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
     training_raw = _mapping(raw["training"], "training")
     evaluation_raw = _mapping(raw["evaluation"], "evaluation")
     _require_keys(cache_raw, {"directory", "batch_size"}, "cache")
-    _require_keys(training_raw, {"output_dir", "smoke_steps"}, "training")
+    _require_keys(
+        training_raw, {"output_dir", "smoke_steps", "formal_epochs"}, "training"
+    )
     _require_keys(
         evaluation_raw,
         {"layouts", "object_counts", "cases_per_cell", "master_seed", "max_steps"},
@@ -174,6 +179,7 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
         training=TrainingConfig(
             output_dir=Path(training_raw["output_dir"]),
             smoke_steps=int(training_raw.get("smoke_steps", 1)),
+            formal_epochs=int(training_raw.get("formal_epochs", 5)),
         ),
         evaluation=EvaluationConfig(
             layouts=tuple(str(value) for value in evaluation_raw["layouts"]),

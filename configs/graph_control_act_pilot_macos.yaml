@@ -13,6 +13,7 @@ cache:
 training:
   output_dir: outputs/graph_control/act_pilot/runs
   smoke_steps: 1
+  formal_epochs: 5
 evaluation:
   layouts: [normal, crowded]
   object_counts: [2, 3]

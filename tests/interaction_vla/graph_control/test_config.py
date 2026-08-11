@@ -26,6 +26,7 @@ cache:
 training:
   output_dir: outputs/graph_control/act_pilot
   smoke_steps: 1
+  formal_epochs: 5
 evaluation:
   layouts: [normal, crowded]
   object_counts: [2, 3]
@@ -49,6 +50,7 @@ def test_config_locks_conditions_checkpoints_and_evaluation_cells(tmp_path: Path
         "oracle_current",
     )
     assert config.seeds == (0, 1, 2)
+    assert config.training.formal_epochs == 5
     assert config.graph_checkpoint("flat", 0) is None
     assert config.graph_checkpoint("predicted_random", 2) == Path(
         "outputs/graph_finetune/mujoco_pilot/random_init/fraction_1/seed_2/checkpoint.pt"
@@ -81,6 +83,7 @@ def test_config_rejects_incomplete_condition_matrix(tmp_path: Path) -> None:
         ("seeds: [0, 1, 2]", "seeds: [0, 0]", "seeds"),
         ("cases_per_cell: 5", "cases_per_cell: 0", "cases_per_cell"),
         ("layouts: [normal, crowded]", "layouts: [normal]", "layouts"),
+        ("formal_epochs: 5", "formal_epochs: 4", "formal_epochs"),
     ],
 )
 def test_config_rejects_invalid_pairing_values(
