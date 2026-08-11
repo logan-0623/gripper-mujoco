@@ -30,6 +30,41 @@ def test_source_fingerprint_ignores_python_cache_files(tmp_path) -> None:
     assert source_fingerprint(tmp_path) == baseline
 
 
+def test_source_fingerprint_ignores_graph_download_dependencies(tmp_path) -> None:
+    source = tmp_path / "interaction_vla" / "lerobot_bridge"
+    source.mkdir(parents=True)
+    (source / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    requirements = tmp_path / "requirements-lerobot-macos.txt"
+    lock = tmp_path / "requirements-lerobot-macos.lock.txt"
+    requirements.write_text(
+        "torch>=2.10,<2.11\nlerobot[dataset,training]==0.6.1\n",
+        encoding="utf-8",
+    )
+    lock.write_text(
+        "torch==2.10.0\nlerobot==0.6.1\n",
+        encoding="utf-8",
+    )
+    baseline = source_fingerprint(tmp_path)
+
+    requirements.write_text(
+        "torch>=2.10,<2.11\ndatasets==4.8.5\nsocksio==1.0.0\n"
+        "lerobot[dataset,training]==0.6.1\n",
+        encoding="utf-8",
+    )
+    lock.write_text(
+        "socksio==1.0.0\ntorch==2.10.0\nlerobot==0.6.1\n",
+        encoding="utf-8",
+    )
+
+    assert source_fingerprint(tmp_path) == baseline
+
+    lock.write_text(
+        "socksio==1.0.0\ntorch==2.11.0\nlerobot==0.6.1\n",
+        encoding="utf-8",
+    )
+    assert source_fingerprint(tmp_path) != baseline
+
+
 def test_standard_dataset_fingerprint_binds_video_but_not_bridge_metadata(
     tmp_path,
 ) -> None:

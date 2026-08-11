@@ -6,13 +6,14 @@ from pathlib import Path
 import platform
 import subprocess
 import sys
-from typing import Iterable
+from typing import Callable, Iterable
 
 
 _EXCLUDED_NAMES = {"INCOMPLETE", ".DS_Store"}
 _EXCLUDED_SOURCE_DIRECTORIES = {"__pycache__"}
 _EXCLUDED_SOURCE_SUFFIXES = {".pyc", ".pyo"}
 _EXCLUDED_ACT_DIRECTORIES = {"act", "act_smoke", "act_pilot", "checkpoints"}
+_NON_ACT_REQUIREMENTS = {"datasets", "socksio"}
 
 
 def sha256_file(path: str | Path) -> str:
@@ -26,17 +27,39 @@ def sha256_file(path: str | Path) -> str:
 def _fingerprint_files(
     root: Path,
     files: Iterable[Path],
+    *,
+    content_filter: Callable[[Path, bytes], bytes] | None = None,
 ) -> str:
     digest = hashlib.sha256()
     for path in sorted(files, key=lambda value: value.relative_to(root).as_posix()):
         relative = path.relative_to(root).as_posix().encode("utf-8")
-        size = path.stat().st_size
-        content_hash = bytes.fromhex(sha256_file(path))
+        if content_filter is None:
+            size = path.stat().st_size
+            content_hash = bytes.fromhex(sha256_file(path))
+        else:
+            content = content_filter(path, path.read_bytes())
+            size = len(content)
+            content_hash = hashlib.sha256(content).digest()
         digest.update(len(relative).to_bytes(8, "big"))
         digest.update(relative)
         digest.update(size.to_bytes(8, "big"))
         digest.update(content_hash)
     return digest.hexdigest()
+
+
+def _act_source_content(path: Path, content: bytes) -> bytes:
+    if not path.name.startswith("requirements-lerobot-macos"):
+        return content
+    retained: list[bytes] = []
+    for line in content.splitlines(keepends=True):
+        requirement = line.strip().split(b";", 1)[0]
+        name = requirement
+        for separator in (b"[", b"<", b">", b"=", b"!", b"~"):
+            name = name.split(separator, 1)[0]
+        if name.decode("utf-8").lower().replace("_", "-") in _NON_ACT_REQUIREMENTS:
+            continue
+        retained.append(line)
+    return b"".join(retained)
 
 
 def fingerprint_tree(root: str | Path) -> str:
@@ -166,4 +189,4 @@ def source_fingerprint(root: str | Path = ".") -> str:
         path = repository / name
         if path.is_file():
             files.append(path)
-    return _fingerprint_files(repository, files)
+    return _fingerprint_files(repository, files, content_filter=_act_source_content)
