@@ -93,8 +93,9 @@ Graph checkpoints, feature layouts, or source code.
 
 The engineering smoke performs one optimizer update and checkpoint reload for every
 condition on the pilot dataset. The formal pilot trains 4 conditions x 3 seeds with
-the existing ACT hyperparameters: batch size 2, five initial epochs, and the current
-bounded validation-extension rule.
+the existing ACT hyperparameters: batch size 2 and exactly five epochs. The baseline's
+condition-specific validation-extension rule is disabled here because it could give
+one representation more optimizer updates than another and break the paired comparison.
 
 Closed-loop evaluation uses a fixed paired seed schedule crossing normal/crowded
 layouts and 2/3 objects. Every condition receives the identical environment case.

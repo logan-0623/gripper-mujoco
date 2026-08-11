@@ -142,7 +142,7 @@ NumPy, MuJoCo, PyYAML, pytest.
 
 - [ ] Write failing pairing tests: every condition for a seed has the same initial
   shared ACT state hash, train/validation rows, sample order, optimizer settings,
-  epoch count, and early-extension decision.
+  fixed epoch count.
 - [ ] Add a regression test that the graph fine-tune split manifest is used directly;
   the legacy `pilot_episode_split` result must cause a mismatch error.
 - [ ] Add checkpoint tests binding condition, cache hash, graph checkpoint hash,
@@ -150,7 +150,7 @@ NumPy, MuJoCo, PyYAML, pytest.
   must refuse any altered binding.
 - [ ] Add a one-update save/reload test for all four conditions and a formal comparison
   aggregation test across three seeds.
-- [ ] Implement paired loaders, seed reset, training, validation, bounded extension,
+- [ ] Implement paired loaders, seed reset, fixed-epoch training, validation,
   atomic checkpoint/report writes, and nonempty output refusal. Reuse existing ACT
   update and OOM fallback behavior instead of duplicating it.
 - [ ] Re-run focused training tests plus existing ACT training tests and commit:

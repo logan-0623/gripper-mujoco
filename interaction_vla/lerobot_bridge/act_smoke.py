@@ -513,6 +513,13 @@ def _optimizer_update(
         )
     else:
         sources = []
+    row_indices = raw_batch.get("index")
+    if isinstance(row_indices, torch.Tensor):
+        source_rows = [
+            int(value) for value in row_indices.detach().cpu().reshape(-1)
+        ]
+    else:
+        source_rows = []
     return {
         "loss": float(loss.detach().item()),
         "l1_loss": _loss_value(loss_dict, "l1_loss"),
@@ -520,6 +527,7 @@ def _optimizer_update(
         "gradient_norm": float(gradient_norm.detach().item()),
         "wall_time_s": time.perf_counter() - started,
         "source_episode_indices": sources,
+        "source_row_indices": source_rows,
     }
 
 
