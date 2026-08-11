@@ -14,7 +14,7 @@ Graph 的设计约束是 task-conditioned、object-centric、坐标不变、时�
 
 ## 当前项目包含什么
 
-项目现在有两条可运行链路：
+项目现在有三条可运行链路：
 
 - **Franka 接触物理 Graph/Flat 基线**：完整 Panda、双指夹爪、MuJoCo 接触、7D
   Cartesian action、H=8 action chunk、recovery 数据、paired evaluation 和
@@ -23,10 +23,12 @@ Graph 的设计约束是 task-conditioned、object-centric、坐标不变、时�
 - **LeRobot/VLA bridge**：标准 `LeRobotDataset`、agent RGB、wrist RGB、10D
   末端状态、7D action、language task metadata、本地 Hugging Face checkpoint/data
   目录、ACT smoke 训练、MuJoCo 闭环 rollout 和双视角 GIF。
+- **ReflectVLM Graph 预训练**：从 RGB 与历史动作预测 task-conditioned semantic
+  graph，包含目标、手持物、对象状态/朝向、依赖关系、阶段和下一关系目标。
 
 TC-TIG interaction graph 标签保存在 teacher sidecar 中，不会混入标准 policy batch。
-当前 ACT 不使用语言；π0、SmolVLA、视觉估计 Graph 和 Hugging Face Hub upload
-尚未接入。不要把 500-step ACT smoke 当作任务性能结果。
+当前 ACT 不使用语言；ReflectVLM estimator 尚未接入 MuJoCo/ACT；π0、SmolVLA 和
+Hugging Face Hub upload 尚未接入。不要把 500-step ACT smoke 当作任务性能结果。
 
 ![Franka contact expert](docs/media/franka_contact_expert.gif)
 
@@ -226,23 +228,56 @@ outputs/lerobot/act_smoke/rollout.gif       双视角动画
 `passed=true` 表示工程链路通过；`task_success=false` 或 `timeout` 表示 smoke 模型没有
 学会任务，不能写成成功率证据。
 
+## 实验 3：ReflectVLM Graph 预训练
+
+这一步只训练视觉语义 Graph estimator，不把 ReflectVLM 的文本动作伪装成连续机器人
+action，也不修改 ACT。数据含 2–6 个任务物体；模型使用六槽位加 `object_mask`。
+首次运行会从 Hugging Face 下载数据并写入本地缓存。
+
+先跑 96 条数据的一轮 smoke：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.graph_pretrain train \
+  --config configs/reflectvlm_graph_pretrain_smoke_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_pretrain evaluate \
+  --config configs/reflectvlm_graph_pretrain_smoke_macos.yaml \
+  --checkpoint outputs/graph_pretrain/reflectvlm_smoke/checkpoint.pt \
+  --partition test
+```
+
+smoke 通过后再跑完整数据：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.graph_pretrain inspect \
+  --config configs/reflectvlm_graph_pretrain_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_pretrain train \
+  --config configs/reflectvlm_graph_pretrain_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_pretrain evaluate \
+  --config configs/reflectvlm_graph_pretrain_macos.yaml \
+  --checkpoint outputs/graph_pretrain/reflectvlm/checkpoint.pt \
+  --partition test
+```
+
+输出位于 `outputs/graph_pretrain/reflectvlm/`：checkpoint、训练摘要、防泄漏 split
+manifest 和 held-out Graph 指标。该 checkpoint 是后续 MuJoCo Graph fine-tuning 的
+初始化，不是可直接 rollout 的控制策略。
+
 ## 之后应该跑哪些实验
 
-按下面顺序推进，避免一次改变 perception、representation 和 policy backbone 三个变量：
+Graph/Flat 主实验完成后，按下面顺序推进：
 
-1. **完成物理 seed-0 sanity**：先证明 Flat 与 Graph 都具备基本接触、抓取和 transport
-   能力。
-2. **运行 OOD + edge-shuffle**：检查 Graph 的收益是否来自正确关系，而不是参数量。
-3. **冻结三随机种子主实验**：新建 `[0,1,2]` 配置，完整运行 ID、held-out recovery、
-   count OOD 和 crowded OOD，报告 paired Graph-minus-Flat delta。
+1. **ReflectVLM Graph pretraining**：先用 smoke 配置验证，再运行完整配置并保存 held-out
+   Graph 指标。
+2. **MuJoCo Graph fine-tuning**：把预训练 checkpoint 映射到 RGB、wrist RGB、末端状态和
+   语言输入；用同一 MuJoCo split 对比随机初始化与预训练初始化。
+3. **LeRobot continuous-control training**：冻结已验证的 Graph contract，再比较 Flat、
+   oracle Graph 和 predicted Graph，最后扩展到 ACT、π0、SmolVLA。
 4. **Graph representation ablation**：分别验证 task entity selection、gripper-target、
    target-receptacle、distractor risk、interaction phase 和 next-relation goal。当前只有
    Graph/Flat 与 edge-shuffle 已实现，其余消融需要先实现独立配置和 encoder 开关。
-5. **视觉 Graph estimator**：固定已经验证的 Graph schema，再从 agent RGB、wrist RGB、
-   10D 末端状态和语言预测实体、关系、phase 与 next-relation goal；不要输入完整 MuJoCo
-   state。
-6. **VLA backbone 对比**：在同一 LeRobotDataset、同一 Graph estimator 输出和同一评估
-   cases 上比较 ACT、π0、SmolVLA。当前仓库只实现 ACT，π0/SmolVLA 接入是后续工作。
 
 ## 结果边界
 

@@ -1,0 +1,23 @@
+dataset:
+  repo_id: yunhaif/ReflectVLM-data-expert
+  source_split: train
+  split_seed: 0
+  split_ratios: [0.8, 0.1, 0.1]
+  max_rows: 96
+
+model:
+  image_size: 64
+  max_history_tokens: 32
+  image_embedding_dim: 64
+  text_embedding_dim: 32
+  graph_embedding_dim: 64
+
+training:
+  output_dir: outputs/graph_pretrain/reflectvlm_smoke
+  device: auto
+  batch_size: 8
+  num_workers: 0
+  epochs: 1
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  seed: 0

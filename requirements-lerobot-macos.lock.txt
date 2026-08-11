@@ -69,6 +69,7 @@ sentry-sdk==2.66.1
 setuptools==81.0.0
 six==1.17.0
 smmap==5.0.3
+socksio==1.0.0
 sympy==1.14.0
 termcolor==3.3.0
 toml==0.10.2

@@ -20,7 +20,7 @@
 
 - [ ] **Step 1: Write failing parser and split tests**
 
-Create a representative row with four bricks, status strings, upright flags, dependency
+Create a representative row with four task objects, status strings, upright flags, dependency
 tuples, action history, and a `pick up yellow` oracle action. Assert that
 `parse_reflect_metadata` returns ordered state labels, target/in-hand slots, adjacency,
 phase, and relation goal IDs. Add malformed-action and `set()` cases. Build at least six
@@ -58,8 +58,9 @@ ACTION_GOALS = {
 ```
 
 Use `ast.literal_eval`, with explicit handling for `None`, JSON `null`, and `set()`.
-Order `brick_2` through `brick_5`, exclude the board, map dependency IDs to a 4x4
-directed matrix, and return the normalized history separately from graph labels.
+Order up to six task objects by source brick index, exclude `brick_1` (the board), map
+dependency IDs to a padded 6x6 directed matrix, emit a six-slot `object_mask`, and
+return the normalized history separately from graph labels.
 
 Implement deterministic group allocation by sorting unique `(board_id, env_seed)` keys
 with SHA-256 of the split seed and allocating non-empty train/validation/test group sets.
@@ -106,8 +107,8 @@ Run the Task 1 test file and expect all tests to pass.
 
 - [ ] **Step 1: Write failing shape and optimizer tests**
 
-Construct a two-example batch and assert output shapes for target `(B,4)`, in-hand
-`(B,5)`, states `(B,4,5)`, upright `(B,4,3)`, dependencies `(B,4,4)`, phase `(B,4)`,
+Construct a two-example batch and assert output shapes for target `(B,6)`, in-hand
+`(B,7)`, states `(B,6,5)`, upright `(B,6,3)`, dependencies `(B,6,6)`, phase `(B,4)`,
 operator `(B,5)`, predicate `(B,7)`, and embedding `(B,D)`. Assert a complete loss dict
 is finite, backward produces non-zero gradients, and one optimizer update changes a
 parameter.
@@ -139,6 +140,7 @@ Run the model tests and expect all tests to pass.
 - Create: `interaction_vla/graph_pretrain/config.py`
 - Create: `interaction_vla/graph_pretrain/pipeline.py`
 - Create: `configs/reflectvlm_graph_pretrain_macos.yaml`
+- Create: `configs/reflectvlm_graph_pretrain_smoke_macos.yaml`
 - Test: `tests/interaction_vla/graph_pretrain/test_pipeline.py`
 
 - [ ] **Step 1: Write failing config and synthetic end-to-end tests**

@@ -33,21 +33,23 @@ and resets from one board/environment group stay in one partition.
 
 ## Canonical Semantic Graph Target
 
-Each example produces a fixed, serializable target over four task objects:
+Each example produces a fixed, serializable target over at most six task objects. Rows
+with fewer objects use padded slots plus an explicit `object_mask[6]`:
 
 - `target_index`: object operated on by the next oracle action;
-- `in_hand_index`: one of four objects or `none`;
-- `state_ids[4]`: `unknown`, `ready`, `blocked`, `bad`, or `done`;
-- `upright_ids[4]`: `unknown`, `false`, or `true`;
-- `dependency[4,4]`: directed task dependency adjacency;
+- `in_hand_index`: one of six object slots or `none`;
+- `state_ids[6]`: `unknown`, `ready`, `blocked`, `bad`, or `done`;
+- `upright_ids[6]`: `unknown`, `false`, or `true`;
+- `dependency[6,6]`: directed task dependency adjacency;
 - `phase_id`: `pick`, `place`, `reorient`, or `insert`;
 - `goal_operator_id` and `goal_predicate_id`: values drawn from the existing teacher
   schema's relation-goal vocabularies.
 
-The adapter orders physical objects by their source brick index and excludes the gray
-board from the four object slots. The graph is task-conditioned: the next oracle
-action supplies labels, never model inputs. This semantic target intentionally omits
-poses, contact forces, simulator success, and full environment state.
+The adapter orders physical objects by their source brick index and excludes
+`brick_1` (the board) from the six object slots. The graph is task-conditioned: the
+next oracle action supplies labels, never model inputs. This semantic target
+intentionally omits poses, contact forces, simulator success, and full environment
+state.
 
 ## Model
 

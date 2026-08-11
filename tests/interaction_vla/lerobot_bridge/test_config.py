@@ -26,6 +26,16 @@ def test_lerobot_environment_pairs_torch_2_10_with_torchcodec_0_10() -> None:
     assert "torchcodec==0.10.0" in lock.splitlines()
 
 
+def test_lerobot_environment_pins_reflectvlm_dataset_runtime() -> None:
+    requirements = Path("requirements-lerobot-macos.txt").read_text(encoding="utf-8")
+    lock = Path("requirements-lerobot-macos.lock.txt").read_text(encoding="utf-8")
+
+    assert "datasets==4.8.5" in requirements.splitlines()
+    assert "datasets==4.8.5" in lock.splitlines()
+    assert "socksio==1.0.0" in requirements.splitlines()
+    assert "socksio==1.0.0" in lock.splitlines()
+
+
 def test_smoke_config_locks_the_model_visible_contract() -> None:
     config = load_bridge_config("configs/lerobot_act_smoke_macos.yaml")
 
