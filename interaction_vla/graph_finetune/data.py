@@ -295,7 +295,10 @@ def prepare_corpus(
         "frame_index",
         "task_index",
     }
-    missing = required_columns - set(columns)
+    column_names = getattr(columns, "column_names", None)
+    if column_names is None:
+        column_names = columns.keys()
+    missing = required_columns - set(column_names)
     if missing:
         raise ValueError("source metadata is missing: " + ", ".join(sorted(missing)))
     lengths = {len(columns[name]) for name in required_columns}

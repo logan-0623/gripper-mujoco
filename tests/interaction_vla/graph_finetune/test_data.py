@@ -219,6 +219,38 @@ def test_prepare_corpus_does_not_decode_images() -> None:
     assert sum(len(values) for values in corpus.splits.values()) == 5
 
 
+def test_prepare_corpus_accepts_huggingface_dataset_columns() -> None:
+    records = manifest_records()
+    source = SyntheticSource(records)
+
+    class DatasetColumns:
+        def __init__(self, columns):
+            self.columns = columns
+            self.column_names = list(columns)
+
+        def __len__(self):
+            return len(next(iter(self.columns.values())))
+
+        def __getitem__(self, name):
+            return self.columns[name]
+
+        def __iter__(self):
+            for index in range(len(self)):
+                yield {name: values[index] for name, values in self.columns.items()}
+
+    source.hf_dataset = DatasetColumns(source.hf_dataset)
+
+    corpus = prepare_corpus(
+        source,
+        records,
+        sidecars(records),
+        split_seed=3,
+        split_ratios=(0.6, 0.2, 0.2),
+    )
+
+    assert len(corpus.states) == len(source)
+
+
 def test_dataset_aligns_teacher_by_episode_and_frame_and_drops_action() -> None:
     records = manifest_records()
     source = SyntheticSource(records)
