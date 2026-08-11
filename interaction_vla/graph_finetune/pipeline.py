@@ -17,8 +17,10 @@ from interaction_vla.device import resolve_device
 from interaction_vla.graph_pretrain.reflectvlm import Vocabulary
 from interaction_vla.graph_pretrain.schema import SCHEMA_VERSION as REFLECT_SCHEMA
 from interaction_vla.lerobot_bridge.teacher_schema import SCHEMA_VERSION as TEACHER_SCHEMA
+from interaction_vla.lerobot_bridge.sidecar import load_teacher_sidecar
+from interaction_vla.lerobot_bridge.validator import validate_dataset_root
 
-from .config import GraphFinetuneConfig, ModelConfig
+from .config import GraphFinetuneConfig, ModelConfig, load_graph_finetune_config
 from .data import (
     GraphNormalization,
     MuJoCoGraphDataset,
@@ -187,6 +189,44 @@ def inspect_with_source(
     if overlap:
         raise ValueError("episode split leaked across partitions")
     return report
+
+
+def _load_local_inputs(
+    config: GraphFinetuneConfig,
+) -> tuple[Any, list[dict[str, object]], dict[int, dict[str, np.ndarray]]]:
+    validate_dataset_root(
+        config.dataset.root,
+        repo_id=config.dataset.repo_id,
+        allow_incomplete=False,
+        require_bridge_metadata=True,
+        replay=False,
+        bridge_config=None,
+    )
+    from lerobot.datasets import LeRobotDataset
+
+    source = LeRobotDataset(config.dataset.repo_id, root=config.dataset.root)
+    manifest_path = config.dataset.root / "meta" / "teacher_manifest.json"
+    with manifest_path.open("r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    if not isinstance(manifest, list) or not all(
+        isinstance(record, dict) for record in manifest
+    ):
+        raise ValueError("teacher manifest must be a JSON list of objects")
+    records = [dict(record) for record in manifest]
+    sidecars = {
+        int(record["episode_index"]): load_teacher_sidecar(
+            config.dataset.root / str(record["path"]),
+            expected_sha256=str(record["sha256"]),
+        )
+        for record in records
+    }
+    return source, records, sidecars
+
+
+def inspect_from_config(path: str | Path) -> dict[str, Any]:
+    config = load_graph_finetune_config(path)
+    source, records, sidecars = _load_local_inputs(config)
+    return inspect_with_source(config, source, records, sidecars)
 
 
 def _dataset(
@@ -675,3 +715,94 @@ def compare_with_source(
     }
     _write_json_atomic(output_dir / "comparison.json", comparison)
     return comparison
+
+
+def compare_from_config(path: str | Path) -> dict[str, Any]:
+    config = load_graph_finetune_config(path)
+    source, records, sidecars = _load_local_inputs(config)
+    return compare_with_source(config, source, records, sidecars)
+
+
+def evaluate_with_source(
+    config: GraphFinetuneConfig,
+    source: Any,
+    records: Sequence[Mapping[str, object]],
+    sidecars: Mapping[int, Mapping[str, np.ndarray]],
+    checkpoint: str | Path,
+    *,
+    partition: str = "test",
+) -> dict[str, Any]:
+    if partition not in {"validation", "test"}:
+        raise ValueError("evaluation partition must be validation or test")
+    device = resolve_device(config.training.device)
+    model, vocabulary, payload = load_finetune_checkpoint(checkpoint, device=device)
+    if payload.get("repo_id") != config.dataset.repo_id:
+        raise ValueError("checkpoint dataset repo_id does not match config")
+    if int(payload.get("split_seed", -1)) != config.dataset.split_seed:
+        raise ValueError("checkpoint split seed does not match config")
+    if payload.get("teacher_schema_version") != TEACHER_SCHEMA:
+        raise ValueError("checkpoint teacher schema does not match current contract")
+    if payload.get("model_config") != asdict(config.model):
+        raise ValueError("checkpoint model config does not match evaluation config")
+    corpus = _prepare(config, source, records, sidecars)
+    normalization_raw = payload.get("normalization")
+    selected_raw = payload.get("selected_train_episodes")
+    if not isinstance(normalization_raw, Mapping) or not isinstance(
+        selected_raw, (list, tuple)
+    ):
+        raise ValueError("checkpoint training corpus metadata is missing")
+    training = TrainingCorpus(
+        corpus=corpus,
+        selected_train_episodes=tuple(int(value) for value in selected_raw),
+        vocabulary=vocabulary,
+        normalization=GraphNormalization(**normalization_raw),
+    )
+    dataset, loader = _loader(
+        config,
+        training,
+        partition,
+        shuffle=False,
+        seed=int(payload.get("seed", 0)),
+    )
+    expected_rows = payload.get(f"{partition}_row_indices")
+    if list(dataset.row_indices) != expected_rows:
+        raise ValueError("checkpoint evaluation rows do not match current dataset")
+    evaluation = _evaluate_loader(
+        model,
+        loader,
+        device=device,
+        normalization=training.normalization,
+    )
+    evaluation.update(
+        {
+            "passed": True,
+            "schema_version": SCHEMA_VERSION,
+            "initialization": payload.get("initialization"),
+            "fraction": payload.get("fraction"),
+            "seed": payload.get("seed"),
+            "checkpoint": Path(checkpoint).as_posix(),
+            "partition": partition,
+            "test_row_indices": list(dataset.row_indices),
+        }
+    )
+    output_path = Path(checkpoint).parent / f"evaluation_{partition}.json"
+    _write_json_atomic(output_path, evaluation)
+    return evaluation
+
+
+def evaluate_from_config(
+    path: str | Path,
+    checkpoint: str | Path,
+    *,
+    partition: str = "test",
+) -> dict[str, Any]:
+    config = load_graph_finetune_config(path)
+    source, records, sidecars = _load_local_inputs(config)
+    return evaluate_with_source(
+        config,
+        source,
+        records,
+        sidecars,
+        checkpoint,
+        partition=partition,
+    )

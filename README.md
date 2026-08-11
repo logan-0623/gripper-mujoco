@@ -249,6 +249,10 @@ action，也不修改 ACT。数据含 2–6 个任务物体；模型使用六槽
 smoke 通过后再跑完整数据：
 
 ```bash
+export HF_HOME=/tmp/gripper-mujoco-hf-cache
+export HF_HUB_OFFLINE=1
+
+
 .venv-lerobot/bin/python -m interaction_vla.graph_pretrain inspect \
   --config configs/reflectvlm_graph_pretrain_macos.yaml
 
@@ -264,6 +268,41 @@ smoke 通过后再跑完整数据：
 输出位于 `outputs/graph_pretrain/reflectvlm/`：checkpoint、训练摘要、防泄漏 split
 manifest 和 held-out Graph 指标。该 checkpoint 是后续 MuJoCo Graph fine-tuning 的
 初始化，不是可直接 rollout 的控制策略。
+
+## 实验 4：MuJoCo Graph fine-tuning
+
+先用已有的 5-episode LeRobotDataset 跑配对 smoke。两组模型使用相同架构、数据 split
+和随机种子，只改变是否加载 ReflectVLM Graph 初始化：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.graph_finetune inspect \
+  --config configs/mujoco_graph_finetune_smoke_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_finetune compare \
+  --config configs/mujoco_graph_finetune_smoke_macos.yaml
+```
+
+输出位于 `outputs/graph_finetune/mujoco_smoke/`。smoke 只验证数据、迁移、训练和评估
+链路；5 个 episode 不构成迁移收益或语言泛化的科学证据。
+
+正式 pilot 先采集并验证 50 个 episode，再运行 3 个数据比例、3 个随机种子的配对实验：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge collect \
+  --config configs/lerobot_act_pilot_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge validate \
+  --config configs/lerobot_act_pilot_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_finetune inspect \
+  --config configs/mujoco_graph_finetune_pilot_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_finetune compare \
+  --config configs/mujoco_graph_finetune_pilot_macos.yaml
+```
+
+策略输入严格限制为 agent RGB、wrist RGB、10D 末端状态和语言。MuJoCo action、物体
+pose、contact、depth、segmentation 与 teacher Graph 都不会进入模型输入。
 
 ## 之后应该跑哪些实验
 

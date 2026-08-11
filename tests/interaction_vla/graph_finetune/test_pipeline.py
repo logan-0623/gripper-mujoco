@@ -10,6 +10,7 @@ import torch
 from interaction_vla.graph_finetune.config import load_graph_finetune_config
 from interaction_vla.graph_finetune.pipeline import (
     compare_with_source,
+    evaluate_with_source,
     inspect_with_source,
     load_finetune_checkpoint,
     require_finite_loss,
@@ -122,6 +123,20 @@ def test_synthetic_paired_comparison_writes_reloadable_artifacts(
     assert json.loads((output / "comparison.json").read_text())["passed"] is True
     assert (output / "split_manifest.json").is_file()
 
+    evaluation = evaluate_with_source(
+        config,
+        source,
+        records,
+        sidecars(records),
+        Path(run["reflectvlm_init"]["checkpoint"]),
+        partition="test",
+    )
+    assert evaluation["test_examples"] == 3
+    assert evaluation["initialization"] == "reflectvlm_init"
+    assert evaluation["test_row_indices"] == run["reflectvlm_init"][
+        "test_row_indices"
+    ]
+
 
 def test_compare_refuses_nonempty_output_directory(tmp_path: Path) -> None:
     config = configured(tmp_path)
@@ -141,3 +156,21 @@ def test_compare_refuses_nonempty_output_directory(tmp_path: Path) -> None:
 def test_require_finite_loss_rejects_nan() -> None:
     with pytest.raises(FloatingPointError, match="non-finite"):
         require_finite_loss(torch.tensor(float("nan")))
+
+
+def test_repository_configs_lock_smoke_and_pilot_matrices() -> None:
+    smoke = load_graph_finetune_config(
+        "configs/mujoco_graph_finetune_smoke_macos.yaml"
+    )
+    pilot = load_graph_finetune_config(
+        "configs/mujoco_graph_finetune_pilot_macos.yaml"
+    )
+
+    assert smoke.dataset.split_ratios == (0.6, 0.2, 0.2)
+    assert smoke.training.epochs == 1
+    assert smoke.training.fractions == (1.0,)
+    assert smoke.training.seeds == (0,)
+    assert pilot.dataset.root == Path("outputs/lerobot/franka_lerobot_act_pilot")
+    assert pilot.dataset.split_ratios == (0.8, 0.1, 0.1)
+    assert pilot.training.fractions == (0.1, 0.25, 1.0)
+    assert pilot.training.seeds == (0, 1, 2)
