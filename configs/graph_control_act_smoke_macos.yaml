@@ -1,0 +1,22 @@
+bridge_config: configs/lerobot_act_pilot_macos.yaml
+split_manifest: outputs/graph_finetune/mujoco_pilot/split_manifest.json
+graph_runs_root: outputs/graph_finetune/mujoco_pilot
+conditions:
+  - flat
+  - predicted_random
+  - predicted_reflect
+  - oracle_current
+seeds: [0]
+cache:
+  directory: outputs/graph_control/act_smoke/cache
+  batch_size: 16
+training:
+  output_dir: outputs/graph_control/act_smoke/runs
+  smoke_steps: 1
+evaluation:
+  layouts: [normal, crowded]
+  object_counts: [2, 3]
+  cases_per_cell: 1
+  master_seed: 2057736129
+  max_steps: 180
+

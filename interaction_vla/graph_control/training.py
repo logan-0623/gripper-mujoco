@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
+from interaction_vla.graph_finetune.schema import SCHEMA_VERSION as GRAPH_SCHEMA_VERSION
 from interaction_vla.lerobot_bridge.act_smoke import (
     ACTION_CODEC_VERSION,
     STATE_CODEC_VERSION,
@@ -41,6 +42,7 @@ class ControlSplit:
     path: Path
     episodes: dict[str, tuple[int, ...]]
     rows: dict[str, tuple[int, ...]]
+    split_seed: int
     sha256: str
 
 
@@ -73,14 +75,22 @@ def load_control_split(path: str | Path) -> ControlSplit:
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError(f"invalid Graph fine-tune split manifest: {source}") from error
     if not isinstance(payload, Mapping) or set(payload) != {
+        "schema_version",
+        "split_seed",
         "episode_indices",
         "row_indices",
     }:
         raise ValueError("Graph fine-tune split manifest fields are incompatible")
+    if payload["schema_version"] != GRAPH_SCHEMA_VERSION:
+        raise ValueError("Graph fine-tune split schema is incompatible")
+    split_seed = int(payload["split_seed"])
+    if split_seed < 0:
+        raise ValueError("Graph fine-tune split seed must be non-negative")
     return ControlSplit(
         path=source,
         episodes=_partition_mapping(payload["episode_indices"], "episode_indices"),
         rows=_partition_mapping(payload["row_indices"], "row_indices"),
+        split_seed=split_seed,
         sha256=sha256_file(source),
     )
 
@@ -98,6 +108,7 @@ def assert_checkpoint_split(
         "random_init" if condition == "predicted_random" else "reflectvlm_init"
     )
     expected = {
+        "split_seed": split.split_seed,
         "initialization": expected_initialization,
         "fraction": 1.0,
         "seed": int(seed),
@@ -138,6 +149,12 @@ def _graph_bindings(condition: str, seed: int, cache: TokenCache) -> dict[str, o
         "state_codec_version": STATE_CODEC_VERSION,
         "action_codec_version": ACTION_CODEC_VERSION,
     }
+
+
+def graph_checkpoint_bindings(
+    condition: str, seed: int, cache: TokenCache
+) -> dict[str, object]:
+    return _graph_bindings(condition, seed, cache)
 
 
 def load_graph_act_checkpoint(

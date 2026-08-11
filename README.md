@@ -1,47 +1,30 @@
 # Interaction-Structured VLA
 
-这个项目研究一个问题：**什么样的 interaction graph 对机器人策略真正有价值？**
+本项目研究：**什么样的 interaction graph 对机器人连续控制策略真正有价值？**
 
-当前 Graph 不复制完整 MuJoCo state，而只表达：
+Graph 不复制完整 MuJoCo state，只编码任务实体、当前交互关系和下一步应改变的关系。
+它满足 task-conditioned、object-centric、坐标不变、时序一致，并可由 agent RGB、
+wrist RGB、10D 末端状态和任务语言估计。
 
-1. 哪些实体与任务相关；
-2. 它们当前处于什么交互关系；
-3. 下一步应该改变哪一种关系。
+当前已经接通：
 
-Graph 的设计约束是 task-conditioned、object-centric、坐标不变、时序一致，且最终
-能够从 RGB、腕部 RGB、末端状态和语言中估计。它主要回答目标物体、夹爪—目标、
-目标—容器、干扰物和交互阶段这五类问题。
+- Franka MuJoCo 接触物理的 Graph vs Flat 主实验；
+- 标准 `LeRobotDataset`、双 RGB、10D state、7D continuous action 和 ACT；
+- ReflectVLM Graph pretraining；
+- ReflectVLM → MuJoCo Graph fine-tuning；
+- frozen predicted Graph → ACT continuous-control 四条件对照。
 
-## 当前项目包含什么
-
-项目现在有三条可运行链路：
-
-- **Franka 接触物理 Graph/Flat 基线**：完整 Panda、双指夹爪、MuJoCo 接触、7D
-  Cartesian action、H=8 action chunk、recovery 数据、paired evaluation 和
-  edge-shuffle 消融。Flat 与 Graph 共用数据、时序头、controller 和训练预算，主要
-  变量只有 encoder。
-- **LeRobot/VLA bridge**：标准 `LeRobotDataset`、agent RGB、wrist RGB、10D
-  末端状态、7D action、language task metadata、本地 Hugging Face checkpoint/data
-  目录、ACT smoke 训练、MuJoCo 闭环 rollout 和双视角 GIF。
-- **ReflectVLM Graph 预训练**：从 RGB 与历史动作预测 task-conditioned semantic
-  graph，包含目标、手持物、对象状态/朝向、依赖关系、阶段和下一关系目标。
-
-TC-TIG interaction graph 标签保存在 teacher sidecar 中，不会混入标准 policy batch。
-当前 ACT 不使用语言；ReflectVLM estimator 尚未接入 MuJoCo/ACT；π0、SmolVLA 和
-Hugging Face Hub upload 尚未接入。不要把 500-step ACT smoke 当作任务性能结果。
+π0、SmolVLA 和多语言泛化尚未实现。当前数据只有一个任务指令，因此不能宣称语言泛化。
 
 ![Franka contact expert](docs/media/franka_contact_expert.gif)
 
-## Mac 安装
+## 安装与测试
 
-项目使用两个独立环境。
-
-物理 Graph/Flat 环境：
+物理环境：
 
 ```bash
 uv venv --python 3.12
-source .venv/bin/activate
-uv pip install -r requirements-macos.txt
+uv pip install --python .venv/bin/python -r requirements-macos.txt
 .venv/bin/python -m interaction_vla.macos_mjpython
 ```
 
@@ -52,63 +35,26 @@ python3.12 -m venv .venv-lerobot
 .venv-lerobot/bin/python -m pip install -r requirements-lerobot-macos.txt
 ```
 
-已验证的关键版本是 Python 3.12、MuJoCo 3.3.4、LeRobot 0.6.1、Torch 2.10 和
-TorchCodec 0.10。Apple Silicon 上优先使用 MPS，否则回退 CPU。
-
-## 常用命令
-
-### 运行测试
+测试：
 
 ```bash
-PYTHONPYCACHEPREFIX=/tmp/gripper-mujoco-pycache \
-  .venv/bin/python -m pytest tests/interaction_vla -q
+.venv/bin/python -m pytest tests/interaction_vla -q
 
 HF_HOME=/tmp/gripper-mujoco-hf-cache \
-PYTHONPYCACHEPREFIX=/tmp/gripper-mujoco-lerobot-pycache \
-  .venv-lerobot/bin/python -m pytest \
-  tests/interaction_vla/lerobot_bridge -q
+  .venv-lerobot/bin/python -m pytest tests/interaction_vla -q
 ```
 
-### 查看 Franka 物理场景
-
-四视角 expert dashboard：
+临时代理：
 
 ```bash
-.venv/bin/python -m interaction_vla.physics_visualize dashboard \
-  --controller expert \
-  --layout crowded \
-  --object-count 4 \
-  --seed 2140049
+export https_proxy=http://127.0.0.1:7890
+export http_proxy=http://127.0.0.1:7890
+export all_proxy=socks5://127.0.0.1:7890
 ```
 
-键盘遥操作并保存 RGB-D：
+## 已完成实验
 
-```bash
-.venv/bin/python -m interaction_vla.physics_visualize teleop \
-  --layout normal \
-  --object-count 3 \
-  --seed 2140049 \
-  --record outputs/teleop_demo.npz
-```
-
-控制键：`WASD` 控制 xy，`R/F` 控制 z，方向键控制 rx/ry，`Q/E` 控制 rz，
-空格切换夹爪，`Z` 重置，`Esc` 退出。
-
-## 实验 1：Graph vs Flat 接触物理主实验
-
-当前推荐配置是：
-
-```text
-configs/physics_interaction_chunk_pilot_macos.yaml
-```
-
-它采集 200 条 base demonstration，使用 source-level train/validation/test split，
-只从训练 source 生成 recovery。先完成 seed 0，不要一开始就扩大实验。
-
-### 1.1 Expert gate 与数据采集
-
-源码、config 或 controller 改动后，旧 gate、数据和 checkpoint 会因 provenance
-不匹配而失效。此时从第一条命令重新运行，不要绕过校验。
+### 1. Graph vs Flat 接触物理
 
 ```bash
 .venv/bin/python -m interaction_vla.validate_physics_expert \
@@ -116,143 +62,39 @@ configs/physics_interaction_chunk_pilot_macos.yaml
 
 .venv/bin/python -m interaction_vla.physics_data collect \
   --config configs/physics_interaction_chunk_pilot_macos.yaml
-```
-
-### 1.2 训练 seed 0 Flat 与 Graph
-
-```bash
-.venv/bin/python -m interaction_vla.train \
-  --config configs/physics_interaction_chunk_pilot_macos.yaml \
-  --representation flat \
-  --model-seed 0
 
 .venv/bin/python -m interaction_vla.train \
   --config configs/physics_interaction_chunk_pilot_macos.yaml \
-  --representation graph \
-  --model-seed 0
-```
+  --representation flat --model-seed 0
 
-### 1.3 先跑 ID 与 held-out recovery sanity
-
-```bash
-.venv/bin/python -m interaction_vla.physics_evaluate \
+.venv/bin/python -m interaction_vla.train \
   --config configs/physics_interaction_chunk_pilot_macos.yaml \
-  --model-seeds 0 \
-  --conditions id_normal heldout_recovery \
-  --episodes-per-count 5 \
-  --output outputs/interaction_graph_physics/interaction_chunk_pilot/evaluation/seed0_sanity.json
+  --representation graph --model-seed 0
 ```
 
-先检查 stable contact/grasp/lift、wrong-object interaction、drop、transport progress，
-再看 strict placement 和 task success。只有 seed 0 出现真实控制、抓取和放置信号，
-才继续 OOD。
-
-### 1.4 OOD 与 Graph edge-shuffle
-
-```bash
-.venv/bin/python -m interaction_vla.physics_evaluate \
-  --config configs/physics_interaction_chunk_pilot_macos.yaml \
-  --model-seeds 0 \
-  --conditions count_ood crowded_ood \
-  --episodes-per-count 5 \
-  --include-edge-shuffle \
-  --output outputs/interaction_graph_physics/interaction_chunk_pilot/evaluation/seed0_ood_ablation.json
-```
-
-edge-shuffle 用于确认 Graph 是否真的使用关系结构。单个 GIF 或单个 seed 不能证明
-Graph > Flat；主结论最终需要预先固定的三个模型 seed 和完整 paired evaluation。
-当前 pilot config 只登记 seed 0，扩大到三个 seed 前应复制并冻结一份新配置，将
-`train.model_seeds` 明确设置为 `[0, 1, 2]`。
-
-### 1.5 查看 learned rollout
+查看 learned Graph rollout：
 
 ```bash
 .venv/bin/python -m interaction_vla.physics_visualize dashboard \
   --config configs/physics_interaction_chunk_pilot_macos.yaml \
   --controller graph \
   --checkpoint outputs/interaction_graph_physics/interaction_chunk_pilot/graph/seed_0/checkpoint.pt \
-  --layout crowded \
-  --object-count 4 \
-  --seed 2140049
+  --layout crowded --object-count 4 --seed 2140049
 ```
 
-导出同初始状态的 Flat/Graph 对比 GIF：
-
-```bash
-.venv/bin/mjpython -m interaction_vla.physics_visualize export-comparison-gif \
-  --config configs/physics_interaction_chunk_pilot_macos.yaml \
-  --flat-checkpoint outputs/interaction_graph_physics/interaction_chunk_pilot/flat/seed_0/checkpoint.pt \
-  --graph-checkpoint outputs/interaction_graph_physics/interaction_chunk_pilot/graph/seed_0/checkpoint.pt \
-  --layout crowded \
-  --object-count 4 \
-  --seed 2140049 \
-  --output docs/media/interaction_chunk_flat_vs_graph.gif
-```
-
-## 实验 2：LeRobotDataset 与 ACT 闭环
-
-这条链路验证数据、模型、checkpoint 和 MuJoCo 控制是否接通，不验证语言泛化。
-源码或 requirements 改动后，从 `collect` 重新生成 provenance 一致的制品。
+### 2. LeRobotDataset 与基础 ACT
 
 ```bash
 .venv-lerobot/bin/python -m interaction_vla.lerobot_bridge collect \
-  --config configs/lerobot_act_smoke_macos.yaml
+  --config configs/lerobot_act_pilot_macos.yaml
 
 .venv-lerobot/bin/python -m interaction_vla.lerobot_bridge validate \
-  --config configs/lerobot_act_smoke_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge smoke \
-  --config configs/lerobot_act_smoke_macos.yaml
+  --config configs/lerobot_act_pilot_macos.yaml
 ```
 
-运行 ACT checkpoint 并导出 agent/wrist RGB GIF：
+### 3. ReflectVLM Graph pretraining
 
 ```bash
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge rollout \
-  --config configs/lerobot_act_smoke_macos.yaml \
-  --checkpoint outputs/lerobot/act_smoke/checkpoint \
-  --object-count 2 \
-  --gif outputs/lerobot/act_smoke/rollout.gif
-```
-
-主要输出：
-
-```text
-outputs/lerobot/franka_lerobot_act_smoke/   标准 LeRobotDataset + teacher sidecar
-outputs/lerobot/act_smoke/checkpoint/       本地 Hugging Face checkpoint
-outputs/lerobot/act_smoke/smoke_report.json 工程 smoke 报告
-outputs/lerobot/act_smoke/rollout.json      闭环诊断
-outputs/lerobot/act_smoke/rollout.gif       双视角动画
-```
-
-`passed=true` 表示工程链路通过；`task_success=false` 或 `timeout` 表示 smoke 模型没有
-学会任务，不能写成成功率证据。
-
-## 实验 3：ReflectVLM Graph 预训练
-
-这一步只训练视觉语义 Graph estimator，不把 ReflectVLM 的文本动作伪装成连续机器人
-action，也不修改 ACT。数据含 2–6 个任务物体；模型使用六槽位加 `object_mask`。
-首次运行会从 Hugging Face 下载数据并写入本地缓存。
-
-先跑 96 条数据的一轮 smoke：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_pretrain train \
-  --config configs/reflectvlm_graph_pretrain_smoke_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_pretrain evaluate \
-  --config configs/reflectvlm_graph_pretrain_smoke_macos.yaml \
-  --checkpoint outputs/graph_pretrain/reflectvlm_smoke/checkpoint.pt \
-  --partition test
-```
-
-smoke 通过后再跑完整数据：
-
-```bash
-export HF_HOME=/tmp/gripper-mujoco-hf-cache
-export HF_HUB_OFFLINE=1
-
-
 .venv-lerobot/bin/python -m interaction_vla.graph_pretrain inspect \
   --config configs/reflectvlm_graph_pretrain_macos.yaml
 
@@ -265,35 +107,9 @@ export HF_HUB_OFFLINE=1
   --partition test
 ```
 
-输出位于 `outputs/graph_pretrain/reflectvlm/`：checkpoint、训练摘要、防泄漏 split
-manifest 和 held-out Graph 指标。该 checkpoint 是后续 MuJoCo Graph fine-tuning 的
-初始化，不是可直接 rollout 的控制策略。
-
-## 实验 4：MuJoCo Graph fine-tuning
-
-先用已有的 5-episode LeRobotDataset 跑配对 smoke。两组模型使用相同架构、数据 split
-和随机种子，只改变是否加载 ReflectVLM Graph 初始化：
+### 4. MuJoCo Graph fine-tuning
 
 ```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_finetune inspect \
-  --config configs/mujoco_graph_finetune_smoke_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_finetune compare \
-  --config configs/mujoco_graph_finetune_smoke_macos.yaml
-```
-
-输出位于 `outputs/graph_finetune/mujoco_smoke/`。smoke 只验证数据、迁移、训练和评估
-链路；5 个 episode 不构成迁移收益或语言泛化的科学证据。
-
-正式 pilot 先采集并验证 50 个 episode，再运行 3 个数据比例、3 个随机种子的配对实验：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge collect \
-  --config configs/lerobot_act_pilot_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge validate \
-  --config configs/lerobot_act_pilot_macos.yaml
-
 .venv-lerobot/bin/python -m interaction_vla.graph_finetune inspect \
   --config configs/mujoco_graph_finetune_pilot_macos.yaml
 
@@ -301,52 +117,79 @@ manifest 和 held-out Graph 指标。该 checkpoint 是后续 MuJoCo Graph fine-
   --config configs/mujoco_graph_finetune_pilot_macos.yaml
 ```
 
-策略输入严格限制为 agent RGB、wrist RGB、10D 末端状态和语言。MuJoCo action、物体
-pose、contact、depth、segmentation 与 teacher Graph 都不会进入模型输入。
+已有 pilot 结果支持：Reflect 初始化主要改善 next-relation goal、operator、predicate 和
+residual；静态实体/关系重建并不是稳定收益来源。
 
-## 之后应该跑哪些实验
+## 下一步：Graph-conditioned ACT 主实验
 
-Graph/Flat 主实验完成后，按下面顺序推进：
+四个条件使用完全相同的双 RGB、10D proprioception、ACT 参数量、初始化、数据 split、
+batch 顺序和固定 5 epoch 预算：
 
-1. **ReflectVLM Graph pretraining**：先用 smoke 配置验证，再运行完整配置并保存 held-out
-   Graph 指标。
-2. **MuJoCo Graph fine-tuning**：把预训练 checkpoint 映射到 RGB、wrist RGB、末端状态和
-   语言输入；用同一 MuJoCo split 对比随机初始化与预训练初始化。
-3. **LeRobot continuous-control training**：冻结已验证的 Graph contract，再比较 Flat、
-   oracle Graph 和 predicted Graph，最后扩展到 ACT、π0、SmolVLA。
-4. **Graph representation ablation**：分别验证 task entity selection、gripper-target、
-   target-receptacle、distractor risk、interaction phase 和 next-relation goal。当前只有
-   Graph/Flat 与 edge-shuffle 已实现，其余消融需要先实现独立配置和 encoder 开关。
+1. `flat`：75D Graph token 全零；
+2. `predicted_random`：随机初始化后 MuJoCo fine-tune 的 Graph；
+3. `predicted_reflect`：ReflectVLM 初始化后 MuJoCo fine-tune 的 Graph；
+4. `oracle_current`：仅当前实体/关系使用 causal MuJoCo teacher，下一关系目标仍由视觉
+   Graph 预测。
 
-## 结果边界
+`oracle_current` 是 privileged perception upper bound，不是可部署模型；它不会读取用未来
+轨迹计算的 `annotation.tc_tig.relation_goal`。
 
-历史 kinematic/recovery 实验曾显示 Graph 降低 wrong-object interaction，并且打乱边会
-破坏表现，但旧结果没有证明稳定的 Graph > Flat 闭环成功率优势。当前主结论只能来自
-`physics_interaction_chunk_pilot_macos.yaml` 对应的新报告：
+先跑工程 smoke：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
+  --config configs/graph_control_act_smoke_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_control cache \
+  --config configs/graph_control_act_smoke_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_control smoke \
+  --config configs/graph_control_act_smoke_macos.yaml
+```
+
+smoke 只验证四个条件都能完成一次 optimizer update、保存并无误重载，不产生策略性能结论。
+
+smoke 通过后运行正式三 seed 实验：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
+  --config configs/graph_control_act_pilot_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_control cache \
+  --config configs/graph_control_act_pilot_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_control compare \
+  --config configs/graph_control_act_pilot_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_control evaluate \
+  --config configs/graph_control_act_pilot_macos.yaml
+```
+
+主要比较：
+
+- `predicted_reflect - flat`：视觉 Graph 是否提高连续控制；
+- `predicted_reflect - predicted_random`：ReflectVLM 预训练是否有迁移价值；
+- `oracle_current - predicted_reflect`：当前 Graph 感知误差是否是瓶颈。
+
+正式报告使用 policy seed 作为独立重复单位，保留每个 paired case，并报告 success、
+wrong-object interaction/stable grasp、drop、timeout、IK projection、action clipping 和
+gripper switching。
+
+输出：
 
 ```text
-outputs/interaction_graph_physics/interaction_chunk_pilot/evaluation/
+outputs/graph_control/act_smoke/cache/       seed-0 frozen token cache
+outputs/graph_control/act_smoke/runs/        四条件 one-update checkpoint
+outputs/graph_control/act_pilot/cache/       三 seed frozen token cache
+outputs/graph_control/act_pilot/runs/        正式 ACT checkpoint 与 paired report
 ```
-
-## 常见问题
-
-- `bridge source/config/gate hash mismatch`：源码或配置变了，重新运行 collect/smoke，
-  不要手工修改 fingerprint。
-- `libpython3.12.dylib`：运行
-  `.venv/bin/python -m interaction_vla.macos_mjpython`。
-- macOS 的 `Class ... is implemented in both ...`：这是 PyAV/OpenCV/Homebrew 原生库
-  重复加载警告；用进程退出码和最终 JSON 判断命令是否失败。
-- TorchCodec：本项目要求 Torch 2.10 搭配 TorchCodec 0.10，不要升级成 0.11。
 
 ## 项目结构
 
 ```text
-interaction_vla/    环境、Graph/Flat 模型、训练、评估、可视化和 LeRobot bridge
-configs/            当前与历史实验配置
-tests/              单元测试和端到端验证
-outputs/            本地数据、checkpoint、GIF 和实验报告
-docs/               设计记录、实验记录和媒体文件
+interaction_vla/    环境、Graph、ACT、训练、评估与 LeRobot bridge
+configs/            smoke/pilot 实验配置
+tests/              单元测试与端到端验证
+outputs/            本地数据、checkpoint、GIF 和报告
+docs/               设计与实验记录
 ```
-
-历史 recovery、terminal-recovery 和 kinematic 配置仍保留用于复现，但新的研究工作优先
-使用 interaction-chunk 物理主线和 LeRobot bridge。

@@ -25,6 +25,8 @@ def _write_split(path: Path) -> None:
     path.write_text(
         json.dumps(
             {
+                "schema_version": "mujoco_semantic_graph_v1",
+                "split_seed": 17,
                 "episode_indices": {
                     "train": [0, 1],
                     "validation": [2],
@@ -57,6 +59,8 @@ def test_control_split_is_loaded_exactly_and_rejects_legacy_permutation(
     pilot_path.write_text(
         json.dumps(
             {
+                "schema_version": "mujoco_semantic_graph_v1",
+                "split_seed": 17,
                 "episode_indices": legacy,
                 "row_indices": {"train": [0], "validation": [1], "test": [2]},
             }
@@ -67,6 +71,7 @@ def test_control_split_is_loaded_exactly_and_rejects_legacy_permutation(
     with pytest.raises(ValueError, match="checkpoint.*split"):
         assert_checkpoint_split(
             {
+                "split_seed": 17,
                 "initialization": "reflectvlm_init",
                 "fraction": 1.0,
                 "seed": 0,
@@ -86,6 +91,7 @@ def test_checkpoint_split_binds_seed_initialization_fraction_and_rows(tmp_path: 
     _write_split(path)
     split = load_control_split(path)
     payload = {
+        "split_seed": 17,
         "initialization": "reflectvlm_init",
         "fraction": 1.0,
         "seed": 2,

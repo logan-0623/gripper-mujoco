@@ -82,6 +82,10 @@ class OracleCurrentTokenProvider(PredictedTokenProvider):
     def reset(self) -> None:
         self.teacher.reset()
 
+    def bind_model(self, model: Any) -> None:
+        if hasattr(self.teacher, "model"):
+            self.teacher.model = model
+
     def token(
         self, *, snapshot: Any, camera_frame: Any, state: np.ndarray, task: str
     ) -> np.ndarray:
@@ -318,6 +322,8 @@ def rollout_case(
         height=config.dataset.image_size[0],
     )
     runtime.reset()
+    if hasattr(runtime.token_provider, "bind_model"):
+        runtime.token_provider.bind_model(env.model)
     queue = ActionChunkQueue(chunk_size=8)
     gripper = BinaryGripperHysteresis(
         close_threshold=0.4,
