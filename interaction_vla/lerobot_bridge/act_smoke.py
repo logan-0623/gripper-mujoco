@@ -172,13 +172,30 @@ def build_act_bundle(
     bridge_config: BridgeConfig | None = None,
     episodes: list[int] | None = None,
 ) -> ACTBundle:
-    from lerobot.policies import make_policy, make_pre_post_processors
-
     dataset = load_act_dataset(
         dataset_root=dataset_root,
         repo_id=repo_id,
         episodes=episodes,
     )
+    return build_act_bundle_from_dataset(
+        dataset,
+        device=device,
+        architecture=architecture,
+        bridge_config=bridge_config,
+    )
+
+
+def build_act_bundle_from_dataset(
+    dataset: Any,
+    *,
+    device: torch.device,
+    architecture: str,
+    bridge_config: BridgeConfig | None = None,
+) -> ACTBundle:
+    from lerobot.policies import make_policy, make_pre_post_processors
+
+    if not hasattr(dataset, "meta"):
+        raise ValueError("ACT dataset must expose metadata")
     config = _act_config(
         device=device,
         architecture=architecture,

@@ -38,6 +38,11 @@ def _make_slices() -> Mapping[str, slice]:
 
 TOKEN_SLICES: Final[Mapping[str, slice]] = _make_slices()
 TOKEN_DIM: Final[int] = TOKEN_SLICES["goal_residual"].stop
+TOKEN_FEATURE_NAMES: Final[tuple[str, ...]] = tuple(
+    f"{name}_{index}"
+    for name, value in TOKEN_SLICES.items()
+    for index in range(value.stop - value.start)
+)
 
 
 def validate_token(value: object) -> np.ndarray:
@@ -49,4 +54,3 @@ def validate_token(value: object) -> np.ndarray:
 
 def empty_token() -> np.ndarray:
     return np.zeros(TOKEN_DIM, dtype=np.float32)
-

@@ -9,10 +9,15 @@ from lerobot.processor import DeviceProcessorStep
 
 from interaction_vla.lerobot_bridge.act_smoke import (
     _act_config,
+    build_act_bundle_from_dataset,
     expected_smoke_report_contract,
     run_one_batch_check,
     validate_smoke_report_compatibility,
 )
+from interaction_vla.graph_control.cache import CacheProvenance, write_token_cache
+from interaction_vla.graph_control.dataset import GraphConditionedDataset
+from interaction_vla.graph_control.schema import TOKEN_DIM
+from interaction_vla.lerobot_bridge.act_smoke import load_act_dataset
 from interaction_vla.lerobot_bridge.rollout import load_act_runtime
 from interaction_vla.lerobot_bridge.config import load_bridge_config
 
@@ -50,6 +55,43 @@ def test_configured_act_uses_bridge_learning_rate() -> None:
     )
 
     assert config.optimizer_lr == bridge.act.learning_rate
+
+
+def test_graph_conditioned_act_uses_separate_environment_token(
+    tiny_lerobot_dataset, tmp_path
+) -> None:
+    dataset_root, repo_id = tiny_lerobot_dataset
+    base = load_act_dataset(dataset_root=dataset_root, repo_id=repo_id)
+    rows = [int(base[index]["index"].item()) for index in range(len(base))]
+    provenance = CacheProvenance(
+        condition="flat",
+        dataset_fingerprint="d" * 64,
+        split_manifest_sha256="a" * 64,
+        graph_checkpoint_sha256=None,
+        graph_initialization=None,
+        graph_fraction=None,
+        graph_seed=None,
+    )
+    cache = write_token_cache(
+        tmp_path / "tokens.npz",
+        rows,
+        torch.zeros(len(rows), TOKEN_DIM).numpy(),
+        provenance,
+    )
+    conditioned = GraphConditionedDataset(base, cache)
+
+    torch.manual_seed(7)
+    bundle = build_act_bundle_from_dataset(
+        conditioned, device=torch.device("cpu"), architecture="test"
+    )
+    batch = next(iter(torch.utils.data.DataLoader(conditioned, batch_size=1)))
+    processed = bundle.preprocessor(batch)
+    loss, _ = bundle.policy.forward(processed)
+
+    assert bundle.config.robot_state_feature.shape == (10,)
+    assert tuple(bundle.config.env_state_feature.shape) == (TOKEN_DIM,)
+    assert bundle.policy.model.encoder_env_state_input_proj.in_features == TOKEN_DIM
+    assert torch.isfinite(loss)
 
 
 def test_pilot_gate_rejects_a_smoke_report_missing_schema_contract(tmp_path) -> None:
