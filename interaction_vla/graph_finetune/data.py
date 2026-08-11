@@ -387,7 +387,7 @@ def fit_normalization(
     )
 
 
-def _resize_rgb(value: Any, image_size: int, name: str) -> torch.Tensor:
+def resize_rgb(value: Any, image_size: int, name: str) -> torch.Tensor:
     image = torch.as_tensor(value, dtype=torch.float32)
     if image.ndim != 3 or image.shape[0] != 3 or not torch.isfinite(image).all():
         raise ValueError(f"{name} must be a finite CHW RGB tensor")
@@ -473,10 +473,10 @@ class MuJoCoGraphDataset(Dataset[dict[str, torch.Tensor]]):
             float(target.goal_residual[frame]) - normalization.residual_mean
         ) / normalization.residual_std
         return {
-            "agent_rgb": _resize_rgb(
+            "agent_rgb": resize_rgb(
                 sample["observation.images.agent"], self.image_size, "agent RGB"
             ),
-            "wrist_rgb": _resize_rgb(
+            "wrist_rgb": resize_rgb(
                 sample["observation.images.wrist"], self.image_size, "wrist RGB"
             ),
             "state": torch.from_numpy(

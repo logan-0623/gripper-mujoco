@@ -8,6 +8,7 @@ from interaction_vla.graph_finetune.data import (
     MODEL_BATCH_KEYS,
     MuJoCoGraphDataset,
     prepare_corpus,
+    resize_rgb,
     select_training_fraction,
     semantic_targets,
     split_episode_indices,
@@ -67,6 +68,19 @@ def test_semantic_target_selects_only_coordinate_invariant_channels() -> None:
     assert not hasattr(target, "entity_pose")
     assert not hasattr(target, "depth_agent")
     assert not hasattr(target, "action")
+
+
+def test_public_rgb_resize_matches_graph_training_contract() -> None:
+    image = torch.linspace(0.0, 1.0, 3 * 20 * 24).reshape(3, 20, 24)
+
+    resized = resize_rgb(image, 16, "agent RGB")
+
+    assert resized.shape == (3, 16, 16)
+    assert resized.dtype == torch.float32
+    assert torch.isfinite(resized).all()
+
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        resize_rgb(image * 2.0, 16, "agent RGB")
 
 
 def test_semantic_target_extracts_goal_categories_and_residual() -> None:
