@@ -233,6 +233,7 @@ def test_pairing_audit_rejects_different_initialization_or_rows() -> None:
             "initial_state_hash": "same",
             "parameter_count": 123,
             "source_row_indices": [1, 2],
+            "epoch_order_hashes": ["a" * 64],
             "epochs": 1,
             "extension_decisions": [],
         }
@@ -247,4 +248,9 @@ def test_pairing_audit_rejects_different_initialization_or_rows() -> None:
     bad = {name: dict(value) for name, value in base.items()}
     bad["predicted_reflect"]["source_row_indices"] = [2, 1]
     with pytest.raises(ValueError, match="source_row_indices"):
+        assert_paired_summaries(bad)
+
+    bad = {name: dict(value) for name, value in base.items()}
+    bad["predicted_reflect"]["epoch_order_hashes"] = ["a" * 63 + "b"]
+    with pytest.raises(ValueError, match="epoch_order_hashes"):
         assert_paired_summaries(bad)

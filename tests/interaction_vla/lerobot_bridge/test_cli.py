@@ -33,6 +33,64 @@ def test_cli_exposes_only_local_explicit_commands() -> None:
     assert "upload" not in help_text
 
 
+def test_cli_exposes_act_diagnostics_and_recovery_commands() -> None:
+    diagnose = build_parser().parse_args(
+        [
+            "act-diagnose",
+            "--config",
+            "recovery.yaml",
+            "--checkpoint",
+            "checkpoint",
+        ]
+    )
+    recovery = build_parser().parse_args(
+        [
+            "act-recovery",
+            "--config",
+            "recovery.yaml",
+            "--checkpoint",
+            "checkpoint",
+        ]
+    )
+
+    assert diagnose.command == "act-diagnose"
+    assert diagnose.checkpoint == Path("checkpoint")
+    assert recovery.command == "act-recovery"
+    assert recovery.checkpoint == Path("checkpoint")
+
+
+@pytest.mark.parametrize(
+    ("command", "target"),
+    (
+        ("act-diagnose", "evaluate_checkpoint_actions"),
+        ("act-recovery", "evaluate_recovery"),
+    ),
+)
+def test_act_evaluation_commands_dispatch_checkpoint(
+    command: str, target: str, monkeypatch, capsys
+) -> None:
+    received = {}
+
+    def fake_evaluate(*args):
+        received["args"] = args
+        return {"passed": True}
+
+    monkeypatch.setattr(f"interaction_vla.lerobot_bridge.cli.{target}", fake_evaluate)
+
+    main(
+        [
+            command,
+            "--config",
+            "recovery.yaml",
+            "--checkpoint",
+            "checkpoint",
+        ]
+    )
+
+    assert received["args"] == (Path("recovery.yaml"), Path("checkpoint"))
+    assert json.loads(capsys.readouterr().out)["passed"] is True
+
+
 def test_smoke_dispatch_order(monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(

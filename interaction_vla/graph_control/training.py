@@ -24,6 +24,8 @@ from interaction_vla.lerobot_bridge.act_smoke import (
     _write_checkpoint_metadata,
     bounded_batches,
     build_act_bundle_from_dataset,
+    row_order_sha256,
+    seeded_train_loader,
 )
 from interaction_vla.lerobot_bridge.config import BridgeConfig
 from interaction_vla.lerobot_bridge.provenance import (
@@ -335,12 +337,13 @@ def _train_condition(
         architecture=architecture,
         bridge_config=bridge_config,
     )
-    loader = DataLoader(
+    loader = seeded_train_loader(
         conditioned_train,
         batch_size=batch_size,
-        shuffle=False,
-        drop_last=True,
-        num_workers=0,
+        seed=seed,
+        shuffle=(
+            True if bridge_config is None else bridge_config.act.shuffle_train
+        ),
     )
     validation_loader = DataLoader(
         conditioned_validation,
@@ -358,6 +361,7 @@ def _train_condition(
     parameter_count = sum(parameter.numel() for parameter in bundle.policy.parameters())
     metrics: list[dict[str, object]] = []
     validation_losses: list[float] = []
+    epoch_order_hashes: list[str] = []
     epochs_completed = 0
     if smoke_steps is not None:
         for step, raw_batch in bounded_batches(lambda: iter(loader), steps=smoke_steps):
@@ -369,6 +373,7 @@ def _train_condition(
     else:
         assert initial_epochs is not None
         for epoch in range(initial_epochs):
+            epoch_rows: list[int] = []
             for raw_batch in loader:
                 metric = _optimizer_update(
                     bundle=bundle, optimizer=optimizer, raw_batch=raw_batch
@@ -376,6 +381,12 @@ def _train_condition(
                 metric["step"] = len(metrics)
                 metric["epoch"] = epoch
                 metrics.append(metric)
+                epoch_rows.extend(
+                    int(row) for row in metric.get("source_row_indices", [])
+                )
+            if not epoch_rows:
+                raise ValueError("Graph-conditioned ACT training epoch is empty")
+            epoch_order_hashes.append(row_order_sha256(epoch_rows))
             validation_losses.append(
                 _validation_loss(bundle=bundle, loader=validation_loader)
             )
@@ -397,6 +408,7 @@ def _train_condition(
         "losses": [metric["loss"] for metric in metrics],
         "metrics": metrics,
         "validation_losses": validation_losses,
+        "epoch_order_hashes": epoch_order_hashes,
         "extension_decisions": [],
         "initial_state_hash": initial_hash,
         "parameter_count": parameter_count,
@@ -433,6 +445,7 @@ def assert_paired_summaries(summaries: Mapping[str, object]) -> None:
         "initial_state_hash",
         "parameter_count",
         "source_row_indices",
+        "epoch_order_hashes",
         "epochs",
         "extension_decisions",
     )

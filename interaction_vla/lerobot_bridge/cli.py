@@ -11,6 +11,10 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
+from interaction_vla.lerobot_bridge.act_diagnostics import (
+    evaluate_checkpoint_actions,
+)
+from interaction_vla.lerobot_bridge.act_recovery import evaluate_recovery
 from interaction_vla.lerobot_bridge.act_smoke import (
     ACTION_CODEC_VERSION,
     STATE_CODEC_VERSION,
@@ -63,6 +67,18 @@ def build_parser() -> argparse.ArgumentParser:
     act_train = commands.add_parser("act-train", help="train a bounded ACT policy")
     _add_config_argument(act_train)
     act_train.add_argument("--output", type=Path)
+
+    act_diagnose = commands.add_parser(
+        "act-diagnose", help="evaluate ACT action errors by interaction phase"
+    )
+    _add_config_argument(act_diagnose)
+    act_diagnose.add_argument("--checkpoint", required=True, type=Path)
+
+    act_recovery = commands.add_parser(
+        "act-recovery", help="run the closed-loop ACT recovery gate"
+    )
+    _add_config_argument(act_recovery)
+    act_recovery.add_argument("--checkpoint", required=True, type=Path)
 
     rollout = commands.add_parser("rollout", help="roll out a local ACT checkpoint")
     _add_config_argument(rollout)
@@ -203,6 +219,10 @@ def _dispatch(args: argparse.Namespace) -> Any:
         return check_from_config(args.config, output=args.output)
     if args.command == "act-train":
         return train_from_config(args.config, output=args.output)
+    if args.command == "act-diagnose":
+        return evaluate_checkpoint_actions(args.config, args.checkpoint)
+    if args.command == "act-recovery":
+        return evaluate_recovery(args.config, args.checkpoint)
     if args.command == "rollout":
         return rollout_from_config(
             args.config,
