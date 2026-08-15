@@ -10,6 +10,7 @@ from interaction_vla.lerobot_bridge import rollout as rollout_module
 from interaction_vla.lerobot_bridge.rollout import (
     ActionChunkQueue,
     BinaryGripperHysteresis,
+    LoadedACTRuntime,
     policy_observation,
 )
 
@@ -40,6 +41,16 @@ def test_gripper_hysteresis_suppresses_midrange_chatter() -> None:
     assert [
         gate.resolve(value) for value in (0.55, 0.45, 0.39, 0.50, 0.61)
     ] == [1.0, 1.0, 0.0, 0.0, 1.0]
+
+
+def test_loaded_act_runtime_resets_policy_state() -> None:
+    policy = SimpleNamespace(reset_calls=0)
+    policy.reset = lambda: setattr(policy, "reset_calls", policy.reset_calls + 1)
+    runtime = LoadedACTRuntime(Path("checkpoint"), policy, object(), object())
+
+    runtime.reset()
+
+    assert policy.reset_calls == 1
 
 
 def test_chunk_queue_requeries_after_configured_action_horizon() -> None:
@@ -216,7 +227,10 @@ def test_rollout_checkpoint_records_gif_lifecycle_and_json(
             chunk_size=8,
             n_action_steps=1,
         ),
-        source=SimpleNamespace(max_objects=4),
+        source=SimpleNamespace(
+            max_objects=4,
+            environment=SimpleNamespace(max_steps=180),
+        ),
     )
     projection = SimpleNamespace(
         action=np.zeros(7, dtype=np.float32),
@@ -236,7 +250,11 @@ def test_rollout_checkpoint_records_gif_lifecycle_and_json(
         "_load_checkpoint_bundle",
         lambda **kwargs: (object(), object(), object(), {"dataset_fingerprint": "d" * 64}),
     )
-    monkeypatch.setattr(rollout_module, "_make_env", lambda config: Environment())
+    monkeypatch.setattr(
+        rollout_module,
+        "_make_env",
+        lambda config, max_steps=None: Environment(),
+    )
     monkeypatch.setattr(
         rollout_module, "validate_finger_joint_ranges", lambda model: None
     )

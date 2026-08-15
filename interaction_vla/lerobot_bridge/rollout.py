@@ -102,6 +102,18 @@ class QueuedAction:
     queue_index: int
 
 
+@dataclass
+class LoadedACTRuntime:
+    checkpoint: Path
+    policy: Any
+    preprocessor: Any
+    postprocessor: Any
+
+    def reset(self) -> None:
+        if hasattr(self.policy, "reset"):
+            self.policy.reset()
+
+
 class ActionChunkQueue:
     def __init__(self, *, chunk_size: int, n_action_steps: int) -> None:
         if chunk_size < 1:
@@ -165,11 +177,15 @@ def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
             temporary.unlink()
 
 
-def _make_env(config: BridgeConfig) -> FrankaContactEnv:
+def _make_env(
+    config: BridgeConfig, *, max_steps: int | None = None
+) -> FrankaContactEnv:
     source = config.source
     return FrankaContactEnv(
         max_objects=source.max_objects,
-        max_steps=source.environment.max_steps,
+        max_steps=(
+            source.environment.max_steps if max_steps is None else int(max_steps)
+        ),
         min_object_distance=source.environment.min_object_distance,
         workspace_low=source.environment.workspace_low,
         workspace_high=source.environment.workspace_high,
@@ -293,6 +309,134 @@ def record_rollout_gif_frame(
     )
 
 
+def rollout_loaded_policy(
+    config: BridgeConfig,
+    runtime: LoadedACTRuntime,
+    *,
+    seed: int,
+    object_count: int,
+    layout: LayoutMode,
+    max_steps: int,
+    recorder: RolloutGIFRecorder | None = None,
+    collect_diagnostics: bool = False,
+) -> dict[str, object]:
+    if max_steps < 1:
+        raise ValueError("rollout max_steps must be positive")
+    if object_count < 2 or object_count > config.source.max_objects:
+        raise ValueError("rollout object_count is outside the source environment range")
+    env = _make_env(config, max_steps=max_steps)
+    validate_finger_joint_ranges(env.model)
+    snapshot = env.reset(
+        seed=seed,
+        object_count=object_count,
+        layout_mode=layout,
+    )
+    capture = DualViewCapture(
+        env.model,
+        width=config.dataset.image_size[1],
+        height=config.dataset.image_size[0],
+    )
+    runtime.reset()
+    queue = ActionChunkQueue(
+        chunk_size=config.act.chunk_size,
+        n_action_steps=config.act.n_action_steps,
+    )
+    gripper = BinaryGripperHysteresis(
+        close_threshold=0.4,
+        open_threshold=0.6,
+        initially_open=True,
+    )
+    projection_scales: list[float] = []
+    clipped_steps = 0
+    diagnostics: list[dict[str, object]] = []
+    reason = TerminationReason.RUNNING
+    try:
+        for step in range(max_steps):
+            camera_frame = capture.capture(env, include_teacher=False)
+            state = EndEffectorStateCodec.encode_snapshot(
+                snapshot, env.proprioception()
+            )
+            observation = policy_observation(
+                agent_rgb=camera_frame.views["agent"].rgb,
+                wrist_rgb=camera_frame.views["wrist"].rgb,
+                state=state,
+            )
+            selected = queue.next(
+                lambda: _predict_chunk(
+                    policy=runtime.policy,
+                    preprocessor=runtime.preprocessor,
+                    postprocessor=runtime.postprocessor,
+                    observation=observation,
+                )
+            )
+            raw_local = selected.action.copy()
+            local_action = raw_local.copy()
+            local_action[:6] = np.clip(local_action[:6], -1.0, 1.0)
+            clipped_dimensions = np.flatnonzero(
+                local_action[:6] != raw_local[:6]
+            ).astype(int)
+            clipped_steps += int(len(clipped_dimensions) > 0)
+            local_action[6] = gripper.resolve(float(raw_local[6]))
+            rotation = EndEffectorStateCodec.quaternion_to_matrix(
+                snapshot.gripper.orientation
+            )
+            action_world = LocalCartesianActionCodec.decode(local_action, rotation)
+            projection = project_cartesian_action(env.controller, action_world)
+            projection_scales.append(float(projection.scale))
+            transition = env.step(projection.action)
+            reason = transition.reason
+            reason_value = str(getattr(reason, "value", reason))
+            if collect_diagnostics:
+                diagnostics.append(
+                    {
+                        "step": step,
+                        "state_hash": camera_frame.state_hash,
+                        "raw_chunk": selected.raw_chunk,
+                        "queue_index": selected.queue_index,
+                        "raw_local_action": raw_local,
+                        "decoded_world_action": action_world,
+                        "projected_world_action": projection.action,
+                        "clipped_dimensions": clipped_dimensions,
+                        "gripper_open": gripper.is_open,
+                        "gripper_switch_count": gripper.switch_count,
+                        "ik_projection_scale": projection.scale,
+                        "ik_position_error": (
+                            projection.projected_diagnostics.position_error
+                        ),
+                        "ik_orientation_error": (
+                            projection.projected_diagnostics.orientation_error
+                        ),
+                        "terminal_reason": reason_value,
+                    }
+                )
+            record_rollout_gif_frame(
+                recorder,
+                camera_frame,
+                step=step,
+                gripper_open=gripper.is_open,
+                terminal_reason=reason_value,
+            )
+            snapshot = transition.snapshot
+            if transition.done:
+                break
+    finally:
+        capture.close()
+    steps = len(projection_scales)
+    result: dict[str, object] = {
+        "success": reason == TerminationReason.SUCCESS,
+        "termination_reason": str(getattr(reason, "value", reason)),
+        "steps": steps,
+        "mean_ik_projection_scale": (
+            float(np.mean(projection_scales)) if steps else 1.0
+        ),
+        "action_clipping_rate": float(clipped_steps / steps) if steps else 0.0,
+        "gripper_switch_count": gripper.switch_count,
+    }
+    if collect_diagnostics:
+        result["diagnostics"] = diagnostics
+    return result
+
+
 def rollout_checkpoint(
     config_path: str | Path,
     checkpoint: str | Path,
@@ -319,17 +463,11 @@ def rollout_checkpoint(
         checkpoint=checkpoint_path,
         device=device,
     )
-    env = _make_env(config)
-    validate_finger_joint_ranges(env.model)
-    snapshot = env.reset(
-        seed=seed,
-        object_count=object_count,
-        layout_mode=LayoutMode.NORMAL,
-    )
-    capture = DualViewCapture(
-        env.model,
-        width=config.dataset.image_size[1],
-        height=config.dataset.image_size[0],
+    runtime = LoadedACTRuntime(
+        checkpoint_path,
+        policy,
+        preprocessor,
+        postprocessor,
     )
     gif_recorder = (
         RolloutGIFRecorder(
@@ -340,95 +478,32 @@ def rollout_checkpoint(
         if gif_path is not None
         else None
     )
-    queue = ActionChunkQueue(
-        chunk_size=config.act.chunk_size,
-        n_action_steps=config.act.n_action_steps,
+    rollout = rollout_loaded_policy(
+        config,
+        runtime,
+        seed=seed,
+        object_count=object_count,
+        layout=LayoutMode.NORMAL,
+        max_steps=config.source.environment.max_steps,
+        recorder=gif_recorder,
+        collect_diagnostics=True,
     )
-    gripper = BinaryGripperHysteresis(
-        close_threshold=0.4,
-        open_threshold=0.6,
-        initially_open=True,
-    )
-    diagnostics: list[dict[str, object]] = []
-    final_reason = TerminationReason.RUNNING.value
-    try:
-        for step in range(180):
-            camera_frame = capture.capture(env, include_teacher=False)
-            state = EndEffectorStateCodec.encode_snapshot(
-                snapshot, env.proprioception()
-            )
-            observation = policy_observation(
-                agent_rgb=camera_frame.views["agent"].rgb,
-                wrist_rgb=camera_frame.views["wrist"].rgb,
-                state=state,
-            )
-            selected = queue.next(
-                lambda: _predict_chunk(
-                    policy=policy,
-                    preprocessor=preprocessor,
-                    postprocessor=postprocessor,
-                    observation=observation,
-                )
-            )
-            raw_local = selected.action.copy()
-            local_action = raw_local.copy()
-            local_action[:6] = np.clip(local_action[:6], -1.0, 1.0)
-            clipped_dimensions = np.flatnonzero(
-                local_action[:6] != raw_local[:6]
-            ).astype(int)
-            local_action[6] = gripper.resolve(float(raw_local[6]))
-            rotation = EndEffectorStateCodec.quaternion_to_matrix(
-                snapshot.gripper.orientation
-            )
-            action_world = LocalCartesianActionCodec.decode(local_action, rotation)
-            projection = project_cartesian_action(env.controller, action_world)
-            transition = env.step(projection.action)
-            final_reason = str(
-                getattr(transition.reason, "value", transition.reason)
-            )
-            diagnostics.append(
-                {
-                    "step": step,
-                    "state_hash": camera_frame.state_hash,
-                    "raw_chunk": selected.raw_chunk,
-                    "queue_index": selected.queue_index,
-                    "raw_local_action": raw_local,
-                    "decoded_world_action": action_world,
-                    "projected_world_action": projection.action,
-                    "clipped_dimensions": clipped_dimensions,
-                    "gripper_open": gripper.is_open,
-                    "gripper_switch_count": gripper.switch_count,
-                    "ik_projection_scale": projection.scale,
-                    "ik_position_error": projection.projected_diagnostics.position_error,
-                    "ik_orientation_error": projection.projected_diagnostics.orientation_error,
-                    "terminal_reason": final_reason,
-                }
-            )
-            record_rollout_gif_frame(
-                gif_recorder,
-                camera_frame,
-                step=step,
-                gripper_open=gripper.is_open,
-                terminal_reason=final_reason,
-            )
-            snapshot = transition.snapshot
-            if transition.done:
-                break
-    finally:
-        capture.close()
     gif_frame_count = gif_recorder.write() if gif_recorder is not None else None
     result: dict[str, object] = {
         "passed": True,
         "finite_rollout": True,
-        "task_success": final_reason == TerminationReason.SUCCESS.value,
-        "terminal_reason": final_reason,
-        "steps": len(diagnostics),
+        "task_success": rollout["success"],
+        "terminal_reason": rollout["termination_reason"],
+        "steps": rollout["steps"],
         "seed": int(seed),
         "object_count": int(object_count),
         "device": str(device),
         "checkpoint": checkpoint_path,
         "checkpoint_dataset_fingerprint": metadata["dataset_fingerprint"],
-        "diagnostics": diagnostics,
+        "diagnostics": rollout["diagnostics"],
+        "mean_ik_projection_scale": rollout["mean_ik_projection_scale"],
+        "action_clipping_rate": rollout["action_clipping_rate"],
+        "gripper_switch_count": rollout["gripper_switch_count"],
     }
     if gif_recorder is not None:
         result["gif"] = gif_recorder.destination
