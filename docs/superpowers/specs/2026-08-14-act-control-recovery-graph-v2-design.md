@@ -103,7 +103,8 @@ experimental control. Episode splits remain unchanged and episode-level.
 
 ACT initializes its shared ResNet18 camera backbone with the official ImageNet
 weights supported by the installed LeRobot/torchvision versions. Checkpoints and run
-summaries record the exact weight identifier and a hash of the initialized backbone.
+summaries record the exact weight identifier and SHA-256 of the cached official weight
+archive.
 Flat and Graph conditions use byte-identical initial ACT parameters for a seed.
 
 Missing weights fail with an actionable message instead of silently falling back to
@@ -150,10 +151,14 @@ The first run uses Flat ACT and one seed. It must satisfy both prespecified gate
 1. at least 8 successes over 10 exact train-seen `normal / 2-object` resets;
 2. at least 30% success over a fixed held-out `normal / 2-object` seed set.
 
-Expert rollouts must pass the same cases, and checkpoint reload must reproduce the
-same policy outputs within the existing numerical tolerance. If either control gate
-fails, Graph v2 ACT training stops and the report identifies the next bounded
-recovery ablation.
+The held-out set is the first 20 expert-successful cases from a deterministic candidate
+seed stream, selected before and without running the learned policy. Candidate
+rejections and the selection limit are retained in the report. This prevents expert
+environment failures from being counted as learned-policy failures without selecting
+on policy behavior. Expert rollouts must pass every retained case, and checkpoint
+reload must reproduce the same policy outputs within the existing numerical
+tolerance. If either control gate fails, Graph v2 ACT training stops and the report
+identifies the next bounded recovery ablation.
 
 ## 6. Interaction Graph v2 contract
 
@@ -198,7 +203,7 @@ The new schema is `interaction_graph_control_v2` and has 89 float32 values:
 | entity presence | 6 | gripper, target, receptacle, support, two distractors |
 | dual-view visibility | 12 | per-entity support from agent and wrist RGB |
 | relation presence | 8 | active task-relation slots |
-| gripper-target geometry | 8 | local delta XYZ, distance, closing speed, grasp probability, contact probability, confidence |
+| gripper-target geometry | 8 | local delta XYZ, distance, closing speed, contact probability, co-motion probability, confidence |
 | target-receptacle geometry | 10 | action-frame delta XYZ, receptacle-frame offset XYZ, horizontal/vertical containment margins, placed probability, confidence |
 | distractor geometry | 14 | for two distractors: local delta XYZ, clearance, collision risk, target-confusion risk, confidence |
 | phase distribution | 6 | approach, grasp, lift, transport, place, release |
@@ -244,6 +249,21 @@ heads. The new metric-geometry and phase/trend heads begin identically random in
 random and Reflect conditions and learn from MuJoCo labels. This keeps the intended
 pretraining question honest: ReflectVLM supplies semantic interaction structure, not
 unavailable metric supervision.
+
+The Graph v2 visual path must retain spatial layout. The existing Reflect-compatible
+global semantic branch stays intact, while a shared spatial-softmax branch taps its
+last convolutional feature map before global pooling. Learned keypoint maps produce
+normalized XY moments and appearance summaries. Agent and wrist spatial embeddings
+are concatenated in a fixed view order and passed through a new view-fusion layer;
+they are not averaged, because the two cameras have different pixel coordinate
+semantics. The fused spatial vector is added to the averaged semantic image embedding.
+A synthetic feature-translation test must show that moving an activation changes the
+pooled coordinates. Global pooling alone is
+prohibited for the geometry estimator because it cannot identify relative direction.
+Reflect transfer therefore still copies the compatible image encoder, matching
+language embeddings, fusion layers, and semantic operator/predicate heads. The new
+spatial pool, spatial view-fusion, and all geometry, phase, trend, state, mask, and
+goal-relation heads start byte-identically random in both paired conditions.
 
 Training adds masked Smooth L1 geometry losses, phase cross-entropy, and a backward
 temporal-consistency loss to the existing entity, relation, operator, predicate, and
@@ -297,6 +317,7 @@ New work writes to new destinations and never overwrites the completed v1 pilot:
 ```text
 outputs/graph_control/act_recovery/
 outputs/graph_finetune/mujoco_graph_v2/
+outputs/graph_control/graph_v2_oracle/
 outputs/graph_control/graph_v2_pilot/
 ```
 
@@ -324,4 +345,3 @@ Network-free automated tests cover:
 The real macOS verification sequence is bounded: one-batch tests, a reloaded Flat
 checkpoint, 10 train-seen rollouts, and the fixed held-out normal set. Full multi-seed
 training is not presented as the next command until these gates pass.
-
