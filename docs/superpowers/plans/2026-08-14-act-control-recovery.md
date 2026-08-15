@@ -632,14 +632,21 @@ machine:
 contact = values[0, PROBABILITY_0] >= 0.45
 co_motion = values[0, PROBABILITY_1] >= 0.70
 grasped = contact and co_motion
-placed = values[1, PROBABILITY_0] >= 0.50
 on_support = values[2, PROBABILITY_0] >= 0.50
 target_distance = float(np.linalg.norm(values[0, RELATIVE_POSITION]))
 goal_distance = float(np.linalg.norm(values[1, RELATIVE_POSITION]))
 support_gap = float(values[2, SIGNED_MARGIN_0])
-if placed and not grasped:
+post_grasp = previous in {
+    PHASE_IDS["lift"],
+    PHASE_IDS["transport"],
+    PHASE_IDS["place"],
+    PHASE_IDS["release"],
+}
+if previous == PHASE_IDS["release"]:
     current = PHASE_IDS["release"]
-elif placed and grasped:
+elif post_grasp and goal_distance <= 0.04 and not grasped:
+    current = PHASE_IDS["release"]
+elif post_grasp and goal_distance <= 0.14:
     current = PHASE_IDS["place"]
 elif grasped and (on_support or support_gap < 0.06):
     current = PHASE_IDS["lift"]
@@ -651,13 +658,16 @@ elif target_distance <= 0.07:
     current = PHASE_IDS["grasp"]
 else:
     current = PHASE_IDS["approach"]
-if previous == PHASE_IDS["release"] and current == PHASE_IDS["approach"]:
-    current = previous
 ```
 
 `causal_phase_step` returns `current`. `causal_phase_ids` initializes `previous` to
 approach, calls the step function per frame, appends the returned ID, and updates
-`previous`. The module imports only NumPy and the public teacher channel constants.
+`previous`. The post-grasp distance thresholds are intentional: the teacher's
+nominal-size containment probability remains below `0.10` even on the final frames of
+all 50 successful demonstrations, while successful target-receptacle distances are
+approximately `0.026--0.029 m`. The distance plus previous-phase hysteresis is causal
+and yields all six phases without reading simulator success. The module imports only
+NumPy and the public teacher channel constants.
 
 - [ ] **Step 4: Implement the pure metric function**
 
