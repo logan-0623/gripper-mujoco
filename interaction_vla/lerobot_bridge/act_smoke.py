@@ -10,6 +10,7 @@ from pathlib import Path
 import random
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import numpy as np
 import torch
@@ -94,6 +95,7 @@ class ACTBundle:
     policy: Any
     preprocessor: Any
     postprocessor: Any
+    backbone_weights_sha256: str | None = None
 
 
 def _seed_all(seed: int) -> None:
@@ -143,13 +145,23 @@ def _act_config(
         vae_encoder_layers = bridge_config.act.vae_encoder_layers
     else:
         raise ValueError("architecture must be test or configured with a bridge config")
+    n_action_steps = (
+        8
+        if architecture == "test"
+        else bridge_config.act.n_action_steps
+    )
+    pretrained_weights = (
+        None
+        if architecture == "test"
+        else bridge_config.act.pretrained_backbone_weights
+    )
     return ACTConfig(
         device=device.type,
         push_to_hub=False,
         chunk_size=8,
-        n_action_steps=8,
+        n_action_steps=n_action_steps,
         vision_backbone="resnet18",
-        pretrained_backbone_weights=None,
+        pretrained_backbone_weights=pretrained_weights,
         dim_model=dim_model,
         dim_feedforward=dim_feedforward,
         n_encoder_layers=encoder_layers,
@@ -161,6 +173,22 @@ def _act_config(
             else 1e-5
         ),
     )
+
+
+def require_cached_backbone_weights(identifier: str | None) -> Path | None:
+    if identifier is None:
+        return None
+    from torchvision.models import get_weight
+
+    weight = get_weight(identifier)
+    filename = Path(urlparse(weight.url).path).name
+    cached = Path(torch.hub.get_dir()) / "checkpoints" / filename
+    if not cached.is_file():
+        raise FileNotFoundError(
+            "ACT pretrained backbone is not cached: "
+            f"{identifier}; expected {cached}"
+        )
+    return cached
 
 
 def build_act_bundle(
@@ -201,12 +229,22 @@ def build_act_bundle_from_dataset(
         architecture=architecture,
         bridge_config=bridge_config,
     )
+    cached_weights = require_cached_backbone_weights(
+        config.pretrained_backbone_weights
+    )
     policy = make_policy(config, ds_meta=dataset.meta).to(device)
     preprocessor, postprocessor = make_pre_post_processors(
         config,
         dataset_stats=dataset.meta.stats,
     )
-    return ACTBundle(dataset, config, policy, preprocessor, postprocessor)
+    return ACTBundle(
+        dataset,
+        config,
+        policy,
+        preprocessor,
+        postprocessor,
+        None if cached_weights is None else sha256_file(cached_weights),
+    )
 
 
 def _audit_batch(batch: dict[str, Any], *, stage: str) -> None:
@@ -259,12 +297,88 @@ def _write_checkpoint_metadata(
         "device": str(device),
         "source_fingerprint": source_fingerprint(),
     }
+    pretrained_identifier = getattr(
+        bundle.config, "pretrained_backbone_weights", None
+    )
+    if pretrained_identifier is not None:
+        if bundle.backbone_weights_sha256 is None:
+            raise ValueError("pretrained ACT bundle is missing its weight archive hash")
+        payload.update(
+            {
+                "pretrained_backbone_weights": pretrained_identifier,
+                "backbone_weights_sha256": bundle.backbone_weights_sha256,
+            }
+        )
     if extra:
         payload.update(extra)
     destination = path / "bridge_checkpoint.json"
     destination.write_text(
         json.dumps(_jsonable(payload), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+    )
+
+
+def checkpoint_reload_max_abs_error(
+    *,
+    bundle: ACTBundle,
+    checkpoint: Path,
+    raw_batch: dict[str, Any],
+    device: torch.device,
+) -> float:
+    from lerobot.policies import make_pre_post_processors
+    from lerobot.policies.act.modeling_act import ACTPolicy
+
+    bundle.policy.eval()
+    with torch.no_grad():
+        expected_chunk = bundle.policy.predict_action_chunk(
+            bundle.preprocessor(raw_batch)
+        ).detach()
+    reloaded = ACTPolicy.from_pretrained(
+        checkpoint,
+        local_files_only=True,
+    ).to(device)
+    reloaded_preprocessor, _ = make_pre_post_processors(
+        reloaded.config,
+        pretrained_path=str(checkpoint),
+    )
+    reloaded.eval()
+    with torch.no_grad():
+        actual_chunk = reloaded.predict_action_chunk(
+            reloaded_preprocessor(raw_batch)
+        ).detach()
+    reload_error = float(
+        torch.max(torch.abs(expected_chunk - actual_chunk)).item()
+    )
+    if not np.isfinite(reload_error) or reload_error > 1e-5:
+        raise ValueError(f"ACT checkpoint reload error is too large: {reload_error}")
+    return reload_error
+
+
+def seeded_train_loader(
+    dataset: Any, *, batch_size: int, seed: int, shuffle: bool
+) -> DataLoader:
+    generator = torch.Generator()
+    generator.manual_seed(int(seed))
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        generator=generator if shuffle else None,
+        drop_last=True,
+        num_workers=0,
+    )
+
+
+def iter_seeded_batches(
+    dataset: Any, *, batch_size: int, seed: int
+) -> list[object]:
+    return list(
+        seeded_train_loader(
+            dataset,
+            batch_size=batch_size,
+            seed=seed,
+            shuffle=True,
+        )
     )
 
 
@@ -294,12 +408,15 @@ def run_one_batch_check(
         architecture=architecture,
         bridge_config=bridge_config,
     )
-    loader = DataLoader(
+    loader = seeded_train_loader(
         bundle.dataset,
         batch_size=batch_size,
-        shuffle=False,
-        drop_last=True,
-        num_workers=0,
+        seed=seed,
+        shuffle=bool(
+            architecture == "configured"
+            and bridge_config is not None
+            and bridge_config.act.shuffle_train
+        ),
     )
     try:
         raw_batch = next(iter(loader))
@@ -326,11 +443,6 @@ def run_one_batch_check(
         raise FloatingPointError("ACT gradient norm is not finite")
     optimizer.step()
 
-    bundle.policy.eval()
-    with torch.no_grad():
-        expected_chunk = bundle.policy.predict_action_chunk(
-            bundle.preprocessor(raw_batch)
-        ).detach()
     bundle.policy.save_pretrained(destination, push_to_hub=False)
     bundle.preprocessor.save_pretrained(destination, push_to_hub=False)
     bundle.postprocessor.save_pretrained(destination, push_to_hub=False)
@@ -342,25 +454,12 @@ def run_one_batch_check(
         extra=checkpoint_metadata,
     )
 
-    from lerobot.policies import make_pre_post_processors
-    from lerobot.policies.act.modeling_act import ACTPolicy
-
-    reloaded = ACTPolicy.from_pretrained(
-        destination,
-        local_files_only=True,
-    ).to(device)
-    reloaded_preprocessor, _ = make_pre_post_processors(
-        reloaded.config,
-        pretrained_path=str(destination),
+    reload_error = checkpoint_reload_max_abs_error(
+        bundle=bundle,
+        checkpoint=destination,
+        raw_batch=raw_batch,
+        device=device,
     )
-    reloaded.eval()
-    with torch.no_grad():
-        actual_chunk = reloaded.predict_action_chunk(
-            reloaded_preprocessor(raw_batch)
-        ).detach()
-    reload_error = float(torch.max(torch.abs(expected_chunk - actual_chunk)).item())
-    if not np.isfinite(reload_error) or reload_error > 1e-5:
-        raise ValueError(f"ACT checkpoint reload error is too large: {reload_error}")
     return ACTCheckResult(
         loss=float(loss.detach().item()),
         gradient_norm=float(gradient_norm.detach().item()),
@@ -484,6 +583,21 @@ def _loss_value(loss_dict: dict[str, Any], key: str) -> float:
     return float(value)
 
 
+def optimizer_metric_from_loss_dict(
+    *, total_loss: float, loss_dict: dict[str, Any]
+) -> dict[str, float]:
+    return {
+        "loss": float(total_loss),
+        "l1_loss": _loss_value(loss_dict, "l1_loss"),
+        "kld_loss": _loss_value(loss_dict, "kld_loss"),
+    }
+
+
+def row_order_sha256(rows: list[int]) -> str:
+    values = np.asarray(rows, dtype=np.int64)
+    return hashlib.sha256(values.tobytes()).hexdigest()
+
+
 def _optimizer_update(
     *,
     bundle: ACTBundle,
@@ -521,9 +635,10 @@ def _optimizer_update(
     else:
         source_rows = []
     return {
-        "loss": float(loss.detach().item()),
-        "l1_loss": _loss_value(loss_dict, "l1_loss"),
-        "kl_loss": _loss_value(loss_dict, "kl_loss"),
+        **optimizer_metric_from_loss_dict(
+            total_loss=float(loss.detach().item()),
+            loss_dict=loss_dict,
+        ),
         "gradient_norm": float(gradient_norm.detach().item()),
         "wall_time_s": time.perf_counter() - started,
         "source_episode_indices": sources,
@@ -587,6 +702,7 @@ def train_once(
     *,
     batch_size: int,
     output_dir: str | Path | None = None,
+    architecture: str = "configured",
 ) -> dict[str, object]:
     _seed_all(config.act.seed)
     device = resolve_device(config.act.device)
@@ -609,16 +725,15 @@ def train_once(
         dataset_root=config.dataset.root,
         repo_id=config.dataset.repo_id,
         device=device,
-        architecture="configured",
+        architecture=architecture,
         bridge_config=config,
         episodes=train_episodes,
     )
-    loader = DataLoader(
+    loader = seeded_train_loader(
         bundle.dataset,
         batch_size=batch_size,
-        shuffle=False,
-        drop_last=True,
-        num_workers=0,
+        seed=config.act.seed,
+        shuffle=config.act.shuffle_train if architecture == "configured" else False,
     )
     optimizer = torch.optim.AdamW(
         bundle.policy.get_optim_params(),
@@ -629,12 +744,16 @@ def train_once(
     metrics: list[dict[str, object]] = []
     validation_losses: list[float] = []
     extension_decisions: list[dict[str, object]] = []
+    epoch_order_hashes: list[str] = []
     epochs_completed = 0
+    reload_batch: dict[str, Any] | None = None
 
     if config.act.steps is not None:
         for step, raw_batch in bounded_batches(
             lambda: iter(loader), steps=config.act.steps
         ):
+            if reload_batch is None:
+                reload_batch = raw_batch
             metric = _optimizer_update(
                 bundle=bundle,
                 optimizer=optimizer,
@@ -659,7 +778,10 @@ def train_once(
         )
         target_epochs = config.act.epochs
         while epochs_completed < target_epochs:
+            epoch_rows: list[int] = []
             for raw_batch in loader:
+                if reload_batch is None:
+                    reload_batch = raw_batch
                 metric = _optimizer_update(
                     bundle=bundle,
                     optimizer=optimizer,
@@ -668,6 +790,10 @@ def train_once(
                 metric["step"] = len(metrics)
                 metric["epoch"] = epochs_completed
                 metrics.append(metric)
+                epoch_rows.extend(int(value) for value in metric["source_row_indices"])
+            if not epoch_rows:
+                raise ValueError("ACT training epoch contains no source rows")
+            epoch_order_hashes.append(row_order_sha256(epoch_rows))
             epochs_completed += 1
             validation_losses.append(
                 _validation_loss(bundle=bundle, loader=validation_loader)
@@ -698,19 +824,35 @@ def train_once(
         "metrics": metrics,
         "validation_losses": validation_losses,
         "extension_decisions": extension_decisions,
+        "epoch_order_hashes": epoch_order_hashes,
         "initial_state_hash": initial_hash,
+        "pretrained_backbone_weights": bundle.config.pretrained_backbone_weights,
+        "backbone_weights_sha256": bundle.backbone_weights_sha256,
         "device": str(device),
         "batch_size": batch_size,
         "episode_split": splits,
     }
     if output_dir is not None:
+        if reload_batch is None:
+            raise ValueError("ACT training produced no checkpoint reload batch")
+        checkpoint = Path(output_dir)
         _save_training_checkpoint(
             bundle=bundle,
-            output_dir=Path(output_dir),
+            output_dir=checkpoint,
             dataset_root=config.dataset.root,
             device=device,
             summary=summary,
             config=config,
+        )
+        summary["reload_max_abs_error"] = checkpoint_reload_max_abs_error(
+            bundle=bundle,
+            checkpoint=checkpoint,
+            raw_batch=reload_batch,
+            device=device,
+        )
+        (checkpoint / "training_summary.json").write_text(
+            json.dumps(_jsonable(summary), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
     return summary
 
