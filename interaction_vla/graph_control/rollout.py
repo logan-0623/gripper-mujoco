@@ -382,7 +382,10 @@ def rollout_case(
     runtime.reset()
     if hasattr(runtime.token_provider, "bind_model"):
         runtime.token_provider.bind_model(env.model)
-    queue = ActionChunkQueue(chunk_size=8)
+    queue = ActionChunkQueue(
+        chunk_size=config.act.chunk_size,
+        n_action_steps=config.act.n_action_steps,
+    )
     gripper = BinaryGripperHysteresis(
         close_threshold=0.4,
         open_threshold=0.6,

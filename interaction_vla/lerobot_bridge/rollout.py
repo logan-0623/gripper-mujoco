@@ -103,10 +103,13 @@ class QueuedAction:
 
 
 class ActionChunkQueue:
-    def __init__(self, *, chunk_size: int) -> None:
+    def __init__(self, *, chunk_size: int, n_action_steps: int) -> None:
         if chunk_size < 1:
             raise ValueError("chunk_size must be positive")
+        if not 1 <= n_action_steps <= chunk_size:
+            raise ValueError("n_action_steps must lie within [1, chunk_size]")
         self.chunk_size = int(chunk_size)
+        self.n_action_steps = int(n_action_steps)
         self.reset()
 
     def reset(self) -> None:
@@ -114,7 +117,7 @@ class ActionChunkQueue:
         self._index = 0
 
     def next(self, predict: Callable[[], np.ndarray]) -> QueuedAction:
-        if self._chunk is None or self._index >= self.chunk_size:
+        if self._chunk is None or self._index >= self.n_action_steps:
             chunk = np.asarray(predict(), dtype=np.float32)
             expected = (self.chunk_size, 7)
             if chunk.shape != expected:
@@ -337,7 +340,10 @@ def rollout_checkpoint(
         if gif_path is not None
         else None
     )
-    queue = ActionChunkQueue(chunk_size=8)
+    queue = ActionChunkQueue(
+        chunk_size=config.act.chunk_size,
+        n_action_steps=config.act.n_action_steps,
+    )
     gripper = BinaryGripperHysteresis(
         close_threshold=0.4,
         open_threshold=0.6,

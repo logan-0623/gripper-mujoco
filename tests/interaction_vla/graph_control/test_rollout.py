@@ -245,7 +245,7 @@ def test_graph_observation_is_built_only_when_action_chunk_refills(monkeypatch) 
         "interaction_vla.graph_control.rollout._predict_chunk",
         lambda runtime, observation: np.zeros((8, 7), dtype=np.float32),
     )
-    queue = ActionChunkQueue(chunk_size=8)
+    queue = ActionChunkQueue(chunk_size=8, n_action_steps=8)
 
     for _ in range(9):
         _next_queued_action(queue, object(), observation_factory)

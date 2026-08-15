@@ -42,28 +42,39 @@ def test_gripper_hysteresis_suppresses_midrange_chatter() -> None:
     ] == [1.0, 1.0, 0.0, 0.0, 1.0]
 
 
-def test_chunk_queue_queries_policy_only_after_eight_actions() -> None:
+def test_chunk_queue_requeries_after_configured_action_horizon() -> None:
     calls = 0
 
     def predict() -> np.ndarray:
         nonlocal calls
         calls += 1
-        chunk = np.zeros((8, 7), dtype=np.float32)
-        chunk[:, 0] = calls
-        return chunk
+        return np.full((8, 7), calls, dtype=np.float32)
 
-    queue = ActionChunkQueue(chunk_size=8)
-    selected = [queue.next(predict) for _ in range(9)]
+    queue = ActionChunkQueue(chunk_size=8, n_action_steps=1)
+    selected = [queue.next(predict) for _ in range(3)]
+
+    assert calls == 3
+    assert [item.queue_index for item in selected] == [0, 0, 0]
+    assert [float(item.action[0]) for item in selected] == [1.0, 2.0, 3.0]
+
+
+def test_chunk_queue_can_retain_legacy_eight_action_execution() -> None:
+    calls = 0
+
+    def predict() -> np.ndarray:
+        nonlocal calls
+        calls += 1
+        return np.zeros((8, 7), dtype=np.float32)
+
+    queue = ActionChunkQueue(chunk_size=8, n_action_steps=8)
+    for _ in range(9):
+        queue.next(predict)
 
     assert calls == 2
-    assert [item.queue_index for item in selected] == list(range(8)) + [0]
-    assert selected[0].action[0] == 1.0
-    assert selected[8].action[0] == 2.0
-    assert selected[0].raw_chunk.shape == (8, 7)
 
 
 def test_chunk_queue_rejects_nonfinite_or_wrong_shape() -> None:
-    queue = ActionChunkQueue(chunk_size=8)
+    queue = ActionChunkQueue(chunk_size=8, n_action_steps=8)
     with pytest.raises(ValueError, match="shape"):
         queue.next(lambda: np.zeros((7, 7), dtype=np.float32))
     with pytest.raises(ValueError, match="finite"):
@@ -199,7 +210,12 @@ def test_rollout_checkpoint_records_gif_lifecycle_and_json(
             fps=20,
             image_size=(256, 256),
         ),
-        act=SimpleNamespace(device="cpu", output_dir=tmp_path / "output"),
+        act=SimpleNamespace(
+            device="cpu",
+            output_dir=tmp_path / "output",
+            chunk_size=8,
+            n_action_steps=1,
+        ),
         source=SimpleNamespace(max_objects=4),
     )
     projection = SimpleNamespace(
