@@ -48,6 +48,34 @@ class TeacherConfig:
 
 
 @dataclass(frozen=True)
+class ACTRecoveryConfig:
+    output_dir: Path
+    train_seen_cases: int = 10
+    heldout_cases: int = 20
+    heldout_attempt_multiplier: int = 10
+    heldout_master_seed: int = 2057736129
+    max_steps: int = 180
+    train_success_threshold: float = 0.8
+    heldout_success_threshold: float = 0.3
+
+    def __post_init__(self) -> None:
+        if (
+            self.train_seen_cases < 1
+            or self.heldout_cases < 1
+            or self.heldout_attempt_multiplier < 1
+            or self.heldout_master_seed < 0
+            or self.max_steps < 1
+        ):
+            raise ValueError(
+                "ACT recovery counts/max_steps must be positive and seed non-negative"
+            )
+        for name in ("train_success_threshold", "heldout_success_threshold"):
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"recovery.{name} must lie within [0, 1]")
+
+
+@dataclass(frozen=True)
 class ACTBridgeConfig:
     output_dir: Path
     device: str = "auto"
@@ -64,12 +92,21 @@ class ACTBridgeConfig:
     dim_feedforward: int = 1024
     encoder_layers: int = 2
     vae_encoder_layers: int = 2
+    shuffle_train: bool = False
+    pretrained_backbone_weights: str | None = None
 
     def __post_init__(self) -> None:
         if (self.steps is None) == (self.epochs is None):
             raise ValueError("ACT requires exactly one of steps or epochs")
-        if self.chunk_size != 8 or self.n_action_steps != 8:
-            raise ValueError("the first ACT bridge requires an 8-step chunk")
+        if self.chunk_size != 8:
+            raise ValueError("the ACT bridge requires an 8-step training chunk")
+        if not 1 <= self.n_action_steps <= self.chunk_size:
+            raise ValueError("ACT n_action_steps must lie within [1, chunk_size]")
+        if self.pretrained_backbone_weights not in {
+            None,
+            "ResNet18_Weights.IMAGENET1K_V1",
+        }:
+            raise ValueError("unsupported ACT pretrained_backbone_weights")
         if self.batch_size not in {1, 2} or self.num_workers != 0:
             raise ValueError("macOS ACT requires batch size 1/2 and num_workers=0")
         if self.device not in {"auto", "cpu", "mps"}:
@@ -88,6 +125,7 @@ class BridgeConfig:
     act: ACTBridgeConfig
     seed: int
     required_smoke_report: Path | None
+    recovery: ACTRecoveryConfig | None
     source: ExperimentConfig
 
 
@@ -104,6 +142,7 @@ def load_bridge_config(path: str | Path) -> BridgeConfig:
     dataset_raw = dict(raw.pop("dataset", {}))
     teacher_raw = dict(raw.pop("teacher", {}))
     act_raw = dict(raw.pop("act", {}))
+    recovery_raw = raw.pop("recovery", None)
 
     source_config_path = Path(raw.pop("source_config"))
     source = load_config(source_config_path)
@@ -116,6 +155,11 @@ def load_bridge_config(path: str | Path) -> BridgeConfig:
     dataset = DatasetBridgeConfig(**dataset_raw)
     teacher = TeacherConfig(**teacher_raw)
     act = ACTBridgeConfig(**act_raw)
+    recovery = None
+    if recovery_raw is not None:
+        recovery_values = dict(recovery_raw)
+        recovery_values["output_dir"] = Path(recovery_values["output_dir"])
+        recovery = ACTRecoveryConfig(**recovery_values)
 
     if source.backend != "franka_contact":
         raise ValueError("LeRobot bridge source backend must be franka_contact")
@@ -133,5 +177,6 @@ def load_bridge_config(path: str | Path) -> BridgeConfig:
         act=act,
         seed=int(raw.pop("seed")),
         required_smoke_report=_path_or_none(raw.pop("required_smoke_report", None)),
+        recovery=recovery,
         source=source,
     )

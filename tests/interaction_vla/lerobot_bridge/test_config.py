@@ -71,3 +71,31 @@ def test_act_schedule_requires_exactly_one_stop_condition() -> None:
         replace(config.act, steps=None, epochs=None)
     with pytest.raises(ValueError, match="learning_rate"):
         replace(config.act, learning_rate=0.0)
+
+
+def test_recovery_config_uses_pretrained_receding_horizon_act() -> None:
+    config = load_bridge_config("configs/lerobot_act_recovery_macos.yaml")
+
+    assert config.act.chunk_size == 8
+    assert config.act.n_action_steps == 1
+    assert config.act.shuffle_train is True
+    assert (
+        config.act.pretrained_backbone_weights
+        == "ResNet18_Weights.IMAGENET1K_V1"
+    )
+    assert config.recovery is not None
+    assert config.recovery.train_seen_cases == 10
+    assert config.recovery.heldout_cases == 20
+    assert config.recovery.heldout_attempt_multiplier == 10
+    assert config.required_smoke_report is None
+    assert config.recovery.train_success_threshold == pytest.approx(0.8)
+    assert config.recovery.heldout_success_threshold == pytest.approx(0.3)
+
+
+def test_action_horizon_must_fit_inside_chunk() -> None:
+    config = load_bridge_config("configs/lerobot_act_smoke_macos.yaml")
+
+    with pytest.raises(ValueError, match="n_action_steps"):
+        replace(config.act, n_action_steps=0)
+    with pytest.raises(ValueError, match="n_action_steps"):
+        replace(config.act, n_action_steps=9)
