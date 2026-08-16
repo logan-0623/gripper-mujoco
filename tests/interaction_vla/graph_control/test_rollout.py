@@ -18,6 +18,7 @@ from interaction_vla.graph_control.rollout import (
 )
 from interaction_vla.lerobot_bridge.rollout import ActionChunkQueue
 from interaction_vla.graph_control.schema import (
+    ALL_CONDITIONS,
     ORACLE_CONDITIONS,
     TOKEN_DIM,
     TOKEN_SLICES,
@@ -225,6 +226,7 @@ def test_rollout_aggregation_keeps_policy_seed_as_replication_unit() -> None:
         "environment_seed": 100,
         "layout": "normal",
         "object_count": 2,
+        "training_distribution": "id",
         "contrast": "oracle_graph_v2-flat",
         "metric": "success_rate",
         "delta": 1.0,
@@ -294,3 +296,51 @@ def test_oracle_gate_requires_ten_point_gain_without_more_wrong_grasps() -> None
     assert aggregate_rollouts(records, conditions=ORACLE_CONDITIONS)["oracle_gate"][
         "passed"
     ] is False
+
+
+def test_full_matrix_reports_five_contrasts_gap_recovery_and_id_ood_labels() -> None:
+    successes = {
+        "flat": 4,
+        "oracle_graph_v2": 16,
+        "predicted_random_v2": 6,
+        "predicted_reflect_v2": 10,
+    }
+    records = []
+    for seed in (0, 1, 2):
+        for index in range(20):
+            for condition in ALL_CONDITIONS:
+                record = _record(
+                    condition,
+                    seed,
+                    f"case_{index:02d}",
+                    index < successes[condition],
+                )
+                record["environment_seed"] = 1000 + index
+                record["layout"] = "normal" if index < 10 else "crowded"
+                record["object_count"] = 2 if index % 2 == 0 else 3
+                records.append(record)
+
+    report = aggregate_rollouts(records, conditions=ALL_CONDITIONS)
+
+    assert set(report["contrasts"]) == {
+        "oracle_graph_v2-flat",
+        "predicted_random_v2-flat",
+        "predicted_reflect_v2-flat",
+        "predicted_reflect_v2-predicted_random_v2",
+        "oracle_graph_v2-predicted_reflect_v2",
+    }
+    assert report["oracle_gap_recovered"] == 0.5
+    labels = {
+        (item["layout"], item["training_distribution"])
+        for item in report["paired_case_deltas"]
+    }
+    assert labels == {("normal", "id"), ("crowded", "ood")}
+
+
+def test_full_matrix_gap_recovery_is_null_without_positive_oracle_gap() -> None:
+    records = [
+        _record(condition, 0, "a", True) for condition in ALL_CONDITIONS
+    ]
+    assert aggregate_rollouts(
+        records, conditions=ALL_CONDITIONS
+    )["oracle_gap_recovered"] is None

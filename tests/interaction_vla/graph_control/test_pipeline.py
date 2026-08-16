@@ -11,6 +11,7 @@ from interaction_vla.graph_control.pipeline import (
     _atomic_output_directory,
     _load_source,
     _publish_evaluation,
+    _require_oracle_report,
     _require_recovery_report,
     _train_seed_with_fallback,
     _validate_formal_epochs,
@@ -144,6 +145,45 @@ def test_recovery_prerequisite_binds_exact_gate_and_returns_hash(tmp_path: Path)
     )
     with pytest.raises(ValueError, match="did not pass"):
         _require_recovery_report(config, SimpleNamespace(recovery=recovery))
+
+
+def test_predicted_matrix_requires_passing_oracle_gate_and_binds_hash(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "oracle.json"
+    report_path.write_text(
+        '{"passed": true, "oracle_gate": {"passed": true}}',
+        encoding="utf-8",
+    )
+    config = SimpleNamespace(
+        conditions=(
+            "flat",
+            "oracle_graph_v2",
+            "predicted_random_v2",
+            "predicted_reflect_v2",
+        ),
+        required_oracle_report=report_path,
+    )
+
+    digest = _require_oracle_report(config)
+
+    assert len(digest) == 64
+
+    report_path.write_text(
+        '{"passed": false, "oracle_gate": {"passed": false}}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="oracle gate"):
+        _require_oracle_report(config)
+
+
+def test_oracle_matrix_forbids_oracle_report_binding() -> None:
+    config = SimpleNamespace(
+        conditions=("flat", "oracle_graph_v2"),
+        required_oracle_report=Path("unexpected.json"),
+    )
+    with pytest.raises(ValueError, match="must be null"):
+        _require_oracle_report(config)
 
 
 def test_seed_oom_discards_partial_matrix_and_restarts_all_conditions(

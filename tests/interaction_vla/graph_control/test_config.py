@@ -18,6 +18,7 @@ def _write_config(
         f"""
 bridge_config: configs/lerobot_act_recovery_macos.yaml
 required_recovery_report: outputs/graph_control/act_recovery/evaluation/recovery_report.json
+required_oracle_report: null
 split_manifest: outputs/graph_finetune/mujoco_graph_v2/split_manifest.json
 graph_runs_root: {graph_runs_root}
 conditions: {conditions}
@@ -68,11 +69,18 @@ def test_full_matrix_requires_graph_runs_root(tmp_path: Path) -> None:
     )
     text = path.read_text().replace("layouts: [normal]", "layouts: [normal, crowded]")
     text = text.replace("object_counts: [2]", "object_counts: [2, 3]")
+    text = text.replace(
+        "required_oracle_report: null",
+        "required_oracle_report: outputs/graph_control/graph_v2_oracle/runs/evaluation/report.json",
+    )
     path.write_text(text)
 
     config = load_graph_control_config(path)
 
     assert config.conditions == ALL_CONDITIONS
+    assert config.required_oracle_report == Path(
+        "outputs/graph_control/graph_v2_oracle/runs/evaluation/report.json"
+    )
     assert config.graph_checkpoint("predicted_random_v2", 0) == Path(
         "outputs/graph_finetune/mujoco_graph_v2/random_init/fraction_1/seed_0/checkpoint.pt"
     )
@@ -82,6 +90,17 @@ def test_config_rejects_arbitrary_condition_matrix(tmp_path: Path) -> None:
     path = tmp_path / "graph_control.yaml"
     _write_config(path, conditions="[flat, predicted_reflect_v2]")
     with pytest.raises(ValueError, match="oracle pair or full"):
+        load_graph_control_config(path)
+
+
+def test_full_matrix_requires_oracle_report_path(tmp_path: Path) -> None:
+    path = tmp_path / "graph_control.yaml"
+    _write_config(
+        path,
+        conditions="[flat, oracle_graph_v2, predicted_random_v2, predicted_reflect_v2]",
+        graph_runs_root="outputs/graph_finetune/mujoco_graph_v2",
+    )
+    with pytest.raises(ValueError, match="required_oracle_report"):
         load_graph_control_config(path)
 
 

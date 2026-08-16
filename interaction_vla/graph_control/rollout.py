@@ -176,6 +176,8 @@ _AGGREGATE_FIELDS = {
     "mean_gripper_switch_count": "gripper_switch_count",
 }
 _FULL_CONTRASTS = (
+    ("oracle_graph_v2", "flat"),
+    ("predicted_random_v2", "flat"),
     ("predicted_reflect_v2", "flat"),
     ("predicted_reflect_v2", "predicted_random_v2"),
     ("oracle_graph_v2", "predicted_reflect_v2"),
@@ -274,6 +276,9 @@ def aggregate_rollouts(
                         "environment_seed": environment_seed,
                         "layout": layout,
                         "object_count": object_count,
+                        "training_distribution": (
+                            "id" if layout == "normal" else "ood"
+                        ),
                         "contrast": f"{first}-{second}",
                         "metric": metric,
                         "delta": float(paired[first][source_name])
@@ -346,6 +351,23 @@ def aggregate_rollouts(
         "by_condition": by_condition,
         "contrasts": contrasts,
     }
+    if active == ALL_CONDITIONS:
+        oracle_gap = (
+            by_condition["oracle_graph_v2"]["success_rate"]
+            - by_condition["flat"]["success_rate"]
+        )
+        result["oracle_gap_recovered"] = (
+            None
+            if oracle_gap <= 0.0
+            else round(
+                (
+                    by_condition["predicted_reflect_v2"]["success_rate"]
+                    - by_condition["flat"]["success_rate"]
+                )
+                / oracle_gap,
+                12,
+            )
+        )
     if oracle_gate is not None:
         result["oracle_gate"] = oracle_gate
     return result
@@ -499,6 +521,7 @@ def rollout_case(
         "case_id": case.case_id,
         "environment_seed": case.seed,
         "layout": case.layout,
+        "training_distribution": "id" if case.layout == "normal" else "ood",
         "object_count": case.object_count,
         "success": reason is TerminationReason.SUCCESS,
         "wrong_object_interaction": bool(interaction["wrong_object_interaction"]),

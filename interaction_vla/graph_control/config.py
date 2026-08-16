@@ -80,6 +80,7 @@ class GraphControlConfig:
     config_path: Path
     bridge_config: Path
     required_recovery_report: Path
+    required_oracle_report: Path | None
     split_manifest: Path
     graph_runs_root: Path | None
     conditions: tuple[str, ...]
@@ -96,8 +97,17 @@ class GraphControlConfig:
             )
         if self.conditions == ORACLE_CONDITIONS and self.graph_runs_root is not None:
             raise ValueError("oracle-only Graph control must set graph_runs_root to null")
+        if (
+            self.conditions == ORACLE_CONDITIONS
+            and self.required_oracle_report is not None
+        ):
+            raise ValueError(
+                "oracle-only Graph control required_oracle_report must be null"
+            )
         if self.conditions == ALL_CONDITIONS and self.graph_runs_root is None:
             raise ValueError("the full Graph v2 matrix requires graph_runs_root")
+        if self.conditions == ALL_CONDITIONS and self.required_oracle_report is None:
+            raise ValueError("the full Graph v2 matrix requires required_oracle_report")
         if not self.seeds or len(set(self.seeds)) != len(self.seeds):
             raise ValueError("seeds must be non-empty and unique")
         if any(seed < 0 for seed in self.seeds):
@@ -144,6 +154,7 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
         {
             "bridge_config",
             "required_recovery_report",
+            "required_oracle_report",
             "split_manifest",
             "graph_runs_root",
             "conditions",
@@ -157,6 +168,7 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
     required = {
         "bridge_config",
         "required_recovery_report",
+        "required_oracle_report",
         "split_manifest",
         "graph_runs_root",
         "conditions",
@@ -186,6 +198,11 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
         config_path=config_path,
         bridge_config=Path(raw["bridge_config"]),
         required_recovery_report=Path(raw["required_recovery_report"]),
+        required_oracle_report=(
+            None
+            if raw["required_oracle_report"] is None
+            else Path(raw["required_oracle_report"])
+        ),
         split_manifest=Path(raw["split_manifest"]),
         graph_runs_root=(
             None if raw["graph_runs_root"] is None else Path(raw["graph_runs_root"])

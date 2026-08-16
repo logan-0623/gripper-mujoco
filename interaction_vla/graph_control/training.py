@@ -177,13 +177,22 @@ def _graph_bindings(
     cache: TokenCache,
     *,
     recovery_report_sha256: str,
+    oracle_report_sha256: str | None = None,
 ) -> dict[str, object]:
     if len(recovery_report_sha256) != 64 or any(
         character not in "0123456789abcdef"
         for character in recovery_report_sha256
     ):
         raise ValueError("recovery_report_sha256 must be a lowercase SHA-256 digest")
-    return {
+    if oracle_report_sha256 is not None and (
+        len(oracle_report_sha256) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in oracle_report_sha256
+        )
+    ):
+        raise ValueError("oracle_report_sha256 must be a lowercase SHA-256 digest")
+    bindings: dict[str, object] = {
         "schema_version": ACT_GRAPH_SCHEMA_VERSION,
         "condition": condition,
         "seed": int(seed),
@@ -197,6 +206,9 @@ def _graph_bindings(
         "state_codec_version": STATE_CODEC_VERSION,
         "action_codec_version": ACTION_CODEC_VERSION,
     }
+    if oracle_report_sha256 is not None:
+        bindings["oracle_report_sha256"] = oracle_report_sha256
+    return bindings
 
 
 def graph_checkpoint_bindings(
@@ -205,12 +217,14 @@ def graph_checkpoint_bindings(
     cache: TokenCache,
     *,
     recovery_report_sha256: str,
+    oracle_report_sha256: str | None = None,
 ) -> dict[str, object]:
     return _graph_bindings(
         condition,
         seed,
         cache,
         recovery_report_sha256=recovery_report_sha256,
+        oracle_report_sha256=oracle_report_sha256,
     )
 
 
@@ -377,6 +391,7 @@ def _train_condition(
     smoke_steps: int | None,
     initial_epochs: int | None,
     recovery_report_sha256: str,
+    oracle_report_sha256: str | None,
 ) -> dict[str, object]:
     _seed_all(seed)
     conditioned_train = GraphConditionedDataset(train_dataset, cache)
@@ -472,6 +487,7 @@ def _train_condition(
         seed,
         cache,
         recovery_report_sha256=recovery_report_sha256,
+        oracle_report_sha256=oracle_report_sha256,
     )
     reload_error = _save_condition(
         bundle=bundle,
@@ -539,9 +555,14 @@ def train_paired_seed(
     maximum_epochs: int | None,
     conditions: tuple[str, ...],
     recovery_report_sha256: str,
+    oracle_report_sha256: str | None = None,
     bridge_config: BridgeConfig | None = None,
 ) -> dict[str, object]:
     active = _validated_conditions(conditions)
+    if active == ORACLE_CONDITIONS and oracle_report_sha256 is not None:
+        raise ValueError("oracle ACT matrix must not bind an oracle report")
+    if active == ALL_CONDITIONS and oracle_report_sha256 is None:
+        raise ValueError("predicted ACT matrix requires an oracle report SHA-256")
     if set(caches) != set(active):
         raise ValueError("paired training requires the exact cache condition matrix")
     if batch_size < 1:
@@ -562,6 +583,7 @@ def train_paired_seed(
         cache.provenance.dataset_fingerprint for cache in caches.values()
     }
     split_hashes = {cache.provenance.split_manifest_sha256 for cache in caches.values()}
+    oracle_hashes = {cache.provenance.oracle_report_sha256 for cache in caches.values()}
     for condition in active:
         cache = caches[condition]
         if cache.provenance.condition != condition:
@@ -574,6 +596,8 @@ def train_paired_seed(
             raise ValueError(f"cache Graph seed mismatch: {condition}")
     if len(dataset_fingerprints) != 1 or len(split_hashes) != 1:
         raise ValueError("paired ACT caches disagree on dataset or split provenance")
+    if oracle_hashes != {oracle_report_sha256}:
+        raise ValueError("paired ACT caches disagree on oracle report provenance")
 
     summaries: dict[str, dict[str, object]] = {}
     for condition in active:
@@ -594,6 +618,7 @@ def train_paired_seed(
             smoke_steps=smoke_steps,
             initial_epochs=initial_epochs,
             recovery_report_sha256=recovery_report_sha256,
+            oracle_report_sha256=oracle_report_sha256,
         )
         gc.collect()
     assert_paired_summaries(summaries, conditions=active)
@@ -603,6 +628,7 @@ def train_paired_seed(
         "seed": seed,
         "conditions": list(active),
         "recovery_report_sha256": recovery_report_sha256,
+        "oracle_report_sha256": oracle_report_sha256,
         "summaries": summaries,
         "fixed_epochs": initial_epochs,
         "maximum_epochs": maximum_epochs,

@@ -35,6 +35,7 @@ def _provenance(condition: str = "predicted_reflect_v2") -> CacheProvenance:
         graph_initialization=None if checkpoint_free else "reflectvlm_init",
         graph_fraction=None if checkpoint_free else 1.0,
         graph_seed=None if checkpoint_free else 0,
+        oracle_report_sha256=None if checkpoint_free else "c" * 64,
     )
 
 
@@ -53,6 +54,7 @@ def test_cache_round_trip_is_immutable_and_binds_v2_provenance(
     assert manifest["schema_version"] == CACHE_SCHEMA_VERSION
     assert manifest["token_schema_version"] == TOKEN_SCHEMA_VERSION
     assert manifest["token_feature_names"] == list(TOKEN_FEATURE_NAMES)
+    assert manifest["provenance"]["oracle_report_sha256"] == "c" * 64
     assert len(manifest["ordered_row_sha256"]) == 64
     np.testing.assert_array_equal(loaded.row_indices, rows)
     np.testing.assert_array_equal(loaded.tokens, tokens)

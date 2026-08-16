@@ -1,5 +1,6 @@
 bridge_config: configs/lerobot_act_recovery_macos.yaml
 required_recovery_report: outputs/graph_control/act_recovery/evaluation/recovery_report.json
+required_oracle_report: null
 split_manifest: outputs/graph_finetune/mujoco_graph_v2/split_manifest.json
 graph_runs_root: null
 conditions: [flat, oracle_graph_v2]

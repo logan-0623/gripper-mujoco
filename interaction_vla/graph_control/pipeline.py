@@ -50,7 +50,7 @@ from .rollout import (
     paired_evaluation_cases,
     rollout_case,
 )
-from .schema import TOKEN_DIM
+from .schema import ALL_CONDITIONS, ORACLE_CONDITIONS, TOKEN_DIM
 from .training import (
     ControlSplit,
     assert_checkpoint_split,
@@ -150,6 +150,29 @@ def _require_recovery_report(
     return sha256_file(path)
 
 
+def _require_oracle_report(config: GraphControlConfig | Any) -> str | None:
+    path = config.required_oracle_report
+    if tuple(config.conditions) == ORACLE_CONDITIONS:
+        if path is not None:
+            raise ValueError("oracle matrix required_oracle_report must be null")
+        return None
+    if tuple(config.conditions) != ALL_CONDITIONS or path is None:
+        raise ValueError("predicted Graph v2 matrix requires an oracle report")
+    source = Path(path)
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"Graph v2 oracle report is invalid: {source}") from error
+    gate = payload.get("oracle_gate")
+    if (
+        payload.get("passed") is not True
+        or not isinstance(gate, Mapping)
+        or gate.get("passed") is not True
+    ):
+        raise ValueError("Graph v2 oracle gate did not pass")
+    return sha256_file(source)
+
+
 def _clear_mps_memory() -> None:
     gc.collect()
     if (
@@ -240,6 +263,7 @@ def _load_graph_payload(
     *,
     condition: str,
     seed: int,
+    oracle_report_sha256: str | None,
 ) -> dict[str, Any]:
     checkpoint = config.graph_checkpoint(condition, seed)
     if checkpoint is None:
@@ -247,6 +271,11 @@ def _load_graph_payload(
     model, _, payload = load_finetune_checkpoint(checkpoint, device="cpu")
     del model
     assert_checkpoint_split(payload, split, condition=condition, seed=seed)
+    if (
+        oracle_report_sha256 is None
+        or payload.get("oracle_report_sha256") != oracle_report_sha256
+    ):
+        raise ValueError("Graph checkpoint oracle report SHA-256 mismatch")
     return payload
 
 
@@ -265,25 +294,51 @@ def _validate_source_alignment(source: Any, split: ControlSplit) -> None:
 
 def _context(
     path: str | Path,
-) -> tuple[GraphControlConfig, BridgeConfig, ControlSplit, Any, str]:
+) -> tuple[
+    GraphControlConfig,
+    BridgeConfig,
+    ControlSplit,
+    Any,
+    str,
+    str | None,
+]:
     config = load_graph_control_config(path)
     bridge = load_bridge_config(config.bridge_config)
     recovery_report_sha256 = _require_recovery_report(config, bridge)
+    oracle_report_sha256 = _require_oracle_report(config)
     split = load_control_split(config.split_manifest)
     source = _load_source(bridge)
     _validate_source_alignment(source, split)
-    return config, bridge, split, source, recovery_report_sha256
+    return (
+        config,
+        bridge,
+        split,
+        source,
+        recovery_report_sha256,
+        oracle_report_sha256,
+    )
 
 
 def inspect_from_config(path: str | Path) -> dict[str, object]:
-    config, bridge, split, source, recovery_report_sha256 = _context(path)
+    (
+        config,
+        bridge,
+        split,
+        source,
+        recovery_report_sha256,
+        oracle_report_sha256,
+    ) = _context(path)
     checkpoints: dict[str, object] = {}
     for seed in config.seeds:
         for condition in config.conditions:
             if condition not in {"predicted_random_v2", "predicted_reflect_v2"}:
                 continue
             payload = _load_graph_payload(
-                config, split, condition=condition, seed=seed
+                config,
+                split,
+                condition=condition,
+                seed=seed,
+                oracle_report_sha256=oracle_report_sha256,
             )
             checkpoint = config.graph_checkpoint(condition, seed)
             assert checkpoint is not None
@@ -307,6 +362,7 @@ def inspect_from_config(path: str | Path) -> dict[str, object]:
         "split_manifest_sha256": split.sha256,
         "recovery_report": config.required_recovery_report,
         "recovery_report_sha256": recovery_report_sha256,
+        "oracle_report_sha256": oracle_report_sha256,
         "partition_episodes": {
             name: len(values) for name, values in split.episodes.items()
         },
@@ -331,6 +387,7 @@ def _provenance(
     split: ControlSplit,
     checkpoint: Path | None,
     payload: Mapping[str, Any] | None,
+    oracle_report_sha256: str | None,
 ) -> CacheProvenance:
     if checkpoint is None or payload is None:
         return CacheProvenance(
@@ -341,6 +398,7 @@ def _provenance(
             graph_initialization=None,
             graph_fraction=None,
             graph_seed=None,
+            oracle_report_sha256=oracle_report_sha256,
         )
     return CacheProvenance(
         condition=condition,
@@ -350,6 +408,7 @@ def _provenance(
         graph_initialization=str(payload["initialization"]),
         graph_fraction=float(payload["fraction"]),
         graph_seed=int(payload["seed"]),
+        oracle_report_sha256=oracle_report_sha256,
     )
 
 
@@ -408,7 +467,14 @@ def _oracle_inputs(
 
 
 def cache_from_config(path: str | Path) -> dict[str, object]:
-    config, bridge, split, source, recovery_report_sha256 = _context(path)
+    (
+        config,
+        bridge,
+        split,
+        source,
+        recovery_report_sha256,
+        oracle_report_sha256,
+    ) = _context(path)
     destination = config.cache.directory
     if destination.exists():
         if any(destination.iterdir()):
@@ -430,7 +496,11 @@ def cache_from_config(path: str | Path) -> dict[str, object]:
                     None
                     if checkpoint is None
                     else _load_graph_payload(
-                        config, split, condition=condition, seed=seed
+                        config,
+                        split,
+                        condition=condition,
+                        seed=seed,
+                        oracle_report_sha256=oracle_report_sha256,
                     )
                 )
                 runtime = (
@@ -450,6 +520,7 @@ def cache_from_config(path: str | Path) -> dict[str, object]:
                         split=split,
                         checkpoint=checkpoint,
                         payload=payload,
+                        oracle_report_sha256=oracle_report_sha256,
                     ),
                     oracle_targets=(
                         oracle_targets if condition == "oracle_graph_v2" else None
@@ -472,6 +543,7 @@ def cache_from_config(path: str | Path) -> dict[str, object]:
         "token_dim": TOKEN_DIM,
         "artifacts": artifacts,
         "recovery_report_sha256": recovery_report_sha256,
+        "oracle_report_sha256": oracle_report_sha256,
         "future_relation_goal_used_for_token": False,
     }
 
@@ -485,6 +557,7 @@ def _expected_cache(
     seed: int,
     dataset_fingerprint: str | None = None,
     payload: Mapping[str, Any] | None = None,
+    oracle_report_sha256: str | None = None,
 ) -> CacheProvenance:
     if dataset_fingerprint is None:
         dataset_fingerprint = _control_dataset_fingerprint(bridge)
@@ -496,20 +569,33 @@ def _expected_cache(
             split=split,
             checkpoint=None,
             payload=None,
+            oracle_report_sha256=oracle_report_sha256,
         )
     if payload is None:
-        payload = _load_graph_payload(config, split, condition=condition, seed=seed)
+        payload = _load_graph_payload(
+            config,
+            split,
+            condition=condition,
+            seed=seed,
+            oracle_report_sha256=oracle_report_sha256,
+        )
     return _provenance(
         condition=condition,
         dataset_fingerprint=dataset_fingerprint,
         split=split,
         checkpoint=checkpoint,
         payload=payload,
+        oracle_report_sha256=oracle_report_sha256,
     )
 
 
 def _load_cache_matrix(
-    config: GraphControlConfig, bridge: BridgeConfig, split: ControlSplit, seed: int
+    config: GraphControlConfig,
+    bridge: BridgeConfig,
+    split: ControlSplit,
+    seed: int,
+    *,
+    oracle_report_sha256: str | None,
 ) -> dict[str, TokenCache]:
     dataset_fingerprint = _control_dataset_fingerprint(bridge)
     payloads: dict[Path, Mapping[str, Any]] = {}
@@ -517,7 +603,11 @@ def _load_cache_matrix(
         checkpoint = config.graph_checkpoint(condition, seed)
         if checkpoint is not None and checkpoint not in payloads:
             payloads[checkpoint] = _load_graph_payload(
-                config, split, condition=condition, seed=seed
+                config,
+                split,
+                condition=condition,
+                seed=seed,
+                oracle_report_sha256=oracle_report_sha256,
             )
     return {
         condition: load_token_cache(
@@ -534,6 +624,7 @@ def _load_cache_matrix(
                     if config.graph_checkpoint(condition, seed) is None
                     else payloads[config.graph_checkpoint(condition, seed)]
                 ),
+                oracle_report_sha256=oracle_report_sha256,
             ),
         )
         for condition in config.conditions
@@ -541,7 +632,14 @@ def _load_cache_matrix(
 
 
 def _train_from_config(path: str | Path, *, smoke: bool) -> dict[str, object]:
-    config, bridge, split, source, recovery_report_sha256 = _context(path)
+    (
+        config,
+        bridge,
+        split,
+        source,
+        recovery_report_sha256,
+        oracle_report_sha256,
+    ) = _context(path)
     del source
     if not smoke:
         _validate_formal_epochs(config, bridge)
@@ -559,7 +657,13 @@ def _train_from_config(path: str | Path, *, smoke: bool) -> dict[str, object]:
     with _atomic_output_directory(destination) as staging:
         reports: dict[str, object] = {}
         for seed in config.seeds:
-            caches = _load_cache_matrix(config, bridge, split, seed)
+            caches = _load_cache_matrix(
+                config,
+                bridge,
+                split,
+                seed,
+                oracle_report_sha256=oracle_report_sha256,
+            )
 
             def train_attempt(
                 batch_size: int, seed_output: Path
@@ -579,6 +683,7 @@ def _train_from_config(path: str | Path, *, smoke: bool) -> dict[str, object]:
                     maximum_epochs=None if smoke else config.training.formal_epochs,
                     conditions=config.conditions,
                     recovery_report_sha256=recovery_report_sha256,
+                    oracle_report_sha256=oracle_report_sha256,
                     bridge_config=bridge,
                 )
 
@@ -592,6 +697,7 @@ def _train_from_config(path: str | Path, *, smoke: bool) -> dict[str, object]:
             "mode": "smoke" if smoke else "formal",
             "conditions": list(config.conditions),
             "recovery_report_sha256": recovery_report_sha256,
+            "oracle_report_sha256": oracle_report_sha256,
             "seeds": list(config.seeds),
             "fixed_epochs": None if smoke else config.training.formal_epochs,
             "reports": reports,
@@ -620,6 +726,7 @@ def _runtime_for_condition(
     condition: str,
     cache: TokenCache,
     recovery_report_sha256: str,
+    oracle_report_sha256: str | None,
     oracle_normalization: GraphV2Normalization,
 ) -> GraphPolicyRuntime:
     bindings = graph_checkpoint_bindings(
@@ -627,6 +734,7 @@ def _runtime_for_condition(
         seed,
         cache,
         recovery_report_sha256=recovery_report_sha256,
+        oracle_report_sha256=oracle_report_sha256,
     )
     checkpoint = (
         config.training.output_dir / f"seed_{seed}" / condition / "checkpoint"
@@ -683,7 +791,14 @@ def evaluate_from_config(path: str | Path) -> dict[str, object]:
         not evaluation_dir.is_dir() or any(evaluation_dir.iterdir())
     ):
         raise FileExistsError("Graph-conditioned ACT evaluation output already exists")
-    config, bridge, split, source, recovery_report_sha256 = _context(path)
+    (
+        config,
+        bridge,
+        split,
+        source,
+        recovery_report_sha256,
+        oracle_report_sha256,
+    ) = _context(path)
     _, _, oracle_normalization = _oracle_inputs(bridge, source, split)
     del source
     cases = paired_evaluation_cases(
@@ -694,7 +809,13 @@ def evaluate_from_config(path: str | Path) -> dict[str, object]:
     )
     records: list[dict[str, object]] = []
     for seed in config.seeds:
-        caches = _load_cache_matrix(config, bridge, split, seed)
+        caches = _load_cache_matrix(
+            config,
+            bridge,
+            split,
+            seed,
+            oracle_report_sha256=oracle_report_sha256,
+        )
         for condition in config.conditions:
             runtime = _runtime_for_condition(
                 config,
@@ -704,6 +825,7 @@ def evaluate_from_config(path: str | Path) -> dict[str, object]:
                 condition=condition,
                 cache=caches[condition],
                 recovery_report_sha256=recovery_report_sha256,
+                oracle_report_sha256=oracle_report_sha256,
                 oracle_normalization=oracle_normalization,
             )
             records.extend(
@@ -725,5 +847,6 @@ def evaluate_from_config(path: str | Path) -> dict[str, object]:
             **report,
             "cases": len(cases),
             "recovery_report_sha256": recovery_report_sha256,
+            "oracle_report_sha256": oracle_report_sha256,
         },
     )

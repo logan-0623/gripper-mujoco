@@ -48,6 +48,7 @@ class CacheProvenance:
     graph_fraction: float | None
     graph_seed: int | None
     token_schema_version: str = TOKEN_SCHEMA_VERSION
+    oracle_report_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if self.condition not in CONDITIONS:
@@ -55,6 +56,7 @@ class CacheProvenance:
         _hash_value(self.dataset_fingerprint, "dataset_fingerprint")
         _hash_value(self.split_manifest_sha256, "split_manifest_sha256")
         _hash_value(self.graph_checkpoint_sha256, "graph_checkpoint_sha256")
+        _hash_value(self.oracle_report_sha256, "oracle_report_sha256")
         if self.token_schema_version != TOKEN_SCHEMA_VERSION:
             raise ValueError("cache provenance token schema is incompatible")
         graph_values = (

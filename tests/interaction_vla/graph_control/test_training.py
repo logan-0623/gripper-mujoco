@@ -191,6 +191,14 @@ def test_one_update_per_condition_is_paired_and_reloadable(
     assert bindings["token_dim"] == TOKEN_DIM
     assert bindings["token_feature_names"] == list(TOKEN_FEATURE_NAMES)
     assert bindings["recovery_report_sha256"] == "c" * 64
+    assert "oracle_report_sha256" not in bindings
+    assert graph_checkpoint_bindings(
+        "flat",
+        7,
+        caches["flat"],
+        recovery_report_sha256="c" * 64,
+        oracle_report_sha256="d" * 64,
+    )["oracle_report_sha256"] == "d" * 64
     expected = expected_graph_checkpoint_metadata(
         dataset_root=dataset_root,
         features=GraphConditionedDataset(base, caches["flat"]).features,
