@@ -46,10 +46,12 @@ MUJOCO_LOG.TXT
 /ckpt/
 /wandb/
 
-# Generated training and evaluation artifacts. Physics baselines under
-# outputs/interaction_graph_physics remain versioned intentionally.
-/outputs/interaction_vla/
-/outputs/lerobot/
-/outputs/graph_control/
-/outputs/graph_finetune/
-/outputs/graph_pretrain/
+# Generated datasets, checkpoints, caches, and evaluation artifacts.
+# Keep reproducible summaries in docs/results instead of versioning outputs.
+/outputs/
+
+# Large experiment media belongs in Hugging Face or GitHub Releases. Keep the
+# two small README/demo GIFs versioned under docs/media.
+/docs/media/interaction_chunk_flat_vs_graph.gif
+/docs/media/flat_vs_graph_seed0_crowded.gif
+/docs/media/terminal_recovery_flat_vs_graph_id.gif
