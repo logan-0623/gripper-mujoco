@@ -1,55 +1,33 @@
 from __future__ import annotations
 
-from types import MappingProxyType
-from typing import Final, Mapping
+from typing import Final
 
 import numpy as np
 
+from interaction_vla.graph_finetune.schema import (
+    GRAPH_SCHEMA_VERSION,
+    TOKEN_DIM,
+    TOKEN_FEATURE_NAMES,
+    TOKEN_SCHEMA_VERSION,
+    TOKEN_SLICES,
+)
 
-CONDITIONS: Final[tuple[str, ...]] = (
+
+ORACLE_CONDITIONS: Final[tuple[str, ...]] = ("flat", "oracle_graph_v2")
+ALL_CONDITIONS: Final[tuple[str, ...]] = (
     "flat",
-    "predicted_random",
-    "predicted_reflect",
-    "oracle_current",
+    "oracle_graph_v2",
+    "predicted_random_v2",
+    "predicted_reflect_v2",
 )
-
-_SLICE_WIDTHS = (
-    ("entity_presence", 6),
-    ("entity_visibility", 12),
-    ("relation_presence", 8),
-    ("gripper_target_semantics", 10),
-    ("target_receptacle_semantics", 10),
-    ("distractor_risks", 8),
-    ("next_relation", 8),
-    ("relation_operator", 5),
-    ("predicate", 7),
-    ("goal_residual", 1),
-)
-
-
-def _make_slices() -> Mapping[str, slice]:
-    result: dict[str, slice] = {}
-    cursor = 0
-    for name, width in _SLICE_WIDTHS:
-        result[name] = slice(cursor, cursor + width)
-        cursor += width
-    return MappingProxyType(result)
-
-
-TOKEN_SLICES: Final[Mapping[str, slice]] = _make_slices()
-TOKEN_DIM: Final[int] = TOKEN_SLICES["goal_residual"].stop
-TOKEN_FEATURE_NAMES: Final[tuple[str, ...]] = tuple(
-    f"{name}_{index}"
-    for name, value in TOKEN_SLICES.items()
-    for index in range(value.stop - value.start)
-)
+CONDITIONS: Final[tuple[str, ...]] = ALL_CONDITIONS
 
 
 def validate_token(value: object) -> np.ndarray:
     token = np.asarray(value, dtype=np.float32)
     if token.shape != (TOKEN_DIM,) or not np.isfinite(token).all():
-        raise ValueError(f"graph control token must be finite with shape [{TOKEN_DIM}]")
-    return token
+        raise ValueError(f"Graph v2 token must be finite with shape [{TOKEN_DIM}]")
+    return token.copy()
 
 
 def empty_token() -> np.ndarray:

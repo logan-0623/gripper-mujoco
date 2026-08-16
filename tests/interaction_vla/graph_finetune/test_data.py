@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 import torch
@@ -14,7 +16,88 @@ from interaction_vla.graph_finetune.data import (
     split_episode_indices,
 )
 from interaction_vla.graph_pretrain.reflectvlm import Vocabulary
-from interaction_vla.graph_finetune.schema import SEMANTIC_CHANNELS
+from interaction_vla.graph_finetune.schema import (
+    GRAPH_SCHEMA_VERSION,
+    SEMANTIC_CHANNELS,
+    TOKEN_DIM,
+    TOKEN_FEATURE_NAMES,
+    TOKEN_SCHEMA_VERSION,
+    TOKEN_SLICES,
+    GraphV2Targets,
+)
+
+
+def make_graph_v2_targets(frames: int = 3) -> GraphV2Targets:
+    gripper_target = np.zeros((frames, 8), dtype=np.float32)
+    gripper_target[:, 5:8] = 0.5
+    target_receptacle = np.zeros((frames, 10), dtype=np.float32)
+    target_receptacle[:, 8:10] = 0.5
+    distractors = np.zeros((frames, 2, 7), dtype=np.float32)
+    distractors[:, :, 4:7] = 0.5
+    return GraphV2Targets(
+        entity_mask=np.ones((frames, 6), dtype=np.bool_),
+        entity_visibility=np.full((frames, 6, 2), 0.5, dtype=np.float32),
+        relation_mask=np.ones((frames, 8), dtype=np.bool_),
+        gripper_target_geometry=gripper_target,
+        target_receptacle_geometry=target_receptacle,
+        distractor_geometry=distractors,
+        phase=np.zeros(frames, dtype=np.int64),
+        relation_trends=np.zeros((frames, 4), dtype=np.float32),
+        goal_relation=np.zeros(frames, dtype=np.int64),
+        goal_operator=np.zeros(frames, dtype=np.int64),
+        goal_predicate=np.zeros(frames, dtype=np.int64),
+        goal_residual=np.zeros(frames, dtype=np.float32),
+    )
+
+
+def test_graph_v2_token_layout_is_exact_and_stable() -> None:
+    expected = {
+        "entity_presence": (0, 6),
+        "entity_visibility": (6, 18),
+        "relation_presence": (18, 26),
+        "gripper_target_geometry": (26, 34),
+        "target_receptacle_geometry": (34, 44),
+        "distractor_geometry": (44, 58),
+        "phase": (58, 64),
+        "relation_trends": (64, 68),
+        "next_relation": (68, 76),
+        "relation_operator": (76, 81),
+        "predicate": (81, 88),
+        "goal_residual": (88, 89),
+    }
+
+    assert GRAPH_SCHEMA_VERSION == "mujoco_interaction_graph_v2"
+    assert TOKEN_SCHEMA_VERSION == "interaction_graph_control_v2"
+    assert {
+        name: (value.start, value.stop) for name, value in TOKEN_SLICES.items()
+    } == expected
+    assert TOKEN_DIM == 89
+    assert len(TOKEN_FEATURE_NAMES) == 89
+    assert len(set(TOKEN_FEATURE_NAMES)) == 89
+
+
+def test_v2_targets_reject_wrong_shapes_nonfinite_and_inactive_values() -> None:
+    valid = make_graph_v2_targets(frames=3)
+
+    assert valid.gripper_target_geometry.shape == (3, 8)
+    assert valid.target_receptacle_geometry.shape == (3, 10)
+    assert valid.distractor_geometry.shape == (3, 2, 7)
+    assert valid.phase.shape == (3,)
+    assert valid.relation_trends.shape == (3, 4)
+
+    with pytest.raises(ValueError, match="gripper_target_geometry"):
+        replace(
+            valid,
+            gripper_target_geometry=np.zeros((3, 7), dtype=np.float32),
+        )
+    invalid = valid.target_receptacle_geometry.copy()
+    invalid[0, 0] = np.nan
+    with pytest.raises(ValueError, match="target_receptacle_geometry"):
+        replace(valid, target_receptacle_geometry=invalid)
+    relation_mask = valid.relation_mask.copy()
+    relation_mask[0, 3] = False
+    with pytest.raises(ValueError, match="inactive distractor"):
+        replace(valid, relation_mask=relation_mask)
 
 
 def teacher_arrays(frames: int = 3) -> dict[str, np.ndarray]:
