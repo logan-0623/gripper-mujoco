@@ -99,7 +99,7 @@ def test_dataset_adds_native_environment_state_by_global_index(tmp_path: Path) -
             assert first[name] == base[0][name]
 
 
-def test_metadata_proxy_declares_75d_environment_feature(tmp_path: Path) -> None:
+def test_metadata_proxy_declares_89d_environment_feature(tmp_path: Path) -> None:
     base = _Dataset()
     dataset = GraphConditionedDataset(base, _cache(tmp_path))
 
@@ -107,6 +107,7 @@ def test_metadata_proxy_declares_75d_environment_feature(tmp_path: Path) -> None
     assert dataset.meta.stats is base.meta.stats
     assert dataset.features == dataset.meta.features
     feature = dataset.meta.features["observation.environment_state"]
+    assert feature["shape"] == [89]
     assert feature == {
         "dtype": "float32",
         "shape": [TOKEN_DIM],
@@ -128,4 +129,3 @@ def test_dataset_refuses_missing_or_duplicate_cache_rows(tmp_path: Path) -> None
     dataset = GraphConditionedDataset(base, cache)
     with pytest.raises(ValueError, match="row 99"):
         dataset[1]
-

@@ -199,3 +199,20 @@ def test_cache_rejects_duplicate_rows_and_nonfinite_tokens(tmp_path: Path) -> No
         write_token_cache(
             tmp_path / "nan.npz", np.array([0]), bad, _provenance()
         )
+
+
+def test_legacy_75d_cache_fails_with_schema_error(tmp_path: Path) -> None:
+    path = tmp_path / "legacy.npz"
+    write_token_cache(
+        path,
+        np.array([0]),
+        np.zeros((1, TOKEN_DIM), dtype=np.float32),
+        _provenance(),
+    )
+    manifest_path = path.with_suffix(".manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["token_dim"] = 75
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="dimension is incompatible"):
+        load_token_cache(path)

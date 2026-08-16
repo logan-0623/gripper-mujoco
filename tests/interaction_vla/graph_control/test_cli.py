@@ -7,7 +7,7 @@ import pytest
 
 from interaction_vla.graph_control.cli import build_parser, main
 from interaction_vla.graph_control.config import load_graph_control_config
-from interaction_vla.graph_control.schema import CONDITIONS
+from interaction_vla.graph_control.schema import ALL_CONDITIONS, ORACLE_CONDITIONS
 
 
 def test_cli_exposes_complete_graph_control_workflow() -> None:
@@ -89,18 +89,35 @@ def test_cli_usage_failure_is_json(capsys) -> None:
 
 
 def test_repository_configs_lock_smoke_and_formal_matrices() -> None:
-    smoke = load_graph_control_config("configs/graph_control_act_smoke_macos.yaml")
-    pilot = load_graph_control_config("configs/graph_control_act_pilot_macos.yaml")
+    oracle = load_graph_control_config("configs/graph_v2_act_oracle_macos.yaml")
+    pilot = load_graph_control_config("configs/graph_v2_act_pilot_macos.yaml")
 
-    assert smoke.conditions == pilot.conditions == CONDITIONS
-    assert smoke.seeds == (0,)
+    assert oracle.conditions == ORACLE_CONDITIONS
+    assert pilot.conditions == ALL_CONDITIONS
+    assert oracle.seeds == (0,)
     assert pilot.seeds == (0, 1, 2)
-    assert smoke.training.smoke_steps == pilot.training.smoke_steps == 1
-    assert smoke.split_manifest == pilot.split_manifest == Path(
-        "outputs/graph_finetune/mujoco_pilot/split_manifest.json"
+    assert oracle.training.smoke_steps == pilot.training.smoke_steps == 1
+    assert oracle.split_manifest == pilot.split_manifest == Path(
+        "outputs/graph_finetune/mujoco_graph_v2/split_manifest.json"
     )
-    assert smoke.evaluation.cases_per_cell == 1
+    assert oracle.evaluation.cases_per_cell == 20
     assert pilot.evaluation.cases_per_cell == 5
     for seed in pilot.seeds:
-        assert "fraction_1" in str(pilot.graph_checkpoint("predicted_reflect", seed))
-        assert f"seed_{seed}" in str(pilot.graph_checkpoint("predicted_random", seed))
+        assert "fraction_1" in str(
+            pilot.graph_checkpoint("predicted_reflect_v2", seed)
+        )
+        assert f"seed_{seed}" in str(
+            pilot.graph_checkpoint("predicted_random_v2", seed)
+        )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "configs/graph_control_act_smoke_macos.yaml",
+        "configs/graph_control_act_pilot_macos.yaml",
+    ],
+)
+def test_legacy_graph_control_configs_are_explicitly_incompatible(path: str) -> None:
+    with pytest.raises(ValueError, match="conditions.*Graph v2|missing.*oracle"):
+        load_graph_control_config(path)
