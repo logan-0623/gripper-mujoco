@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import hashlib
 import json
 import math
 import os
@@ -10,13 +11,24 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import torch
 
+from interaction_vla.graph_finetune.schema import (
+    GraphV2Normalization,
+    GraphV2Targets,
+)
 from interaction_vla.lerobot_bridge.provenance import sha256_file
 
-from .features import CurrentGraphFields, pack_oracle_current
-from .schema import CONDITIONS, TOKEN_DIM, TOKEN_SLICES
+from .features import pack_oracle_current
+from .schema import (
+    CONDITIONS,
+    TOKEN_DIM,
+    TOKEN_FEATURE_NAMES,
+    TOKEN_SCHEMA_VERSION,
+    TOKEN_SLICES,
+    validate_token,
+)
 
 
-CACHE_SCHEMA_VERSION = "graph_control_cache_v1"
+CACHE_SCHEMA_VERSION = "graph_control_cache_v2"
 
 
 def _hash_value(value: str | None, name: str) -> None:
@@ -35,6 +47,7 @@ class CacheProvenance:
     graph_initialization: str | None
     graph_fraction: float | None
     graph_seed: int | None
+    token_schema_version: str = TOKEN_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         if self.condition not in CONDITIONS:
@@ -42,15 +55,20 @@ class CacheProvenance:
         _hash_value(self.dataset_fingerprint, "dataset_fingerprint")
         _hash_value(self.split_manifest_sha256, "split_manifest_sha256")
         _hash_value(self.graph_checkpoint_sha256, "graph_checkpoint_sha256")
+        if self.token_schema_version != TOKEN_SCHEMA_VERSION:
+            raise ValueError("cache provenance token schema is incompatible")
         graph_values = (
             self.graph_checkpoint_sha256,
             self.graph_initialization,
             self.graph_fraction,
             self.graph_seed,
         )
-        if self.condition == "flat":
+        checkpoint_free = {"flat", "oracle_graph_v2"}
+        if self.condition in checkpoint_free:
             if any(value is not None for value in graph_values):
-                raise ValueError("flat cache provenance must not bind a Graph checkpoint")
+                raise ValueError(
+                    f"{self.condition} cache must not bind a Graph checkpoint"
+                )
             return
         if any(value is None for value in graph_values):
             raise ValueError("predicted cache provenance must bind the Graph checkpoint")
@@ -105,6 +123,12 @@ def _manifest_path(path: Path) -> Path:
     return path.with_suffix(".manifest.json")
 
 
+def _ordered_row_sha256(rows: np.ndarray) -> str:
+    return hashlib.sha256(
+        np.ascontiguousarray(rows, dtype=np.int64).tobytes()
+    ).hexdigest()
+
+
 def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     try:
@@ -144,11 +168,14 @@ def write_token_cache(
     digest = sha256_file(destination)
     manifest = {
         "schema_version": CACHE_SCHEMA_VERSION,
+        "token_schema_version": TOKEN_SCHEMA_VERSION,
         "token_dim": TOKEN_DIM,
+        "token_feature_names": list(TOKEN_FEATURE_NAMES),
         "token_slices": {
             name: [value.start, value.stop] for name, value in TOKEN_SLICES.items()
         },
         "rows": len(rows),
+        "ordered_row_sha256": _ordered_row_sha256(rows),
         "cache_sha256": digest,
         "provenance": asdict(provenance),
     }
@@ -185,6 +212,8 @@ def load_token_cache(
         raise ValueError("graph token cache manifest must be a mapping")
     if manifest.get("schema_version") != CACHE_SCHEMA_VERSION:
         raise ValueError("graph token cache schema is incompatible")
+    if manifest.get("token_schema_version") != TOKEN_SCHEMA_VERSION:
+        raise ValueError("graph token cache token schema is incompatible")
     if int(manifest.get("token_dim", -1)) != TOKEN_DIM:
         raise ValueError("graph token cache dimension is incompatible")
     expected_slices = {
@@ -192,6 +221,8 @@ def load_token_cache(
     }
     if manifest.get("token_slices") != expected_slices:
         raise ValueError("graph token cache slices are incompatible")
+    if manifest.get("token_feature_names") != list(TOKEN_FEATURE_NAMES):
+        raise ValueError("graph token cache feature names are incompatible")
     digest = sha256_file(source)
     if manifest.get("cache_sha256") != digest:
         raise ValueError("graph token cache SHA-256 mismatch")
@@ -215,101 +246,94 @@ def load_token_cache(
     rows, tokens = _validated_arrays(rows, tokens)
     if int(manifest.get("rows", -1)) != len(rows):
         raise ValueError("graph token cache row count mismatch")
+    if manifest.get("ordered_row_sha256") != _ordered_row_sha256(rows):
+        raise ValueError("graph token cache ordered row hash mismatch")
     return TokenCache(source, rows, tokens, provenance, digest)
 
 
-def current_fields_from_teacher(
-    arrays: Mapping[str, np.ndarray], *, frame_index: int
-) -> CurrentGraphFields:
-    if frame_index < 0:
-        raise ValueError("frame_index must be non-negative")
-    try:
-        relation_values = arrays["annotation.tc_tig.relation_values"]
-        return CurrentGraphFields(
-            entity_mask=np.asarray(arrays["annotation.tc_tig.entity_mask"])[frame_index],
-            entity_visibility=np.asarray(
-                arrays["annotation.tc_tig.entity_visibility"]
-            )[frame_index],
-            relation_mask=np.asarray(arrays["annotation.tc_tig.relation_mask"])[
-                frame_index
-            ],
-            relation_semantics=np.asarray(relation_values)[frame_index, :, 12:22],
-        )
-    except (KeyError, IndexError) as error:
-        raise ValueError("teacher current fields are incomplete or misaligned") from error
-
-
-def _sample_index(sample: Mapping[str, object], expected: int) -> None:
-    actual = int(torch.as_tensor(sample.get("index", -1)).item())
-    if actual != expected:
-        raise ValueError(
-            f"source global row alignment changed: expected {expected}, found {actual}"
-        )
+def _sample_scalar(sample: Mapping[str, object], name: str) -> int:
+    return int(torch.as_tensor(sample.get(name, -1)).item())
 
 
 def build_token_cache(
     path: str | Path,
     *,
     source: Any,
-    row_indices: Sequence[int],
+    episode_rows: Mapping[int, Sequence[int]],
     condition: str,
     runtime: Any | None,
-    batch_size: int,
     provenance: CacheProvenance,
-    current_fields: Mapping[int, CurrentGraphFields] | None = None,
+    oracle_targets: Mapping[int, GraphV2Targets] | None = None,
+    normalization: GraphV2Normalization | None = None,
 ) -> TokenCache:
-    rows = np.asarray(tuple(int(value) for value in row_indices), dtype=np.int64)
     if condition != provenance.condition:
         raise ValueError("cache condition differs from provenance")
-    if batch_size < 1:
-        raise ValueError("cache batch_size must be positive")
+    if not episode_rows:
+        raise ValueError("cache requires at least one episode")
     if condition == "flat":
-        if runtime is not None or current_fields is not None:
-            raise ValueError("flat cache must not receive Graph runtime or teacher fields")
-        return write_token_cache(
-            path,
-            rows,
-            np.zeros((len(rows), TOKEN_DIM), dtype=np.float32),
-            provenance,
-        )
-    if runtime is None:
-        raise ValueError("predicted cache requires a frozen Graph runtime")
-    if condition == "oracle_current" and current_fields is None:
-        raise ValueError("oracle_current cache requires causal current teacher fields")
-    if condition != "oracle_current" and current_fields is not None:
-        raise ValueError("teacher current fields are exclusive to oracle_current")
-
-    chunks: list[np.ndarray] = []
-    for start in range(0, len(rows), batch_size):
-        selected = rows[start : start + batch_size]
-        samples = [source[int(row)] for row in selected]
-        for row, sample in zip(selected, samples, strict=True):
-            _sample_index(sample, int(row))
-        predicted = runtime.predict_tokens(
-            agent_rgb=[sample["observation.images.agent"] for sample in samples],
-            wrist_rgb=[sample["observation.images.wrist"] for sample in samples],
-            state=[sample["observation.state"] for sample in samples],
-            task=[str(sample["task"]) for sample in samples],
-        )
-        predicted = np.asarray(predicted, dtype=np.float32)
-        if predicted.shape != (len(selected), TOKEN_DIM) or not np.isfinite(
-            predicted
-        ).all():
-            raise ValueError("frozen Graph runtime returned invalid token batch")
-        if condition == "oracle_current":
-            predicted = np.stack(
-                [
-                    pack_oracle_current(
-                        current_fields[int(row)], predicted[index], runtime.normalization
-                    )
-                    for index, row in enumerate(selected)
-                ],
-                axis=0,
+        if runtime is not None or oracle_targets is not None or normalization is not None:
+            raise ValueError("flat cache must not receive Graph runtime or oracle targets")
+    elif condition == "oracle_graph_v2":
+        if runtime is not None or oracle_targets is None or normalization is None:
+            raise ValueError(
+                "oracle_graph_v2 cache requires targets and normalization only"
             )
-        chunks.append(predicted)
-    tokens = (
-        np.concatenate(chunks, axis=0)
-        if chunks
-        else np.empty((0, TOKEN_DIM), dtype=np.float32)
+        if set(int(value) for value in oracle_targets) != set(
+            int(value) for value in episode_rows
+        ):
+            raise ValueError("oracle targets must match cache episodes")
+    else:
+        if runtime is None or oracle_targets is not None or normalization is not None:
+            raise ValueError("predicted Graph v2 cache requires only a frozen runtime")
+
+    ordered_rows: list[int] = []
+    tokens: list[np.ndarray] = []
+    for episode in sorted(int(value) for value in episode_rows):
+        rows = tuple(int(value) for value in episode_rows[episode])
+        if not rows:
+            raise ValueError(f"episode {episode} has no cache rows")
+        if condition not in {"flat", "oracle_graph_v2"}:
+            runtime.reset()
+        for frame, row in enumerate(rows):
+            sample = source[row]
+            actual_index = _sample_scalar(sample, "index")
+            actual_episode = _sample_scalar(sample, "episode_index")
+            actual_frame = _sample_scalar(sample, "frame_index")
+            if actual_index != row:
+                raise ValueError(
+                    f"source global row alignment changed: expected {row}, "
+                    f"found {actual_index}"
+                )
+            if actual_episode != episode:
+                raise ValueError(
+                    f"source episode alignment changed: expected {episode}, "
+                    f"found {actual_episode}"
+                )
+            if actual_frame != frame:
+                raise ValueError(
+                    f"source frame alignment changed: expected {frame}, "
+                    f"found {actual_frame}"
+                )
+            if condition == "flat":
+                token = np.zeros(TOKEN_DIM, dtype=np.float32)
+            elif condition == "oracle_graph_v2":
+                token = pack_oracle_current(
+                    oracle_targets[episode],
+                    frame_index=frame,
+                    normalization=normalization,
+                )
+            else:
+                token = runtime.predict_token(
+                    agent_rgb=sample["observation.images.agent"],
+                    wrist_rgb=sample["observation.images.wrist"],
+                    state=sample["observation.state"],
+                    task=str(sample["task"]),
+                )
+            ordered_rows.append(row)
+            tokens.append(validate_token(token))
+    return write_token_cache(
+        path,
+        np.asarray(ordered_rows, dtype=np.int64),
+        np.stack(tokens, axis=0),
+        provenance,
     )
-    return write_token_cache(path, rows, tokens, provenance)

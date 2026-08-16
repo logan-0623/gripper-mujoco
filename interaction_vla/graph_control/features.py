@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 import numpy as np
 import torch
 
 from interaction_vla.device import resolve_device
 from interaction_vla.graph_finetune.config import ModelConfig
-from interaction_vla.graph_finetune.data import GraphNormalization, resize_rgb
+from interaction_vla.graph_finetune.data import resize_rgb
 from interaction_vla.graph_finetune.pipeline import load_finetune_checkpoint
+from interaction_vla.graph_finetune.schema import (
+    GraphV2Normalization,
+    GraphV2Targets,
+    pack_oracle_target,
+)
 
 from .schema import TOKEN_DIM, TOKEN_SLICES, validate_token
 
@@ -19,14 +23,16 @@ _PREDICTED_KEYS = {
     "entity_mask_logits",
     "entity_visibility",
     "relation_mask_logits",
-    "relation_semantics",
+    "gripper_target_geometry",
+    "target_receptacle_geometry",
+    "distractor_geometry",
+    "phase_logits",
+    "relation_trends",
     "goal_relation_logits",
     "goal_operator_logits",
     "goal_predicate_logits",
     "goal_residual",
 }
-_DISTRACTOR_RELATIONS = (3, 4, 5, 6)
-_RISK_CHANNELS = (6, 7)
 
 
 def _finite_array(value: object, shape: tuple[int, ...], name: str) -> np.ndarray:
@@ -36,65 +42,38 @@ def _finite_array(value: object, shape: tuple[int, ...], name: str) -> np.ndarra
     return result.copy()
 
 
-@dataclass(frozen=True)
-class CurrentGraphFields:
-    """Causal current-frame graph fields; deliberately contains no goal label."""
-
-    entity_mask: np.ndarray
-    entity_visibility: np.ndarray
-    relation_mask: np.ndarray
-    relation_semantics: np.ndarray
-
-    def __post_init__(self) -> None:
-        entity_mask = np.asarray(self.entity_mask)
-        relation_mask = np.asarray(self.relation_mask)
-        if entity_mask.shape != (6,) or entity_mask.dtype != np.dtype(np.bool_):
-            raise ValueError("entity_mask must have shape (6,) and dtype bool")
-        if relation_mask.shape != (8,) or relation_mask.dtype != np.dtype(np.bool_):
-            raise ValueError("relation_mask must have shape (8,) and dtype bool")
-        visibility = _finite_array(
-            self.entity_visibility, (6, 2), "entity_visibility"
-        )
-        if np.any((visibility < 0.0) | (visibility > 1.0)):
-            raise ValueError("entity_visibility must lie within [0, 1]")
-        semantics = _finite_array(
-            self.relation_semantics, (8, 10), "relation_semantics"
-        )
-        object.__setattr__(self, "entity_mask", entity_mask.copy())
-        object.__setattr__(self, "relation_mask", relation_mask.copy())
-        object.__setattr__(self, "entity_visibility", visibility)
-        object.__setattr__(self, "relation_semantics", semantics)
-
-
-def normalization_from_payload(payload: Mapping[str, Any]) -> GraphNormalization:
+def normalization_from_payload(payload: Mapping[str, Any]) -> GraphV2Normalization:
     required = {
         "state_mean",
         "state_std",
-        "relation_mean",
-        "relation_std",
-        "residual_mean",
-        "residual_std",
+        "workspace_scale",
+        "velocity_scale",
     }
-    missing = required - set(payload)
-    if missing:
-        raise ValueError("normalization is missing: " + ", ".join(sorted(missing)))
-    return GraphNormalization(
+    if set(payload) != required:
+        missing = required - set(payload)
+        extra = set(payload) - required
+        raise ValueError(
+            f"normalization fields mismatch; missing={sorted(missing)}, "
+            f"extra={sorted(extra)}"
+        )
+    return GraphV2Normalization(
         state_mean=np.asarray(payload["state_mean"], dtype=np.float32).copy(),
         state_std=np.asarray(payload["state_std"], dtype=np.float32).copy(),
-        relation_mean=np.asarray(payload["relation_mean"], dtype=np.float32).copy(),
-        relation_std=np.asarray(payload["relation_std"], dtype=np.float32).copy(),
-        residual_mean=float(payload["residual_mean"]),
-        residual_std=float(payload["residual_std"]),
+        workspace_scale=float(payload["workspace_scale"]),
+        velocity_scale=float(payload["velocity_scale"]),
     )
 
 
 def _sample_tensor(
-    outputs: Mapping[str, object], name: str, shape: tuple[int, ...], sample_index: int
+    outputs: Mapping[str, object],
+    name: str,
+    shape: tuple[int, ...],
+    sample_index: int,
 ) -> torch.Tensor:
     value = torch.as_tensor(outputs[name]).detach().cpu()
-    expected_tail = shape
-    if value.ndim != len(expected_tail) + 1 or tuple(value.shape[1:]) != expected_tail:
-        raise ValueError(f"{name} must have batched shape [N, {', '.join(map(str, shape))}]")
+    if value.ndim != len(shape) + 1 or tuple(value.shape[1:]) != shape:
+        dimensions = ", ".join(map(str, shape))
+        raise ValueError(f"{name} must have batched shape [N, {dimensions}]")
     if sample_index < 0 or sample_index >= value.shape[0]:
         raise ValueError("sample_index is outside predicted output batch")
     if not torch.isfinite(value).all():
@@ -102,21 +81,41 @@ def _sample_tensor(
     return value[sample_index].float()
 
 
+def _bounded(value: torch.Tensor, name: str) -> None:
+    if torch.any((value < 0.0) | (value > 1.0)):
+        raise ValueError(f"{name} values must lie within [0, 1]")
+
+
 def pack_predicted(
     outputs: Mapping[str, object], *, sample_index: int = 0
 ) -> np.ndarray:
     missing = _PREDICTED_KEYS - set(outputs)
     if missing:
-        raise ValueError("predicted Graph outputs are missing: " + ", ".join(sorted(missing)))
-
+        raise ValueError(
+            "predicted Graph outputs are missing: " + ", ".join(sorted(missing))
+        )
     entity = torch.sigmoid(
         _sample_tensor(outputs, "entity_mask_logits", (6,), sample_index)
     )
-    visibility = _sample_tensor(outputs, "entity_visibility", (6, 2), sample_index)
+    visibility = _sample_tensor(
+        outputs, "entity_visibility", (6, 2), sample_index
+    )
     relation = torch.sigmoid(
         _sample_tensor(outputs, "relation_mask_logits", (8,), sample_index)
     )
-    semantics = _sample_tensor(outputs, "relation_semantics", (8, 10), sample_index)
+    gripper = _sample_tensor(
+        outputs, "gripper_target_geometry", (8,), sample_index
+    )
+    target = _sample_tensor(
+        outputs, "target_receptacle_geometry", (10,), sample_index
+    )
+    distractors = _sample_tensor(
+        outputs, "distractor_geometry", (2, 7), sample_index
+    )
+    phase = torch.softmax(
+        _sample_tensor(outputs, "phase_logits", (6,), sample_index), dim=-1
+    )
+    trends = _sample_tensor(outputs, "relation_trends", (4,), sample_index)
     goal_relation = torch.softmax(
         _sample_tensor(outputs, "goal_relation_logits", (8,), sample_index), dim=-1
     )
@@ -126,19 +125,26 @@ def pack_predicted(
     goal_predicate = torch.softmax(
         _sample_tensor(outputs, "goal_predicate_logits", (7,), sample_index), dim=-1
     )
-    residual = _sample_tensor(outputs, "goal_residual", (), sample_index).reshape(1)
+    residual = _sample_tensor(outputs, "goal_residual", (), sample_index).clamp(
+        -1.0, 1.0
+    )
+    for value, name in (
+        (visibility, "entity_visibility"),
+        (gripper[5:8], "gripper_target_geometry"),
+        (target[8:10], "target_receptacle_geometry"),
+        (distractors[:, 4:7], "distractor_geometry"),
+    ):
+        _bounded(value, name)
 
     token = np.empty(TOKEN_DIM, dtype=np.float32)
     token[TOKEN_SLICES["entity_presence"]] = entity.numpy()
     token[TOKEN_SLICES["entity_visibility"]] = visibility.reshape(-1).numpy()
     token[TOKEN_SLICES["relation_presence"]] = relation.numpy()
-    token[TOKEN_SLICES["gripper_target_semantics"]] = semantics[0].numpy()
-    token[TOKEN_SLICES["target_receptacle_semantics"]] = semantics[1].numpy()
-    token[TOKEN_SLICES["distractor_risks"]] = (
-        semantics[list(_DISTRACTOR_RELATIONS)][:, list(_RISK_CHANNELS)]
-        .reshape(-1)
-        .numpy()
-    )
+    token[TOKEN_SLICES["gripper_target_geometry"]] = gripper.numpy()
+    token[TOKEN_SLICES["target_receptacle_geometry"]] = target.numpy()
+    token[TOKEN_SLICES["distractor_geometry"]] = distractors.reshape(-1).numpy()
+    token[TOKEN_SLICES["phase"]] = phase.numpy()
+    token[TOKEN_SLICES["relation_trends"]] = trends.numpy()
     token[TOKEN_SLICES["next_relation"]] = goal_relation.numpy()
     token[TOKEN_SLICES["relation_operator"]] = goal_operator.numpy()
     token[TOKEN_SLICES["predicate"]] = goal_predicate.numpy()
@@ -147,27 +153,16 @@ def pack_predicted(
 
 
 def pack_oracle_current(
-    current: CurrentGraphFields,
-    predicted_token: object,
-    normalization: GraphNormalization,
+    targets: GraphV2Targets,
+    *,
+    frame_index: int,
+    normalization: GraphV2Normalization,
 ) -> np.ndarray:
-    token = validate_token(predicted_token).copy()
-    normalized = (
-        current.relation_semantics - normalization.relation_mean
-    ) / normalization.relation_std
-    token[TOKEN_SLICES["entity_presence"]] = current.entity_mask.astype(np.float32)
-    token[TOKEN_SLICES["entity_visibility"]] = current.entity_visibility.reshape(-1)
-    token[TOKEN_SLICES["relation_presence"]] = current.relation_mask.astype(np.float32)
-    token[TOKEN_SLICES["gripper_target_semantics"]] = normalized[0]
-    token[TOKEN_SLICES["target_receptacle_semantics"]] = normalized[1]
-    token[TOKEN_SLICES["distractor_risks"]] = normalized[
-        list(_DISTRACTOR_RELATIONS)
-    ][:, list(_RISK_CHANNELS)].reshape(-1)
-    return validate_token(token)
+    return pack_oracle_target(targets, frame_index, normalization)
 
 
 class FrozenGraphRuntime:
-    """Inference-only wrapper around one fine-tuned MuJoCo Graph checkpoint."""
+    """Inference-only recurrent wrapper around one Graph v2 checkpoint."""
 
     def __init__(self, checkpoint: str | Path, *, device: str = "auto") -> None:
         self.checkpoint = Path(checkpoint)
@@ -179,48 +174,44 @@ class FrozenGraphRuntime:
         for parameter in self.model.parameters():
             parameter.requires_grad_(False)
         self.model_config = ModelConfig(**self.payload["model_config"])
-        self.normalization = normalization_from_payload(self.payload["normalization"])
+        self.normalization = normalization_from_payload(
+            self.payload["normalization"]
+        )
+        self.reset()
+
+    def reset(self) -> None:
+        self.previous_graph = np.zeros(TOKEN_DIM, dtype=np.float32)
 
     @torch.inference_mode()
-    def predict_tokens(
+    def predict_token(
         self,
         *,
-        agent_rgb: Sequence[object],
-        wrist_rgb: Sequence[object],
-        state: Sequence[object],
-        task: Sequence[str],
+        agent_rgb: object,
+        wrist_rgb: object,
+        state: object,
+        task: str,
     ) -> np.ndarray:
-        count = len(agent_rgb)
-        if not (len(wrist_rgb) == len(state) == len(task) == count) or count < 1:
-            raise ValueError("Graph inference inputs must share a positive batch size")
-        agent = torch.stack(
-            [resize_rgb(value, self.model_config.image_size, "agent RGB") for value in agent_rgb]
-        ).to(self.device)
-        wrist = torch.stack(
-            [resize_rgb(value, self.model_config.image_size, "wrist RGB") for value in wrist_rgb]
-        ).to(self.device)
-        states = np.stack(
-            [_finite_array(value, (10,), "state") for value in state], axis=0
-        )
-        states = (states - self.normalization.state_mean) / self.normalization.state_std
-        encoded = [
-            self.vocabulary.encode((str(value),), self.model_config.max_language_tokens)
-            for value in task
-        ]
-        language_tokens = torch.from_numpy(np.stack([value[0] for value in encoded])).to(
-            self.device
-        )
-        language_mask = torch.from_numpy(np.stack([value[1] for value in encoded])).to(
-            self.device
+        agent = resize_rgb(
+            agent_rgb, self.model_config.image_size, "agent RGB"
+        )[None].to(self.device)
+        wrist = resize_rgb(
+            wrist_rgb, self.model_config.image_size, "wrist RGB"
+        )[None].to(self.device)
+        current_state = _finite_array(state, (10,), "state")
+        current_state = (
+            current_state - self.normalization.state_mean
+        ) / self.normalization.state_std
+        tokens, mask = self.vocabulary.encode(
+            (str(task),), self.model_config.max_language_tokens
         )
         outputs = self.model(
             agent,
             wrist,
-            torch.from_numpy(states.astype(np.float32)).to(self.device),
-            language_tokens,
-            language_mask,
+            torch.from_numpy(current_state[None]).to(self.device),
+            torch.from_numpy(tokens).to(self.device),
+            torch.from_numpy(mask).to(self.device),
+            torch.from_numpy(self.previous_graph[None]).to(self.device),
         )
-        return np.stack(
-            [pack_predicted(outputs, sample_index=index) for index in range(count)], axis=0
-        ).astype(np.float32, copy=False)
-
+        token = pack_predicted(outputs, sample_index=0)
+        self.previous_graph = token.copy()
+        return token
