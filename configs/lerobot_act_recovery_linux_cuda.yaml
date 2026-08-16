@@ -1,0 +1,50 @@
+seed: 42
+source_config: configs/physics_pilot_macos.yaml
+expert_gate: outputs/interaction_graph_physics/pilot/expert_gate.json
+required_smoke_report: null
+dataset:
+  repo_id: local/franka_lerobot_act_pilot
+  root: outputs/lerobot/franka_lerobot_act_pilot
+  episodes: 50
+  object_counts: [2, 3]
+  task: Pick up the green target object and place it inside the receptacle.
+  fps: 20
+  image_size: [256, 256]
+  state_dim: 10
+  action_dim: 7
+  max_attempt_multiplier: 10
+teacher:
+  distractor_count: 2
+  replacement_margin: 0.10
+  replacement_frames: 3
+  dropout_frames: 3
+  safety_margin_m: 0.01
+  goal_horizon: 8
+  goal_improvement_margin: 0.05
+act:
+  output_dir: outputs/graph_control/act_recovery_cuda/train
+  device: cuda
+  chunk_size: 8
+  n_action_steps: 1
+  batch_size: 2
+  num_workers: 0
+  steps: null
+  epochs: 10
+  maximum_epochs: 10
+  learning_rate: 0.00001
+  seed: 0
+  dim_model: 256
+  dim_feedforward: 1024
+  encoder_layers: 2
+  vae_encoder_layers: 2
+  shuffle_train: true
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+recovery:
+  output_dir: outputs/graph_control/act_recovery_cuda/evaluation
+  train_seen_cases: 10
+  heldout_cases: 20
+  heldout_attempt_multiplier: 10
+  heldout_master_seed: 2057736129
+  max_steps: 180
+  train_success_threshold: 0.80
+  heldout_success_threshold: 0.30

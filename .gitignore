@@ -1,18 +1,55 @@
-lerobot
-demo_data
-demo_data_language
-ckpt
-asset/objaverse/plate_11
-omy_pnp
-.venv
-wandb
-omy_pnp_language
+# macOS and editor metadata
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Python bytecode, test, and tooling caches
 __pycache__/
-.pytest_cache/
 *.py[cod]
-outputs/interaction_vla/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.ipynb_checkpoints/
 
-docs
+# Python packaging artifacts
+build/
+dist/
+*.egg-info/
 
-.venv-lerobot/
-outputs/lerobot/
+# Local virtual environments and secrets
+.venv/
+.venv-*/
+.env
+.env.*
+!.env.example
+
+# Runtime logs and temporary files
+*.log
+*.tmp
+MUJOCO_LOG.TXT
+
+# Local datasets, external checkouts, and experiment assets
+/lerobot/
+/demo_data/
+/demo_data_language/
+/omy_pnp/
+/omy_pnp_language/
+/asset/objaverse/plate_11/
+
+# Local checkpoints and experiment tracking
+/ckpt/
+/wandb/
+
+# Generated training and evaluation artifacts. Physics baselines under
+# outputs/interaction_graph_physics remain versioned intentionally.
+/outputs/interaction_vla/
+/outputs/lerobot/
+/outputs/graph_control/
+/outputs/graph_finetune/
+/outputs/graph_pretrain/

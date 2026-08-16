@@ -1,0 +1,14 @@
+# Linux x86_64, CPython 3.12, NVIDIA CUDA 12.8.
+# The direct PyTorch wheel URLs prevent pip from silently selecting CPU wheels.
+numpy>=1.26
+PyYAML>=6.0
+pytest>=8.0
+mujoco==3.3.4
+Pillow>=10.0
+tqdm>=4.66
+torch @ https://download.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl
+torchvision @ https://download.pytorch.org/whl/cu128/torchvision-0.25.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl
+torchcodec @ https://download.pytorch.org/whl/cu128/torchcodec-0.10.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl
+datasets==4.8.5
+socksio==1.0.0
+lerobot[dataset,training]==0.6.1

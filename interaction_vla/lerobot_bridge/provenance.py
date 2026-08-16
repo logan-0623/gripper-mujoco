@@ -48,7 +48,7 @@ def _fingerprint_files(
 
 
 def _act_source_content(path: Path, content: bytes) -> bytes:
-    if not path.name.startswith("requirements-lerobot-macos"):
+    if not path.name.startswith("requirements-lerobot-"):
         return content
     retained: list[bytes] = []
     for line in content.splitlines(keepends=True):
@@ -133,6 +133,11 @@ def runtime_versions(*, requested_device: str = "auto") -> dict[str, object]:
         resolved_device = str(resolve_device(requested_device))
     except RuntimeError as error:
         resolved_device = f"unavailable: {error}"
+    cuda_available = bool(torch.cuda.is_available())
+    cuda_device_count = int(torch.cuda.device_count()) if cuda_available else 0
+    cuda_device_name = (
+        str(torch.cuda.get_device_name(0)) if cuda_device_count > 0 else None
+    )
     return {
         "python": platform.python_version(),
         "platform": platform.platform(),
@@ -147,6 +152,10 @@ def runtime_versions(*, requested_device: str = "auto") -> dict[str, object]:
         "resolved_device": resolved_device,
         "mps_built": bool(torch.backends.mps.is_built()),
         "mps_available": bool(torch.backends.mps.is_available()),
+        "cuda_available": cuda_available,
+        "cuda_runtime": torch.version.cuda,
+        "cuda_device_count": cuda_device_count,
+        "cuda_device_name": cuda_device_name,
     }
 
 
@@ -185,7 +194,11 @@ def source_fingerprint(root: str | Path = ".") -> str:
                 )
                 and (directory.name != "configs" or path.name.startswith("lerobot_"))
             )
-    for name in ("requirements-lerobot-macos.txt", "requirements-lerobot-macos.lock.txt"):
+    for name in (
+        "requirements-lerobot-macos.txt",
+        "requirements-lerobot-macos.lock.txt",
+        "requirements-lerobot-linux-cuda.txt",
+    ):
         path = repository / name
         if path.is_file():
             files.append(path)

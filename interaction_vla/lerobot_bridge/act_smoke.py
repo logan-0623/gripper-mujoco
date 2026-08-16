@@ -541,6 +541,11 @@ def run_training_with_fallback(
         if batch_size != 2 or not _is_oom(error):
             raise
     gc.collect()
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.empty_cache()
+        except RuntimeError:
+            pass
     if (
         torch.backends.mps.is_available()
         and hasattr(torch, "mps")

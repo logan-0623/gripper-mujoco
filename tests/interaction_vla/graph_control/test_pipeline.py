@@ -6,8 +6,10 @@ import sys
 import types
 
 import pytest
+import torch
 
 from interaction_vla.graph_control.pipeline import (
+    _clear_accelerator_memory,
     _atomic_output_directory,
     _load_source,
     _publish_evaluation,
@@ -17,6 +19,19 @@ from interaction_vla.graph_control.pipeline import (
     _validate_formal_epochs,
     evaluate_from_config,
 )
+
+
+def test_accelerator_memory_cleanup_releases_cuda_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: calls.append("cuda"))
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+
+    _clear_accelerator_memory()
+
+    assert calls == ["cuda"]
 
 
 def test_downstream_graph_control_does_not_repin_collection_source(
@@ -203,7 +218,7 @@ def test_seed_oom_discards_partial_matrix_and_restarts_all_conditions(
         return {"passed": True}
 
     monkeypatch.setattr(
-        "interaction_vla.graph_control.pipeline._clear_mps_memory",
+        "interaction_vla.graph_control.pipeline._clear_accelerator_memory",
         lambda: cleared.append(True),
     )
     report = _train_seed_with_fallback(

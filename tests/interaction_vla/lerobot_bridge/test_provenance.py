@@ -1,9 +1,19 @@
 from interaction_vla.lerobot_bridge.provenance import (
     fingerprint_tree,
+    runtime_versions,
     sha256_file,
     source_fingerprint,
     standard_dataset_fingerprint,
 )
+
+
+def test_runtime_versions_reports_cuda_capability() -> None:
+    versions = runtime_versions(requested_device="cpu")
+
+    assert isinstance(versions["cuda_available"], bool)
+    assert isinstance(versions["cuda_device_count"], int)
+    assert "cuda_runtime" in versions
+    assert "cuda_device_name" in versions
 
 
 def test_tree_fingerprint_changes_with_content_not_mtime(tmp_path) -> None:
@@ -62,6 +72,25 @@ def test_source_fingerprint_ignores_graph_download_dependencies(tmp_path) -> Non
         "socksio==1.0.0\ntorch==2.11.0\nlerobot==0.6.1\n",
         encoding="utf-8",
     )
+    assert source_fingerprint(tmp_path) != baseline
+
+
+def test_source_fingerprint_tracks_linux_cuda_act_runtime(tmp_path) -> None:
+    source = tmp_path / "interaction_vla" / "lerobot_bridge"
+    source.mkdir(parents=True)
+    (source / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    requirements = tmp_path / "requirements-lerobot-linux-cuda.txt"
+    requirements.write_text(
+        "torch==2.10.0+cu128\nlerobot[dataset,training]==0.6.1\n",
+        encoding="utf-8",
+    )
+    baseline = source_fingerprint(tmp_path)
+
+    requirements.write_text(
+        "torch==2.11.0+cu128\nlerobot[dataset,training]==0.6.1\n",
+        encoding="utf-8",
+    )
+
     assert source_fingerprint(tmp_path) != baseline
 
 

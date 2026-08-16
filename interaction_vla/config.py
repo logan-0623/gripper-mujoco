@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from .device import DEVICE_REQUESTS
+
 
 def _as_tuple(values: Any) -> tuple[int, ...]:
     return tuple(int(value) for value in values)
@@ -295,8 +297,8 @@ class ExperimentConfig:
             raise ValueError("OOD object counts must not overlap training object counts")
         if set(self.train.object_counts) & set(self.eval.crowded_object_counts):
             raise ValueError("crowded object counts must not overlap training object counts")
-        if self.device not in {"auto", "cpu", "mps"}:
-            raise ValueError("device must be one of: auto, cpu, mps")
+        if self.device not in DEVICE_REQUESTS:
+            raise ValueError("device must be one of: auto, cpu, mps, cuda")
         if self.backend not in {"kinematic", "franka_contact"}:
             raise ValueError("backend must be one of: kinematic, franka_contact")
         expected_action_dim = 4 if self.backend == "kinematic" else 7

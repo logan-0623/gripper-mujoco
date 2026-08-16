@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from interaction_vla.device import DEVICE_REQUESTS
+
 
 @dataclass(frozen=True)
 class DatasetConfig:
@@ -62,8 +64,8 @@ class TrainingConfig:
     seeds: tuple[int, ...] = (0,)
 
     def __post_init__(self) -> None:
-        if self.device not in {"auto", "cpu", "mps"}:
-            raise ValueError("training device must be auto, cpu, or mps")
+        if self.device not in DEVICE_REQUESTS:
+            raise ValueError("training device must be auto, cpu, mps, or cuda")
         if self.batch_size < 1 or self.num_workers != 0 or self.epochs < 1:
             raise ValueError("training requires positive batch/epochs and num_workers=0")
         if not math.isfinite(self.learning_rate) or self.learning_rate <= 0.0:

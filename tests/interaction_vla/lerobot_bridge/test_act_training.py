@@ -1,6 +1,7 @@
 from dataclasses import replace
 
 import pytest
+import torch
 
 from interaction_vla.lerobot_bridge.act_smoke import (
     bounded_batches,
@@ -32,6 +33,30 @@ def test_oom_restarts_once_at_batch_one(monkeypatch) -> None:
 
     assert attempts == [2, 1]
     assert result["fallback_from_batch_size"] == 2
+    assert result["batch_size"] == 1
+
+
+def test_oom_fallback_releases_cuda_cache(monkeypatch) -> None:
+    attempts: list[int] = []
+    cleared: list[str] = []
+
+    def fake_train(*, batch_size: int, **kwargs):
+        attempts.append(batch_size)
+        if batch_size == 2:
+            raise RuntimeError("CUDA out of memory")
+        return {"steps": 1}
+
+    monkeypatch.setattr(
+        "interaction_vla.lerobot_bridge.act_smoke.train_once", fake_train
+    )
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: cleared.append("cuda"))
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+
+    result = run_training_with_fallback(object(), batch_size=2)
+
+    assert attempts == [2, 1]
+    assert cleared == ["cuda"]
     assert result["batch_size"] == 1
 
 

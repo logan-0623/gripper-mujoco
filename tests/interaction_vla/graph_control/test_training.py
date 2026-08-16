@@ -214,6 +214,20 @@ def test_one_update_per_condition_is_paired_and_reloadable(
 
     metadata_path = checkpoint / "bridge_checkpoint.json"
     original = json.loads(metadata_path.read_text(encoding="utf-8"))
+    cuda_saved = {
+        **original,
+        "device": "cuda",
+        "act_config": {**original["act_config"], "device": "cuda"},
+    }
+    metadata_path.write_text(json.dumps(cuda_saved), encoding="utf-8")
+    _, _, _, loaded_metadata = load_graph_act_checkpoint(
+        checkpoint,
+        device=torch.device("cpu"),
+        expected_metadata=expected,
+    )
+    assert loaded_metadata["device"] == "cuda"
+    metadata_path.write_text(json.dumps(original), encoding="utf-8")
+
     mutations = {
         "dataset_fingerprint": lambda value: "f" * 64,
         "features": lambda value: {**value, "observation.environment_state": {

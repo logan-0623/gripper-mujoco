@@ -34,7 +34,26 @@ def test_invalid_capacity_fails_early() -> None:
         ExperimentConfig(max_objects=1)
 
 
-def test_device_falls_back_to_cpu_when_mps_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_device_prefers_cuda_over_mps(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+
+    assert resolve_device("auto").type == "cuda"
+
+
+def test_auto_device_uses_mps_when_cuda_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+
+    assert resolve_device("auto").type == "mps"
+
+
+def test_device_falls_back_to_cpu_when_accelerators_are_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
 
     assert resolve_device("auto").type == "cpu"
@@ -45,6 +64,17 @@ def test_explicit_unavailable_mps_fails(monkeypatch: pytest.MonkeyPatch) -> None
 
     with pytest.raises(RuntimeError, match="MPS"):
         resolve_device("mps")
+
+
+def test_explicit_unavailable_cuda_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    with pytest.raises(RuntimeError, match="CUDA"):
+        resolve_device("cuda")
+
+
+def test_experiment_config_accepts_cuda_training() -> None:
+    assert ExperimentConfig(device="cuda").device == "cuda"
 
 
 def test_action_dimension_must_match_the_selected_backend() -> None:

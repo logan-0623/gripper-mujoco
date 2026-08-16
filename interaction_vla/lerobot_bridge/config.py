@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from interaction_vla.config import ExperimentConfig, load_config
+from interaction_vla.device import DEVICE_REQUESTS
 
 
 @dataclass(frozen=True)
@@ -108,9 +109,9 @@ class ACTBridgeConfig:
         }:
             raise ValueError("unsupported ACT pretrained_backbone_weights")
         if self.batch_size not in {1, 2} or self.num_workers != 0:
-            raise ValueError("macOS ACT requires batch size 1/2 and num_workers=0")
-        if self.device not in {"auto", "cpu", "mps"}:
-            raise ValueError("ACT device must be auto, cpu, or mps")
+            raise ValueError("ACT requires batch size 1/2 and num_workers=0")
+        if self.device not in DEVICE_REQUESTS:
+            raise ValueError("ACT device must be auto, cpu, mps, or cuda")
         if not math.isfinite(self.learning_rate) or self.learning_rate <= 0.0:
             raise ValueError("ACT learning_rate must be finite and positive")
 

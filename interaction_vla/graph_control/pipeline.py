@@ -173,8 +173,13 @@ def _require_oracle_report(config: GraphControlConfig | Any) -> str | None:
     return sha256_file(source)
 
 
-def _clear_mps_memory() -> None:
+def _clear_accelerator_memory() -> None:
     gc.collect()
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.empty_cache()
+        except RuntimeError:
+            pass
     if (
         torch.backends.mps.is_available()
         and hasattr(torch, "mps")
@@ -201,7 +206,7 @@ def _train_seed_with_fallback(
             raise
     if destination.exists():
         shutil.rmtree(destination)
-    _clear_mps_memory()
+    _clear_accelerator_memory()
     report = dict(train_attempt(1, destination))
     report["fallback_from_batch_size"] = 2
     report["batch_size"] = 1

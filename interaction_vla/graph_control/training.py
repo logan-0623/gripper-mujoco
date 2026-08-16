@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
+from interaction_vla.device import DEVICE_TYPES
 from interaction_vla.graph_finetune.schema import (
     GRAPH_SCHEMA_VERSION,
     TOKEN_DIM,
@@ -295,7 +296,7 @@ def load_graph_act_checkpoint(
     expected = _jsonable(dict(expected_metadata))
     training_device = metadata.get("device")
     actual_act_config = metadata.get("act_config")
-    if training_device not in {"cpu", "mps"} or not isinstance(
+    if training_device not in DEVICE_TYPES or not isinstance(
         actual_act_config, Mapping
     ):
         raise ValueError("Graph-conditioned ACT checkpoint device metadata is invalid")

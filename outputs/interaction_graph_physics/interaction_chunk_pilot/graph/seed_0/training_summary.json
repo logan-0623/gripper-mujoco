@@ -6,9 +6,9 @@
     "base": 0.75,
     "recovery": 0.25
   },
-  "final_base_mse": 0.01158957208833124,
-  "final_normalized_mse": 0.010940802595020933,
-  "final_recovery_mse": 0.008994494359363189,
+  "final_base_mse": 0.011740383667210674,
+  "final_normalized_mse": 0.01092970378211357,
+  "final_recovery_mse": 0.00849766410045469,
   "global_step": 37440,
   "recovery_episodes": 152,
   "recovery_training_episodes": 152,
@@ -206,7 +206,7 @@
       4252460821
     ],
     "base_window_count": 22450,
-    "dataset_content_hash": "745424b5023ed1dbfe5070450b0fdd90cfc973aeece99b2feda28c9e2883037e",
+    "dataset_content_hash": "38d57d8e1645f7f6ada92b64e8b4f89918311a5902092ab6cb605b9cda7ba93f",
     "expert_gate_hash": "27854a80d47bc1d1987dd0a09de9bb55e983055100de6cd2997c67f008a99daf",
     "manifest_hash": "6d684866d099f98927a4771948c107635b27a3fbec13e41b9aa26bf366a52a9d",
     "recovery_benchmark_filenames": [
@@ -525,6 +525,6 @@
     },
     "recovery_window_count": 6224,
     "source_split_hash": "1181bd481e7d61fc78881d79561fdab3f34a8a341911c9b4421b1af742318b8b",
-    "statistics_hash": "c930855e84a3e7da649f80269d06f9e3afb289baa4e39f062a6185c897897cec"
+    "statistics_hash": "e17a688fa42c1072cece8d3e9bb9c45188546fe8fd6380a8e27e21765811d1eb"
   }
 }

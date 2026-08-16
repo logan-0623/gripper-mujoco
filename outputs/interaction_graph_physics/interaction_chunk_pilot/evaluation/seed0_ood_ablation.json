@@ -1,0 +1,560 @@
+{
+  "action_diagnostics": {
+    "path": "evaluation/seed0_ood_ablation_action_diagnostics.jsonl",
+    "sha256": "7c104bc36f7523df5fb1d6096f7bc52cc7a8317836a0d03594f66f8d29ecc80d",
+    "steps": 9287
+  },
+  "by_policy": {
+    "flat_seed_0": {
+      "action_saturation_rate": 0.24621880301906715,
+      "bilateral_contact_rate": 0.0,
+      "drop_rate": 0.0,
+      "episodes": 20,
+      "ik_failure_rate": 0.0,
+      "ik_projection_rate": 0.22361111111111107,
+      "mean_ik_projection_scale": 0.8547916666666667,
+      "mean_steps": 144.25,
+      "mean_transport_progress": 0.0,
+      "mean_transport_progress_rate": 0.0,
+      "physics_failure_rate": 0.0,
+      "placement_rate": 0.0,
+      "post_placement_reclose_rate": 0.0,
+      "premature_open_rate": 0.0,
+      "primary_interaction": {
+        "grasp_given_contact_rate": null,
+        "mean_stable_target_substeps": 0.0,
+        "mean_transport_progress_rate": 0.0,
+        "stable_lift_rate": 0.0,
+        "stable_target_grasp_rate": 0.0,
+        "target_bilateral_contact_rate": 0.0,
+        "target_drop_rate": 0.0,
+        "target_first_contact_rate": 0.0,
+        "wrong_object_interaction_rate": 0.3,
+        "wrong_object_stable_grasp_rate": 0.25
+      },
+      "secondary_task": {
+        "released_and_retreated_rate": 0.0,
+        "strict_placement_rate": 0.0,
+        "strict_task_success_rate": 0.0,
+        "wall_contact_without_containment_rate": 0.0
+      },
+      "stable_lift_rate": 0.0,
+      "success_rate": 0.0,
+      "termination_reason_counts": {
+        "timeout": 15,
+        "wrong_object": 5
+      },
+      "wrong_object_stable_grasp_rate": 0.25,
+      "zero_pose_projection_rate": 0.015277777777777776
+    },
+    "graph_edge_shuffle_seed_0": {
+      "action_saturation_rate": 0.22377725856697817,
+      "bilateral_contact_rate": 0.15,
+      "drop_rate": 0.0,
+      "episodes": 20,
+      "ik_failure_rate": 0.0,
+      "ik_projection_rate": 0.3194444444444445,
+      "mean_ik_projection_scale": 0.8228125000000001,
+      "mean_steps": 176.35,
+      "mean_transport_progress": 0.033787943194329276,
+      "mean_transport_progress_rate": 0.14204936908404053,
+      "physics_failure_rate": 0.0,
+      "placement_rate": 0.05,
+      "post_placement_reclose_rate": 0.0,
+      "premature_open_rate": 0.0,
+      "primary_interaction": {
+        "grasp_given_contact_rate": 1.0,
+        "mean_stable_target_substeps": 421.55,
+        "mean_transport_progress_rate": 0.14204936908404053,
+        "stable_lift_rate": 0.15,
+        "stable_target_grasp_rate": 0.15,
+        "target_bilateral_contact_rate": 0.15,
+        "target_drop_rate": 0.0,
+        "target_first_contact_rate": 0.15,
+        "wrong_object_interaction_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "secondary_task": {
+        "released_and_retreated_rate": 0.05,
+        "strict_placement_rate": 0.05,
+        "strict_task_success_rate": 0.05,
+        "wall_contact_without_containment_rate": 0.0
+      },
+      "stable_lift_rate": 0.15,
+      "success_rate": 0.05,
+      "termination_reason_counts": {
+        "success": 1,
+        "timeout": 19
+      },
+      "wrong_object_stable_grasp_rate": 0.0,
+      "zero_pose_projection_rate": 0.0
+    },
+    "graph_seed_0": {
+      "action_saturation_rate": 0.18845329574339892,
+      "bilateral_contact_rate": 0.6,
+      "drop_rate": 0.05,
+      "episodes": 20,
+      "ik_failure_rate": 0.0,
+      "ik_projection_rate": 0.13083333333333333,
+      "mean_ik_projection_scale": 0.9293055555555556,
+      "mean_steps": 143.75,
+      "mean_transport_progress": 0.15998239881591872,
+      "mean_transport_progress_rate": 0.5742601322194597,
+      "physics_failure_rate": 0.0,
+      "placement_rate": 0.55,
+      "post_placement_reclose_rate": 0.05,
+      "premature_open_rate": 0.05,
+      "primary_interaction": {
+        "grasp_given_contact_rate": 1.0,
+        "mean_stable_target_substeps": 1032.7,
+        "mean_transport_progress_rate": 0.5742601322194597,
+        "stable_lift_rate": 0.6,
+        "stable_target_grasp_rate": 0.6,
+        "target_bilateral_contact_rate": 0.6,
+        "target_drop_rate": 0.05,
+        "target_first_contact_rate": 0.6,
+        "wrong_object_interaction_rate": 0.0,
+        "wrong_object_stable_grasp_rate": 0.0
+      },
+      "secondary_task": {
+        "released_and_retreated_rate": 0.55,
+        "strict_placement_rate": 0.55,
+        "strict_task_success_rate": 0.5,
+        "wall_contact_without_containment_rate": 0.0
+      },
+      "stable_lift_rate": 0.6,
+      "success_rate": 0.5,
+      "termination_reason_counts": {
+        "dropped": 1,
+        "success": 10,
+        "timeout": 9
+      },
+      "wrong_object_stable_grasp_rate": 0.0,
+      "zero_pose_projection_rate": 0.0
+    }
+  },
+  "by_policy_and_condition": {
+    "flat_seed_0": {
+      "count_ood": {
+        "action_saturation_rate": 0.21200261092571995,
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 10,
+        "ik_failure_rate": 0.0,
+        "ik_projection_rate": 0.21055555555555555,
+        "mean_ik_projection_scale": 0.8681944444444444,
+        "mean_steps": 138.1,
+        "mean_transport_progress": 0.0,
+        "mean_transport_progress_rate": 0.0,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.0,
+        "post_placement_reclose_rate": 0.0,
+        "premature_open_rate": 0.0,
+        "primary_interaction": {
+          "grasp_given_contact_rate": null,
+          "mean_stable_target_substeps": 0.0,
+          "mean_transport_progress_rate": 0.0,
+          "stable_lift_rate": 0.0,
+          "stable_target_grasp_rate": 0.0,
+          "target_bilateral_contact_rate": 0.0,
+          "target_drop_rate": 0.0,
+          "target_first_contact_rate": 0.0,
+          "wrong_object_interaction_rate": 0.4,
+          "wrong_object_stable_grasp_rate": 0.3
+        },
+        "secondary_task": {
+          "released_and_retreated_rate": 0.0,
+          "strict_placement_rate": 0.0,
+          "strict_task_success_rate": 0.0,
+          "wall_contact_without_containment_rate": 0.0
+        },
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "termination_reason_counts": {
+          "timeout": 7,
+          "wrong_object": 3
+        },
+        "wrong_object_stable_grasp_rate": 0.3,
+        "zero_pose_projection_rate": 0.011666666666666667
+      },
+      "crowded_ood": {
+        "action_saturation_rate": 0.28043499511241443,
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 10,
+        "ik_failure_rate": 0.0,
+        "ik_projection_rate": 0.23666666666666666,
+        "mean_ik_projection_scale": 0.841388888888889,
+        "mean_steps": 150.4,
+        "mean_transport_progress": 0.0,
+        "mean_transport_progress_rate": 0.0,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.0,
+        "post_placement_reclose_rate": 0.0,
+        "premature_open_rate": 0.0,
+        "primary_interaction": {
+          "grasp_given_contact_rate": null,
+          "mean_stable_target_substeps": 0.0,
+          "mean_transport_progress_rate": 0.0,
+          "stable_lift_rate": 0.0,
+          "stable_target_grasp_rate": 0.0,
+          "target_bilateral_contact_rate": 0.0,
+          "target_drop_rate": 0.0,
+          "target_first_contact_rate": 0.0,
+          "wrong_object_interaction_rate": 0.2,
+          "wrong_object_stable_grasp_rate": 0.2
+        },
+        "secondary_task": {
+          "released_and_retreated_rate": 0.0,
+          "strict_placement_rate": 0.0,
+          "strict_task_success_rate": 0.0,
+          "wall_contact_without_containment_rate": 0.0
+        },
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "termination_reason_counts": {
+          "timeout": 8,
+          "wrong_object": 2
+        },
+        "wrong_object_stable_grasp_rate": 0.2,
+        "zero_pose_projection_rate": 0.01888888888888889
+      }
+    },
+    "graph_edge_shuffle_seed_0": {
+      "count_ood": {
+        "action_saturation_rate": 0.2461111111111111,
+        "bilateral_contact_rate": 0.0,
+        "drop_rate": 0.0,
+        "episodes": 10,
+        "ik_failure_rate": 0.0,
+        "ik_projection_rate": 0.37388888888888894,
+        "mean_ik_projection_scale": 0.794513888888889,
+        "mean_steps": 180.0,
+        "mean_transport_progress": 0.0,
+        "mean_transport_progress_rate": 0.0,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.0,
+        "post_placement_reclose_rate": 0.0,
+        "premature_open_rate": 0.0,
+        "primary_interaction": {
+          "grasp_given_contact_rate": null,
+          "mean_stable_target_substeps": 0.0,
+          "mean_transport_progress_rate": 0.0,
+          "stable_lift_rate": 0.0,
+          "stable_target_grasp_rate": 0.0,
+          "target_bilateral_contact_rate": 0.0,
+          "target_drop_rate": 0.0,
+          "target_first_contact_rate": 0.0,
+          "wrong_object_interaction_rate": 0.0,
+          "wrong_object_stable_grasp_rate": 0.0
+        },
+        "secondary_task": {
+          "released_and_retreated_rate": 0.0,
+          "strict_placement_rate": 0.0,
+          "strict_task_success_rate": 0.0,
+          "wall_contact_without_containment_rate": 0.0
+        },
+        "stable_lift_rate": 0.0,
+        "success_rate": 0.0,
+        "termination_reason_counts": {
+          "timeout": 10
+        },
+        "wrong_object_stable_grasp_rate": 0.0,
+        "zero_pose_projection_rate": 0.0
+      },
+      "crowded_ood": {
+        "action_saturation_rate": 0.20144340602284524,
+        "bilateral_contact_rate": 0.3,
+        "drop_rate": 0.0,
+        "episodes": 10,
+        "ik_failure_rate": 0.0,
+        "ik_projection_rate": 0.265,
+        "mean_ik_projection_scale": 0.8511111111111112,
+        "mean_steps": 172.7,
+        "mean_transport_progress": 0.06757588638865855,
+        "mean_transport_progress_rate": 0.28409873816808107,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.1,
+        "post_placement_reclose_rate": 0.0,
+        "premature_open_rate": 0.0,
+        "primary_interaction": {
+          "grasp_given_contact_rate": 1.0,
+          "mean_stable_target_substeps": 843.1,
+          "mean_transport_progress_rate": 0.28409873816808107,
+          "stable_lift_rate": 0.3,
+          "stable_target_grasp_rate": 0.3,
+          "target_bilateral_contact_rate": 0.3,
+          "target_drop_rate": 0.0,
+          "target_first_contact_rate": 0.3,
+          "wrong_object_interaction_rate": 0.0,
+          "wrong_object_stable_grasp_rate": 0.0
+        },
+        "secondary_task": {
+          "released_and_retreated_rate": 0.1,
+          "strict_placement_rate": 0.1,
+          "strict_task_success_rate": 0.1,
+          "wall_contact_without_containment_rate": 0.0
+        },
+        "stable_lift_rate": 0.3,
+        "success_rate": 0.1,
+        "termination_reason_counts": {
+          "success": 1,
+          "timeout": 9
+        },
+        "wrong_object_stable_grasp_rate": 0.0,
+        "zero_pose_projection_rate": 0.0
+      }
+    },
+    "graph_seed_0": {
+      "count_ood": {
+        "action_saturation_rate": 0.15456405445499277,
+        "bilateral_contact_rate": 0.6,
+        "drop_rate": 0.0,
+        "episodes": 10,
+        "ik_failure_rate": 0.0,
+        "ik_projection_rate": 0.14111111111111113,
+        "mean_ik_projection_scale": 0.9263888888888889,
+        "mean_steps": 148.7,
+        "mean_transport_progress": 0.1694299256661907,
+        "mean_transport_progress_rate": 0.5794206068645747,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.6,
+        "post_placement_reclose_rate": 0.1,
+        "premature_open_rate": 0.0,
+        "primary_interaction": {
+          "grasp_given_contact_rate": 1.0,
+          "mean_stable_target_substeps": 1056.0,
+          "mean_transport_progress_rate": 0.5794206068645747,
+          "stable_lift_rate": 0.6,
+          "stable_target_grasp_rate": 0.6,
+          "target_bilateral_contact_rate": 0.6,
+          "target_drop_rate": 0.0,
+          "target_first_contact_rate": 0.6,
+          "wrong_object_interaction_rate": 0.0,
+          "wrong_object_stable_grasp_rate": 0.0
+        },
+        "secondary_task": {
+          "released_and_retreated_rate": 0.6,
+          "strict_placement_rate": 0.6,
+          "strict_task_success_rate": 0.5,
+          "wall_contact_without_containment_rate": 0.0
+        },
+        "stable_lift_rate": 0.6,
+        "success_rate": 0.5,
+        "termination_reason_counts": {
+          "success": 5,
+          "timeout": 5
+        },
+        "wrong_object_stable_grasp_rate": 0.0,
+        "zero_pose_projection_rate": 0.0
+      },
+      "crowded_ood": {
+        "action_saturation_rate": 0.222342537031805,
+        "bilateral_contact_rate": 0.6,
+        "drop_rate": 0.1,
+        "episodes": 10,
+        "ik_failure_rate": 0.0,
+        "ik_projection_rate": 0.12055555555555555,
+        "mean_ik_projection_scale": 0.9322222222222223,
+        "mean_steps": 138.8,
+        "mean_transport_progress": 0.15053487196564674,
+        "mean_transport_progress_rate": 0.5690996575743448,
+        "physics_failure_rate": 0.0,
+        "placement_rate": 0.5,
+        "post_placement_reclose_rate": 0.0,
+        "premature_open_rate": 0.1,
+        "primary_interaction": {
+          "grasp_given_contact_rate": 1.0,
+          "mean_stable_target_substeps": 1009.4,
+          "mean_transport_progress_rate": 0.5690996575743448,
+          "stable_lift_rate": 0.6,
+          "stable_target_grasp_rate": 0.6,
+          "target_bilateral_contact_rate": 0.6,
+          "target_drop_rate": 0.1,
+          "target_first_contact_rate": 0.6,
+          "wrong_object_interaction_rate": 0.0,
+          "wrong_object_stable_grasp_rate": 0.0
+        },
+        "secondary_task": {
+          "released_and_retreated_rate": 0.5,
+          "strict_placement_rate": 0.5,
+          "strict_task_success_rate": 0.5,
+          "wall_contact_without_containment_rate": 0.0
+        },
+        "stable_lift_rate": 0.6,
+        "success_rate": 0.5,
+        "termination_reason_counts": {
+          "dropped": 1,
+          "success": 5,
+          "timeout": 4
+        },
+        "wrong_object_stable_grasp_rate": 0.0,
+        "zero_pose_projection_rate": 0.0
+      }
+    }
+  },
+  "code_provenance": {
+    "learned_rollout_source_hash": "50665190af25c4c17b999e9e1512c73304d2dfa976236e0720cb91d962987ead",
+    "training_pipeline_source_hash": "a25924ae52120fb643a30ee15b7a2b11c7db548aa4b9b858110d108334bdb513"
+  },
+  "evaluation_scope": {
+    "case_count": 20,
+    "conditions": [
+      "count_ood",
+      "crowded_ood"
+    ],
+    "episodes_per_count": 5,
+    "ik_projection_enabled": true,
+    "ik_projection_scales": [
+      1.0,
+      0.5,
+      0.25,
+      0.125,
+      0.0
+    ],
+    "model_seeds": [
+      0
+    ],
+    "policy_variants": [
+      "flat",
+      "graph",
+      "graph_edge_shuffle"
+    ],
+    "rollout_count": 60
+  },
+  "graph_vs_edge_shuffle": {
+    "by_model_seed": {
+      "0": {
+        "by_condition": {
+          "count_ood": {
+            "paired_cases": 10,
+            "premature_open_delta": 0.0,
+            "stable_lift_delta": 0.6,
+            "stable_target_grasp_delta": 0.6,
+            "strict_placement_delta": 0.6,
+            "strict_task_success_delta": 0.5,
+            "success_delta": 0.5,
+            "target_bilateral_contact_delta": 0.6,
+            "transport_progress_rate_delta": 0.5794206068645747,
+            "wrong_object_delta": 0.0
+          },
+          "crowded_ood": {
+            "paired_cases": 10,
+            "premature_open_delta": 0.1,
+            "stable_lift_delta": 0.3,
+            "stable_target_grasp_delta": 0.3,
+            "strict_placement_delta": 0.4,
+            "strict_task_success_delta": 0.4,
+            "success_delta": 0.4,
+            "target_bilateral_contact_delta": 0.3,
+            "transport_progress_rate_delta": 0.2850009194062637,
+            "wrong_object_delta": 0.0
+          }
+        },
+        "paired_cases": 20,
+        "premature_open_delta": 0.05,
+        "stable_lift_delta": 0.45,
+        "stable_target_grasp_delta": 0.45,
+        "strict_placement_delta": 0.5,
+        "strict_task_success_delta": 0.45,
+        "success_delta": 0.45,
+        "target_bilateral_contact_delta": 0.45,
+        "transport_progress_rate_delta": 0.4322107631354192,
+        "wrong_object_delta": 0.0
+      }
+    },
+    "left": "graph:edge_shuffle",
+    "right": "graph:none",
+    "sign_convention": "right_minus_left"
+  },
+  "graph_vs_flat": {
+    "by_model_seed": {
+      "0": {
+        "by_condition": {
+          "count_ood": {
+            "paired_cases": 10,
+            "premature_open_delta": 0.0,
+            "stable_lift_delta": 0.6,
+            "stable_target_grasp_delta": 0.6,
+            "strict_placement_delta": 0.6,
+            "strict_task_success_delta": 0.5,
+            "success_delta": 0.5,
+            "target_bilateral_contact_delta": 0.6,
+            "transport_progress_rate_delta": 0.5794206068645747,
+            "wrong_object_delta": -0.3
+          },
+          "crowded_ood": {
+            "paired_cases": 10,
+            "premature_open_delta": 0.1,
+            "stable_lift_delta": 0.6,
+            "stable_target_grasp_delta": 0.6,
+            "strict_placement_delta": 0.5,
+            "strict_task_success_delta": 0.5,
+            "success_delta": 0.5,
+            "target_bilateral_contact_delta": 0.6,
+            "transport_progress_rate_delta": 0.5690996575743448,
+            "wrong_object_delta": -0.2
+          }
+        },
+        "paired_cases": 20,
+        "premature_open_delta": 0.05,
+        "stable_lift_delta": 0.6,
+        "stable_target_grasp_delta": 0.6,
+        "strict_placement_delta": 0.55,
+        "strict_task_success_delta": 0.5,
+        "success_delta": 0.5,
+        "target_bilateral_contact_delta": 0.6,
+        "transport_progress_rate_delta": 0.5742601322194597,
+        "wrong_object_delta": -0.25
+      }
+    },
+    "left": "flat:none",
+    "right": "graph:none",
+    "sign_convention": "right_minus_left"
+  },
+  "learned_policy_sanity": {},
+  "overall": {
+    "action_saturation_rate": 0.2194831191098148,
+    "bilateral_contact_rate": 0.25,
+    "drop_rate": 0.016666666666666666,
+    "episodes": 60,
+    "ik_failure_rate": 0.0,
+    "ik_projection_rate": 0.2246296296296296,
+    "mean_ik_projection_scale": 0.8689699074074075,
+    "mean_steps": 154.78333333333333,
+    "mean_transport_progress": 0.064590114003416,
+    "mean_transport_progress_rate": 0.2387698337678334,
+    "physics_failure_rate": 0.0,
+    "placement_rate": 0.2,
+    "post_placement_reclose_rate": 0.016666666666666666,
+    "premature_open_rate": 0.016666666666666666,
+    "primary_interaction": {
+      "grasp_given_contact_rate": 1.0,
+      "mean_stable_target_substeps": 484.75,
+      "mean_transport_progress_rate": 0.2387698337678334,
+      "stable_lift_rate": 0.25,
+      "stable_target_grasp_rate": 0.25,
+      "target_bilateral_contact_rate": 0.25,
+      "target_drop_rate": 0.016666666666666666,
+      "target_first_contact_rate": 0.25,
+      "wrong_object_interaction_rate": 0.1,
+      "wrong_object_stable_grasp_rate": 0.08333333333333333
+    },
+    "secondary_task": {
+      "released_and_retreated_rate": 0.2,
+      "strict_placement_rate": 0.2,
+      "strict_task_success_rate": 0.18333333333333332,
+      "wall_contact_without_containment_rate": 0.0
+    },
+    "stable_lift_rate": 0.25,
+    "success_rate": 0.18333333333333332,
+    "termination_reason_counts": {
+      "dropped": 1,
+      "success": 11,
+      "timeout": 43,
+      "wrong_object": 5
+    },
+    "wrong_object_stable_grasp_rate": 0.08333333333333333,
+    "zero_pose_projection_rate": 0.005092592592592593
+  }
+}
