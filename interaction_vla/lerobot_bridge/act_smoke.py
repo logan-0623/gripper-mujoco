@@ -481,6 +481,7 @@ def check_from_config(
         require_bridge_metadata=True,
         replay=True,
         bridge_config=config,
+        require_collection_identity=False,
     )
     device = resolve_device(config.act.device)
     destination = (
@@ -874,6 +875,7 @@ def train_from_config(
         require_bridge_metadata=True,
         replay=True,
         bridge_config=config,
+        require_collection_identity=False,
     )
     _validate_required_smoke_report(config)
     destination = Path(output) if output is not None else config.act.output_dir / "checkpoint"

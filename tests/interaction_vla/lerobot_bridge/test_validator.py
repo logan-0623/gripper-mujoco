@@ -1,3 +1,6 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -6,6 +9,7 @@ pytest.importorskip("lerobot")
 from interaction_vla.lerobot_bridge.validator import (
     validate_dataset_contract,
     validate_dataset_root,
+    validate_bridge_source_bindings,
     validate_replay_states,
     validate_teacher_schema,
     validate_teacher_manifest,
@@ -102,4 +106,52 @@ def test_dataset_contract_rejects_task_metadata_drift() -> None:
             records=records,
             provenance=provenance,
             bridge_config=config,
+        )
+
+
+def test_downstream_validation_keeps_source_and_gate_but_not_collection_config(
+    tmp_path: Path, monkeypatch
+) -> None:
+    collection_config = tmp_path / "collection.yaml"
+    downstream_config = tmp_path / "recovery.yaml"
+    source_config = tmp_path / "physics.yaml"
+    expert_gate = tmp_path / "expert_gate.json"
+    for path, content in (
+        (collection_config, "collection\n"),
+        (downstream_config, "recovery\n"),
+        (source_config, "physics\n"),
+        (expert_gate, "{}\n"),
+    ):
+        path.write_text(content, encoding="utf-8")
+    from interaction_vla.lerobot_bridge.provenance import sha256_file
+
+    provenance = {
+        "bridge_config_sha256": sha256_file(collection_config),
+        "source_config_sha256": sha256_file(source_config),
+        "expert_gate_sha256": sha256_file(expert_gate),
+        "source_fingerprint": "old-source",
+    }
+    config = SimpleNamespace(
+        config_path=downstream_config,
+        source_config_path=source_config,
+        expert_gate=expert_gate,
+    )
+    monkeypatch.setattr(
+        "interaction_vla.lerobot_bridge.validator.source_fingerprint",
+        lambda: "new-source",
+    )
+
+    checked = validate_bridge_source_bindings(
+        provenance, config, require_collection_identity=False
+    )
+
+    assert checked == ["source_config_sha256", "expert_gate_sha256"]
+    with pytest.raises(ValueError, match="bridge_config_sha256"):
+        validate_bridge_source_bindings(
+            provenance, config, require_collection_identity=True
+        )
+    provenance["source_config_sha256"] = "wrong"
+    with pytest.raises(ValueError, match="source_config_sha256"):
+        validate_bridge_source_bindings(
+            provenance, config, require_collection_identity=False
         )

@@ -223,6 +223,7 @@ def evaluate_recovery(
         require_bridge_metadata=True,
         replay=True,
         bridge_config=config,
+        require_collection_identity=False,
     )
     split = pilot_episode_split(
         total_episodes=config.dataset.episodes,

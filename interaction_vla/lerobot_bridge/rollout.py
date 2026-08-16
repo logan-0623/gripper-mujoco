@@ -453,6 +453,7 @@ def rollout_checkpoint(
         require_bridge_metadata=True,
         replay=True,
         bridge_config=config,
+        require_collection_identity=False,
     )
     if object_count < 2 or object_count > config.source.max_objects:
         raise ValueError("rollout object_count is outside the source environment range")

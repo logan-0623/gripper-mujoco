@@ -144,6 +144,28 @@ def validate_dataset_contract(
             raise ValueError("teacher manifest object count is outside the bridge config")
 
 
+def validate_bridge_source_bindings(
+    provenance: Mapping[str, Any],
+    bridge_config: BridgeConfig,
+    *,
+    require_collection_identity: bool,
+) -> list[str]:
+    expected = {
+        "source_config_sha256": sha256_file(bridge_config.source_config_path),
+        "expert_gate_sha256": sha256_file(bridge_config.expert_gate),
+    }
+    if require_collection_identity:
+        expected = {
+            "bridge_config_sha256": sha256_file(bridge_config.config_path),
+            **expected,
+            "source_fingerprint": source_fingerprint(),
+        }
+    for key, value in expected.items():
+        if provenance.get(key) != value:
+            raise ValueError(f"bridge source/config/gate hash mismatch: {key}")
+    return list(expected)
+
+
 def _load_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -264,6 +286,7 @@ def _validate_bridge_metadata(
     episode_lengths: Mapping[int, int],
     allow_incomplete: bool,
     bridge_config: BridgeConfig | None,
+    require_collection_identity: bool,
 ) -> tuple[list[dict[str, object]], dict[str, object], list[str]]:
     meta = root / "meta"
     schema_path = meta / "tc_tig_teacher_schema.json"
@@ -351,16 +374,13 @@ def _validate_bridge_metadata(
             )
 
     if bridge_config is not None:
-        config_hashes = {
-            "bridge_config_sha256": sha256_file(bridge_config.config_path),
-            "source_config_sha256": sha256_file(bridge_config.source_config_path),
-            "expert_gate_sha256": sha256_file(bridge_config.expert_gate),
-            "source_fingerprint": source_fingerprint(),
-        }
-        for key, expected in config_hashes.items():
-            if provenance.get(key) != expected:
-                raise ValueError(f"bridge source/config/gate hash mismatch: {key}")
-            checked_hashes.append(key)
+        checked_hashes.extend(
+            validate_bridge_source_bindings(
+                provenance,
+                bridge_config,
+                require_collection_identity=require_collection_identity,
+            )
+        )
         require_expert_gate(
             bridge_config.source_config_path, bridge_config.expert_gate
         )
@@ -443,6 +463,7 @@ def validate_dataset_root(
     require_bridge_metadata: bool = True,
     replay: bool = True,
     bridge_config: BridgeConfig | None = None,
+    require_collection_identity: bool = True,
 ) -> dict[str, object]:
     dataset_root = Path(root)
     if not dataset_root.is_dir():
@@ -465,6 +486,7 @@ def validate_dataset_root(
             episode_lengths=episode_lengths,
             allow_incomplete=allow_incomplete,
             bridge_config=bridge_config,
+            require_collection_identity=require_collection_identity,
         )
         if bridge_config is not None and provenance.get("complete", False):
             validate_dataset_contract(
