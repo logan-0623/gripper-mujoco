@@ -120,69 +120,33 @@ export all_proxy=socks5://127.0.0.1:7890
 已有 pilot 结果支持：Reflect 初始化主要改善 next-relation goal、operator、predicate 和
 residual；静态实体/关系重建并不是稳定收益来源。
 
-## 下一步：Graph-conditioned ACT 主实验
+## ACT 闭环基线（已完成）
 
-四个条件使用完全相同的双 RGB、10D proprioception、ACT 参数量、初始化、数据 split、
-batch 顺序和固定 5 epoch 预算：
+已完成的 Graph-conditioned ACT v1 审计包含 240 次 rollout，但所有条件成功数均为 0；
+Flat 在训练集已见场景也会 timeout。因此该结果不能支持 Graph 优于或差于 Flat，当前瓶颈
+是基础 ACT 尚未学会闭环任务。
 
-1. `flat`：75D Graph token 全零；
-2. `predicted_random`：随机初始化后 MuJoCo fine-tune 的 Graph；
-3. `predicted_reflect`：ReflectVLM 初始化后 MuJoCo fine-tune 的 Graph；
-4. `oracle_current`：仅当前实体/关系使用 causal MuJoCo teacher，下一关系目标仍由视觉
-   Graph 预测。
-
-`oracle_current` 是 privileged perception upper bound，不是可部署模型；它不会读取用未来
-轨迹计算的 `annotation.tc_tig.relation_goal`。
-
-先跑工程 smoke：
+按顺序运行：
 
 ```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
-  --config configs/graph_control_act_smoke_macos.yaml
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-check \
+  --config configs/lerobot_act_recovery_macos.yaml
 
-.venv-lerobot/bin/python -m interaction_vla.graph_control cache \
-  --config configs/graph_control_act_smoke_macos.yaml
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-train \
+  --config configs/lerobot_act_recovery_macos.yaml
 
-.venv-lerobot/bin/python -m interaction_vla.graph_control smoke \
-  --config configs/graph_control_act_smoke_macos.yaml
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-diagnose \
+  --config configs/lerobot_act_recovery_macos.yaml \
+  --checkpoint outputs/graph_control/act_recovery/train/checkpoint
+
+.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-recovery \
+  --config configs/lerobot_act_recovery_macos.yaml \
+  --checkpoint outputs/graph_control/act_recovery/train/checkpoint
 ```
 
-smoke 只验证四个条件都能完成一次 optimizer update、保存并无误重载，不产生策略性能结论。
-
-smoke 通过后运行正式三 seed 实验：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
-  --config configs/graph_control_act_pilot_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control cache \
-  --config configs/graph_control_act_pilot_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control compare \
-  --config configs/graph_control_act_pilot_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control evaluate \
-  --config configs/graph_control_act_pilot_macos.yaml
-```
-
-主要比较：
-
-- `predicted_reflect - flat`：视觉 Graph 是否提高连续控制；
-- `predicted_reflect - predicted_random`：ReflectVLM 预训练是否有迁移价值；
-- `oracle_current - predicted_reflect`：当前 Graph 感知误差是否是瓶颈。
-
-正式报告使用 policy seed 作为独立重复单位，保留每个 paired case，并报告 success、
-wrong-object interaction/stable grasp、drop、timeout、IK projection、action clipping 和
-gripper switching。
-
-输出：
-
-```text
-outputs/graph_control/act_smoke/cache/       seed-0 frozen token cache
-outputs/graph_control/act_smoke/runs/        四条件 one-update checkpoint
-outputs/graph_control/act_pilot/cache/       三 seed frozen token cache
-outputs/graph_control/act_pilot/runs/        正式 ACT checkpoint 与 paired report
-```
+结果写入 `outputs/graph_control/act_recovery/`。当前 recovery gate 已通过：train-seen
+成功率为 0.90，held-out 成功率为 0.70，分别高于 0.80 和 0.30 的门槛。下一项实验是
+Interaction Graph v2：先验证 oracle Graph 是否提高连续控制，再训练视觉 predicted Graph。
 
 ## 项目结构
 
