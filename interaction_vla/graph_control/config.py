@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 import yaml
 
-from .schema import CONDITIONS
+from .schema import ALL_CONDITIONS, ORACLE_CONDITIONS
 
 
 def _require_keys(raw: Mapping[str, Any], allowed: set[str], section: str) -> None:
@@ -30,13 +30,13 @@ class CacheConfig:
 class TrainingConfig:
     output_dir: Path
     smoke_steps: int = 1
-    formal_epochs: int = 5
+    formal_epochs: int = 10
 
     def __post_init__(self) -> None:
         if self.smoke_steps < 1:
             raise ValueError("training.smoke_steps must be positive")
-        if self.formal_epochs != 5:
-            raise ValueError("training.formal_epochs must be exactly 5")
+        if self.formal_epochs != 10:
+            raise ValueError("training.formal_epochs must be exactly 10")
 
 
 @dataclass(frozen=True)
@@ -48,10 +48,17 @@ class EvaluationConfig:
     max_steps: int
 
     def __post_init__(self) -> None:
-        if self.layouts != ("normal", "crowded"):
-            raise ValueError("evaluation.layouts must be [normal, crowded]")
-        if self.object_counts != (2, 3):
-            raise ValueError("evaluation.object_counts must be [2, 3]")
+        valid_matrix = (
+            self.layouts == ("normal",) and self.object_counts == (2,)
+        ) or (
+            self.layouts == ("normal", "crowded")
+            and self.object_counts == (2, 3)
+        )
+        if not valid_matrix:
+            raise ValueError(
+                "evaluation.layouts/object_counts must be normal/2 or the full "
+                "normal,crowded x 2,3 matrix"
+            )
         if self.cases_per_cell < 1:
             raise ValueError("evaluation.cases_per_cell must be positive")
         if self.master_seed < 0:
@@ -72,8 +79,9 @@ class EvaluationConfig:
 class GraphControlConfig:
     config_path: Path
     bridge_config: Path
+    required_recovery_report: Path
     split_manifest: Path
-    graph_runs_root: Path
+    graph_runs_root: Path | None
     conditions: tuple[str, ...]
     seeds: tuple[int, ...]
     cache: CacheConfig
@@ -81,11 +89,15 @@ class GraphControlConfig:
     evaluation: EvaluationConfig
 
     def __post_init__(self) -> None:
-        if self.conditions != CONDITIONS:
+        if self.conditions not in {ORACLE_CONDITIONS, ALL_CONDITIONS}:
             raise ValueError(
-                "conditions must contain exactly flat, predicted_random, "
-                "predicted_reflect, oracle_current in that order"
+                "conditions must be exactly the oracle pair or full Graph v2 "
+                "condition matrix"
             )
+        if self.conditions == ORACLE_CONDITIONS and self.graph_runs_root is not None:
+            raise ValueError("oracle-only Graph control must set graph_runs_root to null")
+        if self.conditions == ALL_CONDITIONS and self.graph_runs_root is None:
+            raise ValueError("the full Graph v2 matrix requires graph_runs_root")
         if not self.seeds or len(set(self.seeds)) != len(self.seeds):
             raise ValueError("seeds must be non-empty and unique")
         if any(seed < 0 for seed in self.seeds):
@@ -99,11 +111,14 @@ class GraphControlConfig:
             raise ValueError(f"unknown graph control condition: {condition}")
         if seed not in self.seeds:
             raise ValueError(f"seed {seed} is outside the configured seed matrix")
-        if condition == "flat":
+        if condition in ORACLE_CONDITIONS:
             return None
         initialization = (
-            "random_init" if condition == "predicted_random" else "reflectvlm_init"
+            "random_init"
+            if condition == "predicted_random_v2"
+            else "reflectvlm_init"
         )
+        assert self.graph_runs_root is not None
         return (
             self.graph_runs_root
             / initialization
@@ -128,6 +143,7 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
         raw,
         {
             "bridge_config",
+            "required_recovery_report",
             "split_manifest",
             "graph_runs_root",
             "conditions",
@@ -140,6 +156,7 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
     )
     required = {
         "bridge_config",
+        "required_recovery_report",
         "split_manifest",
         "graph_runs_root",
         "conditions",
@@ -168,8 +185,11 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
     return GraphControlConfig(
         config_path=config_path,
         bridge_config=Path(raw["bridge_config"]),
+        required_recovery_report=Path(raw["required_recovery_report"]),
         split_manifest=Path(raw["split_manifest"]),
-        graph_runs_root=Path(raw["graph_runs_root"]),
+        graph_runs_root=(
+            None if raw["graph_runs_root"] is None else Path(raw["graph_runs_root"])
+        ),
         conditions=tuple(str(value) for value in raw["conditions"]),
         seeds=tuple(int(value) for value in raw["seeds"]),
         cache=CacheConfig(
@@ -179,7 +199,7 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
         training=TrainingConfig(
             output_dir=Path(training_raw["output_dir"]),
             smoke_steps=int(training_raw.get("smoke_steps", 1)),
-            formal_epochs=int(training_raw.get("formal_epochs", 5)),
+            formal_epochs=int(training_raw.get("formal_epochs", 10)),
         ),
         evaluation=EvaluationConfig(
             layouts=tuple(str(value) for value in evaluation_raw["layouts"]),

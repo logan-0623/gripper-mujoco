@@ -85,4 +85,5 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         raise SystemExit(2 if isinstance(error, CLIUsageError) else 1) from error
     print(json.dumps(_jsonable(result), indent=2, sort_keys=True))
-
+    if isinstance(result, Mapping) and result.get("passed") is False:
+        raise SystemExit(1)

@@ -8,13 +8,16 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+from types import SimpleNamespace
 from typing import Any, Callable, Mapping
 
 import numpy as np
 import torch
 
 from interaction_vla.device import resolve_device
+from interaction_vla.graph_finetune.data import fit_normalization, graph_v2_targets
 from interaction_vla.graph_finetune.pipeline import load_finetune_checkpoint
+from interaction_vla.graph_finetune.schema import GraphV2Normalization, GraphV2Targets
 from interaction_vla.lerobot_bridge.act_smoke import (
     _act_config,
     _is_oom,
@@ -25,6 +28,7 @@ from interaction_vla.lerobot_bridge.provenance import (
     sha256_file,
     standard_dataset_fingerprint,
 )
+from interaction_vla.lerobot_bridge.sidecar import load_teacher_sidecar
 from interaction_vla.lerobot_bridge.teacher import TCTIGTeacherExtractor
 from interaction_vla.lerobot_bridge.validator import validate_dataset_root
 
@@ -32,23 +36,21 @@ from .cache import (
     CacheProvenance,
     TokenCache,
     build_token_cache,
-    current_fields_from_teacher,
     load_token_cache,
-    write_token_cache,
 )
 from .config import GraphControlConfig, load_graph_control_config
 from .dataset import GraphDatasetMetadata
-from .features import CurrentGraphFields, FrozenGraphRuntime, pack_oracle_current
+from .features import FrozenGraphRuntime
 from .rollout import (
     FlatTokenProvider,
     GraphPolicyRuntime,
-    OracleCurrentTokenProvider,
+    OracleGraphV2TokenProvider,
     PredictedTokenProvider,
     aggregate_rollouts,
     paired_evaluation_cases,
     rollout_case,
 )
-from .schema import CONDITIONS, TOKEN_DIM
+from .schema import TOKEN_DIM
 from .training import (
     ControlSplit,
     assert_checkpoint_split,
@@ -113,10 +115,39 @@ def _atomic_output_directory(destination: Path):
 
 def _validate_formal_epochs(config: GraphControlConfig, bridge: BridgeConfig) -> None:
     expected = config.training.formal_epochs
-    if expected != 5 or bridge.act.epochs != expected:
+    if expected != 10 or bridge.act.epochs != expected:
         raise ValueError(
-            "formal Graph-conditioned ACT training requires exactly 5 epochs"
+            "formal Graph-conditioned ACT training requires exactly 10 epochs"
         )
+
+
+def _require_recovery_report(
+    config: GraphControlConfig | Any, bridge: BridgeConfig | Any
+) -> str:
+    recovery = bridge.recovery
+    if recovery is None or (
+        float(recovery.train_success_threshold) != 0.80
+        or float(recovery.heldout_success_threshold) != 0.30
+    ):
+        raise ValueError("Graph control requires the exact ACT recovery gate 0.80/0.30")
+    path = Path(config.required_recovery_report)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"ACT recovery report is invalid: {path}") from error
+    try:
+        train_rate = float(payload["train_seen"]["success_rate"])
+        heldout_rate = float(payload["heldout"]["success_rate"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("ACT recovery report did not pass the required gate") from error
+    if (
+        payload.get("passed") is not True
+        or not np.isfinite((train_rate, heldout_rate)).all()
+        or train_rate < 0.80
+        or heldout_rate < 0.30
+    ):
+        raise ValueError("ACT recovery report did not pass the required gate")
+    return sha256_file(path)
 
 
 def _clear_mps_memory() -> None:
@@ -232,20 +263,25 @@ def _validate_source_alignment(source: Any, split: ControlSplit) -> None:
         raise ValueError("Graph split rows do not cover the LeRobot dataset exactly")
 
 
-def _context(path: str | Path) -> tuple[GraphControlConfig, BridgeConfig, ControlSplit, Any]:
+def _context(
+    path: str | Path,
+) -> tuple[GraphControlConfig, BridgeConfig, ControlSplit, Any, str]:
     config = load_graph_control_config(path)
     bridge = load_bridge_config(config.bridge_config)
+    recovery_report_sha256 = _require_recovery_report(config, bridge)
     split = load_control_split(config.split_manifest)
     source = _load_source(bridge)
     _validate_source_alignment(source, split)
-    return config, bridge, split, source
+    return config, bridge, split, source, recovery_report_sha256
 
 
 def inspect_from_config(path: str | Path) -> dict[str, object]:
-    config, bridge, split, source = _context(path)
+    config, bridge, split, source, recovery_report_sha256 = _context(path)
     checkpoints: dict[str, object] = {}
     for seed in config.seeds:
-        for condition in ("predicted_random", "predicted_reflect"):
+        for condition in config.conditions:
+            if condition not in {"predicted_random_v2", "predicted_reflect_v2"}:
+                continue
             payload = _load_graph_payload(
                 config, split, condition=condition, seed=seed
             )
@@ -269,18 +305,15 @@ def inspect_from_config(path: str | Path) -> dict[str, object]:
         "rows": len(source),
         "split_manifest": split.path,
         "split_manifest_sha256": split.sha256,
+        "recovery_report": config.required_recovery_report,
+        "recovery_report_sha256": recovery_report_sha256,
         "partition_episodes": {
             name: len(values) for name, values in split.episodes.items()
         },
         "partition_rows": {name: len(values) for name, values in split.rows.items()},
         "graph_checkpoints": checkpoints,
         "future_relation_goal_policy_input": False,
-        "teacher_current_fields": [
-            "entity_mask",
-            "entity_visibility",
-            "relation_mask",
-            "relation_values[12:22]",
-        ],
+        "oracle_provider": "causal_graph_v2_teacher",
     }
     del source
     gc.collect()
@@ -320,12 +353,15 @@ def _provenance(
     )
 
 
-def _current_teacher_fields(
+def _oracle_inputs(
     bridge: BridgeConfig,
     source: Any,
-    *,
-    selected_rows: set[int],
-) -> dict[int, CurrentGraphFields]:
+    split: ControlSplit,
+) -> tuple[
+    dict[int, tuple[int, ...]],
+    dict[int, GraphV2Targets],
+    GraphV2Normalization,
+]:
     manifest_path = bridge.dataset.root / "meta" / "teacher_manifest.json"
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -336,43 +372,43 @@ def _current_teacher_fields(
     ):
         raise ValueError("teacher manifest must be a list")
     records = {int(record["episode_index"]): record for record in manifest}
-    result: dict[int, CurrentGraphFields] = {}
+    episode_rows: dict[int, tuple[int, ...]] = {}
+    targets: dict[int, GraphV2Targets] = {}
     for episode in source.meta.episodes:
         episode_index = int(episode["episode_index"])
         if episode_index not in records:
             raise ValueError(f"teacher manifest is missing episode {episode_index}")
         record = records[episode_index]
-        sidecar = bridge.dataset.root / str(record["path"])
-        if sha256_file(sidecar) != str(record["sha256"]):
-            raise ValueError(f"teacher sidecar SHA-256 mismatch: {sidecar}")
-        causal_keys = (
-            "annotation.tc_tig.entity_mask",
-            "annotation.tc_tig.entity_visibility",
-            "annotation.tc_tig.relation_mask",
-            "annotation.tc_tig.relation_values",
+        arrays = load_teacher_sidecar(
+            bridge.dataset.root / str(record["path"]),
+            expected_sha256=str(record["sha256"]),
         )
-        try:
-            with np.load(sidecar, allow_pickle=False) as loaded:
-                arrays = {name: loaded[name].copy() for name in causal_keys}
-        except (KeyError, OSError, ValueError) as error:
-            raise ValueError(f"causal teacher fields are invalid: {sidecar}") from error
         start = int(episode["dataset_from_index"])
         stop = int(episode["dataset_to_index"])
         if stop - start != int(record["frames"]):
             raise ValueError("teacher sidecar frame count differs from LeRobot metadata")
-        for frame_index, row in enumerate(range(start, stop)):
-            if row in selected_rows:
-                result[row] = current_fields_from_teacher(
-                    arrays, frame_index=frame_index
-                )
-        del arrays
-    if set(result) != selected_rows:
-        raise ValueError("causal teacher current fields do not cover cache rows")
-    return result
+        episode_rows[episode_index] = tuple(range(start, stop))
+        targets[episode_index] = graph_v2_targets(arrays)
+    if set(episode_rows) != set(records):
+        raise ValueError("teacher episodes do not match LeRobot metadata")
+    states = np.asarray(
+        source.hf_dataset["observation.state"], dtype=np.float32
+    )
+    if states.shape != (len(source), 10) or not np.isfinite(states).all():
+        raise ValueError("source end-effector state must be finite with shape [rows, 10]")
+    normalization = fit_normalization(
+        SimpleNamespace(
+            states=states,
+            row_indices=episode_rows,
+            targets=targets,
+        ),
+        split.episodes["train"],
+    )
+    return episode_rows, targets, normalization
 
 
 def cache_from_config(path: str | Path) -> dict[str, object]:
-    config, bridge, split, source = _context(path)
+    config, bridge, split, source, recovery_report_sha256 = _context(path)
     destination = config.cache.directory
     if destination.exists():
         if any(destination.iterdir()):
@@ -381,114 +417,50 @@ def cache_from_config(path: str | Path) -> dict[str, object]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{destination.name}-", dir=destination.parent))
     dataset_fingerprint = _control_dataset_fingerprint(bridge)
-    rows = tuple(
-        row
-        for partition in ("train", "validation", "test")
-        for row in split.rows[partition]
+    episode_rows, oracle_targets, normalization = _oracle_inputs(
+        bridge, source, split
     )
-    selected_rows = set(rows)
-    current_fields: dict[int, CurrentGraphFields] | None = None
+    rows = tuple(row for episode in sorted(episode_rows) for row in episode_rows[episode])
     artifacts: dict[str, object] = {}
     try:
         for seed in config.seeds:
-            flat_provenance = _provenance(
-                condition="flat",
-                dataset_fingerprint=dataset_fingerprint,
-                split=split,
-                checkpoint=None,
-                payload=None,
-            )
-            flat = build_token_cache(
-                _cache_path(staging, "flat", seed),
-                source=source,
-                row_indices=rows,
-                condition="flat",
-                runtime=None,
-                batch_size=config.cache.batch_size,
-                provenance=flat_provenance,
-            )
-            artifacts[f"seed_{seed}/flat"] = flat.sha256
-
-            random_payload = _load_graph_payload(
-                config, split, condition="predicted_random", seed=seed
-            )
-            random_checkpoint = config.graph_checkpoint("predicted_random", seed)
-            assert random_checkpoint is not None
-            random_runtime = FrozenGraphRuntime(
-                random_checkpoint, device=bridge.act.device
-            )
-            random_cache = build_token_cache(
-                _cache_path(staging, "predicted_random", seed),
-                source=source,
-                row_indices=rows,
-                condition="predicted_random",
-                runtime=random_runtime,
-                batch_size=config.cache.batch_size,
-                provenance=_provenance(
-                    condition="predicted_random",
-                    dataset_fingerprint=dataset_fingerprint,
-                    split=split,
-                    checkpoint=random_checkpoint,
-                    payload=random_payload,
-                ),
-            )
-            artifacts[f"seed_{seed}/predicted_random"] = random_cache.sha256
-            del random_runtime
-
-            reflect_payload = _load_graph_payload(
-                config, split, condition="predicted_reflect", seed=seed
-            )
-            reflect_checkpoint = config.graph_checkpoint("predicted_reflect", seed)
-            assert reflect_checkpoint is not None
-            reflect_runtime = FrozenGraphRuntime(
-                reflect_checkpoint, device=bridge.act.device
-            )
-            reflect_cache = build_token_cache(
-                _cache_path(staging, "predicted_reflect", seed),
-                source=source,
-                row_indices=rows,
-                condition="predicted_reflect",
-                runtime=reflect_runtime,
-                batch_size=config.cache.batch_size,
-                provenance=_provenance(
-                    condition="predicted_reflect",
-                    dataset_fingerprint=dataset_fingerprint,
-                    split=split,
-                    checkpoint=reflect_checkpoint,
-                    payload=reflect_payload,
-                ),
-            )
-            artifacts[f"seed_{seed}/predicted_reflect"] = reflect_cache.sha256
-            if current_fields is None:
-                current_fields = _current_teacher_fields(
-                    bridge, source, selected_rows=selected_rows
-                )
-            oracle_tokens = np.stack(
-                [
-                    pack_oracle_current(
-                        current_fields[int(row)],
-                        reflect_cache.tokens[index],
-                        reflect_runtime.normalization,
+            for condition in config.conditions:
+                checkpoint = config.graph_checkpoint(condition, seed)
+                payload = (
+                    None
+                    if checkpoint is None
+                    else _load_graph_payload(
+                        config, split, condition=condition, seed=seed
                     )
-                    for index, row in enumerate(reflect_cache.row_indices)
-                ],
-                axis=0,
-            )
-            oracle_cache = write_token_cache(
-                _cache_path(staging, "oracle_current", seed),
-                reflect_cache.row_indices,
-                oracle_tokens,
-                _provenance(
-                    condition="oracle_current",
-                    dataset_fingerprint=dataset_fingerprint,
-                    split=split,
-                    checkpoint=reflect_checkpoint,
-                    payload=reflect_payload,
-                ),
-            )
-            artifacts[f"seed_{seed}/oracle_current"] = oracle_cache.sha256
-            del reflect_runtime
-            gc.collect()
+                )
+                runtime = (
+                    None
+                    if checkpoint is None
+                    else FrozenGraphRuntime(checkpoint, device=bridge.act.device)
+                )
+                cache = build_token_cache(
+                    _cache_path(staging, condition, seed),
+                    source=source,
+                    episode_rows=episode_rows,
+                    condition=condition,
+                    runtime=runtime,
+                    provenance=_provenance(
+                        condition=condition,
+                        dataset_fingerprint=dataset_fingerprint,
+                        split=split,
+                        checkpoint=checkpoint,
+                        payload=payload,
+                    ),
+                    oracle_targets=(
+                        oracle_targets if condition == "oracle_graph_v2" else None
+                    ),
+                    normalization=(
+                        normalization if condition == "oracle_graph_v2" else None
+                    ),
+                )
+                artifacts[f"seed_{seed}/{condition}"] = cache.sha256
+                del runtime
+                gc.collect()
         os.replace(staging, destination)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
@@ -499,6 +471,7 @@ def cache_from_config(path: str | Path) -> dict[str, object]:
         "rows": len(rows),
         "token_dim": TOKEN_DIM,
         "artifacts": artifacts,
+        "recovery_report_sha256": recovery_report_sha256,
         "future_relation_goal_used_for_token": False,
     }
 
@@ -540,7 +513,7 @@ def _load_cache_matrix(
 ) -> dict[str, TokenCache]:
     dataset_fingerprint = _control_dataset_fingerprint(bridge)
     payloads: dict[Path, Mapping[str, Any]] = {}
-    for condition in CONDITIONS:
+    for condition in config.conditions:
         checkpoint = config.graph_checkpoint(condition, seed)
         if checkpoint is not None and checkpoint not in payloads:
             payloads[checkpoint] = _load_graph_payload(
@@ -563,12 +536,12 @@ def _load_cache_matrix(
                 ),
             ),
         )
-        for condition in CONDITIONS
+        for condition in config.conditions
     }
 
 
 def _train_from_config(path: str | Path, *, smoke: bool) -> dict[str, object]:
-    config, bridge, split, source = _context(path)
+    config, bridge, split, source, recovery_report_sha256 = _context(path)
     del source
     if not smoke:
         _validate_formal_epochs(config, bridge)
@@ -604,6 +577,8 @@ def _train_from_config(path: str | Path, *, smoke: bool) -> dict[str, object]:
                     smoke_steps=config.training.smoke_steps if smoke else None,
                     initial_epochs=None if smoke else config.training.formal_epochs,
                     maximum_epochs=None if smoke else config.training.formal_epochs,
+                    conditions=config.conditions,
+                    recovery_report_sha256=recovery_report_sha256,
                     bridge_config=bridge,
                 )
 
@@ -615,7 +590,8 @@ def _train_from_config(path: str | Path, *, smoke: bool) -> dict[str, object]:
         report: dict[str, object] = {
             "passed": True,
             "mode": "smoke" if smoke else "formal",
-            "conditions": list(CONDITIONS),
+            "conditions": list(config.conditions),
+            "recovery_report_sha256": recovery_report_sha256,
             "seeds": list(config.seeds),
             "fixed_epochs": None if smoke else config.training.formal_epochs,
             "reports": reports,
@@ -643,8 +619,15 @@ def _runtime_for_condition(
     seed: int,
     condition: str,
     cache: TokenCache,
+    recovery_report_sha256: str,
+    oracle_normalization: GraphV2Normalization,
 ) -> GraphPolicyRuntime:
-    bindings = graph_checkpoint_bindings(condition, seed, cache)
+    bindings = graph_checkpoint_bindings(
+        condition,
+        seed,
+        cache,
+        recovery_report_sha256=recovery_report_sha256,
+    )
     checkpoint = (
         config.training.output_dir / f"seed_{seed}" / condition / "checkpoint"
     )
@@ -673,15 +656,15 @@ def _runtime_for_condition(
     graph_checkpoint = config.graph_checkpoint(condition, seed)
     if condition == "flat":
         provider: Any = FlatTokenProvider()
+    elif condition == "oracle_graph_v2":
+        provider = OracleGraphV2TokenProvider(
+            teacher=TCTIGTeacherExtractor(bridge.teacher),
+            normalization=oracle_normalization,
+        )
     else:
         assert graph_checkpoint is not None
         graph_runtime = FrozenGraphRuntime(graph_checkpoint, device=bridge.act.device)
-        if condition == "oracle_current":
-            provider = OracleCurrentTokenProvider(
-                graph_runtime, TCTIGTeacherExtractor(bridge.teacher)
-            )
-        else:
-            provider = PredictedTokenProvider(graph_runtime)
+        provider = PredictedTokenProvider(graph_runtime)
     return GraphPolicyRuntime(
         condition=condition,
         policy_seed=seed,
@@ -700,7 +683,8 @@ def evaluate_from_config(path: str | Path) -> dict[str, object]:
         not evaluation_dir.is_dir() or any(evaluation_dir.iterdir())
     ):
         raise FileExistsError("Graph-conditioned ACT evaluation output already exists")
-    config, bridge, split, source = _context(path)
+    config, bridge, split, source, recovery_report_sha256 = _context(path)
+    _, _, oracle_normalization = _oracle_inputs(bridge, source, split)
     del source
     cases = paired_evaluation_cases(
         layouts=config.evaluation.layouts,
@@ -711,7 +695,7 @@ def evaluate_from_config(path: str | Path) -> dict[str, object]:
     records: list[dict[str, object]] = []
     for seed in config.seeds:
         caches = _load_cache_matrix(config, bridge, split, seed)
-        for condition in CONDITIONS:
+        for condition in config.conditions:
             runtime = _runtime_for_condition(
                 config,
                 bridge,
@@ -719,6 +703,8 @@ def evaluate_from_config(path: str | Path) -> dict[str, object]:
                 seed=seed,
                 condition=condition,
                 cache=caches[condition],
+                recovery_report_sha256=recovery_report_sha256,
+                oracle_normalization=oracle_normalization,
             )
             records.extend(
                 rollout_case(
@@ -731,9 +717,13 @@ def evaluate_from_config(path: str | Path) -> dict[str, object]:
             )
             del runtime
             gc.collect()
-    report = aggregate_rollouts(records)
+    report = aggregate_rollouts(records, conditions=config.conditions)
     return _publish_evaluation(
         evaluation_dir,
         records=records,
-        report={**report, "cases": len(cases)},
+        report={
+            **report,
+            "cases": len(cases),
+            "recovery_report_sha256": recovery_report_sha256,
+        },
     )

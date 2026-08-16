@@ -11,6 +11,7 @@ from interaction_vla.graph_control.pipeline import (
     _atomic_output_directory,
     _load_source,
     _publish_evaluation,
+    _require_recovery_report,
     _train_seed_with_fallback,
     _validate_formal_epochs,
     evaluate_from_config,
@@ -109,10 +110,40 @@ def test_evaluation_report_failure_does_not_publish_partial_records(
 
 
 def test_formal_training_rejects_bridge_epoch_drift() -> None:
-    config = SimpleNamespace(training=SimpleNamespace(formal_epochs=5))
-    _validate_formal_epochs(config, SimpleNamespace(act=SimpleNamespace(epochs=5)))
-    with pytest.raises(ValueError, match="exactly 5"):
+    config = SimpleNamespace(training=SimpleNamespace(formal_epochs=10))
+    _validate_formal_epochs(config, SimpleNamespace(act=SimpleNamespace(epochs=10)))
+    with pytest.raises(ValueError, match="exactly 10"):
         _validate_formal_epochs(config, SimpleNamespace(act=SimpleNamespace(epochs=4)))
+
+
+def test_recovery_prerequisite_binds_exact_gate_and_returns_hash(tmp_path: Path) -> None:
+    report_path = tmp_path / "recovery.json"
+    report_path.write_text(
+        '{"passed": true, "train_seen": {"success_rate": 0.9}, '
+        '"heldout": {"success_rate": 0.7}}',
+        encoding="utf-8",
+    )
+    config = SimpleNamespace(required_recovery_report=report_path)
+    recovery = SimpleNamespace(
+        train_success_threshold=0.8,
+        heldout_success_threshold=0.3,
+    )
+    digest = _require_recovery_report(config, SimpleNamespace(recovery=recovery))
+
+    assert len(digest) == 64
+
+    recovery.train_success_threshold = 0.7
+    with pytest.raises(ValueError, match="0.80/0.30"):
+        _require_recovery_report(config, SimpleNamespace(recovery=recovery))
+
+    recovery.train_success_threshold = 0.8
+    report_path.write_text(
+        '{"passed": true, "train_seen": {"success_rate": 0.9}, '
+        '"heldout": {"success_rate": 0.2}}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="did not pass"):
+        _require_recovery_report(config, SimpleNamespace(recovery=recovery))
 
 
 def test_seed_oom_discards_partial_matrix_and_restarts_all_conditions(
@@ -124,10 +155,10 @@ def test_seed_oom_discards_partial_matrix_and_restarts_all_conditions(
 
     def train_attempt(batch_size: int, output_dir: Path):
         output_dir.mkdir()
-        for condition in ("flat", "predicted_random", "predicted_reflect", "oracle_current"):
+        for condition in ("flat", "oracle_graph_v2"):
             attempts.append((batch_size, condition))
             (output_dir / condition).mkdir()
-            if batch_size == 2 and condition == "predicted_reflect":
+            if batch_size == 2 and condition == "oracle_graph_v2":
                 raise RuntimeError("MPS backend out of memory")
         return {"passed": True}
 
@@ -143,16 +174,13 @@ def test_seed_oom_discards_partial_matrix_and_restarts_all_conditions(
 
     assert attempts == [
         (2, "flat"),
-        (2, "predicted_random"),
-        (2, "predicted_reflect"),
+        (2, "oracle_graph_v2"),
         (1, "flat"),
-        (1, "predicted_random"),
-        (1, "predicted_reflect"),
-        (1, "oracle_current"),
+        (1, "oracle_graph_v2"),
     ]
     assert cleared == [True]
     assert report["batch_size"] == 1
     assert report["fallback_from_batch_size"] == 2
     assert sorted(path.name for path in destination.iterdir()) == [
-        "flat", "oracle_current", "predicted_random", "predicted_reflect"
+        "flat", "oracle_graph_v2"
     ]

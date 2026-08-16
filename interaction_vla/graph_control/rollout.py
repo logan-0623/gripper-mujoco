@@ -8,6 +8,8 @@ import numpy as np
 import torch
 
 from interaction_vla.env import LayoutMode, TerminationReason
+from interaction_vla.graph_finetune.data import CausalGraphV2Tracker
+from interaction_vla.graph_finetune.schema import GraphV2Normalization
 from interaction_vla.lerobot_bridge.capture import DualViewCapture
 from interaction_vla.lerobot_bridge.codecs import (
     EndEffectorStateCodec,
@@ -24,8 +26,14 @@ from interaction_vla.physics_action_safety import project_cartesian_action
 from interaction_vla.physics_env import FrankaContactEnv
 from interaction_vla.physics_evaluate import InteractionRolloutTracker
 
-from .features import CurrentGraphFields, FrozenGraphRuntime, pack_oracle_current
-from .schema import CONDITIONS, TOKEN_DIM, empty_token, validate_token
+from .features import FrozenGraphRuntime, pack_oracle_current
+from .schema import (
+    ALL_CONDITIONS,
+    ORACLE_CONDITIONS,
+    TOKEN_DIM,
+    empty_token,
+    validate_token,
+)
 
 
 @dataclass(frozen=True)
@@ -59,28 +67,32 @@ class PredictedTokenProvider:
         self.runtime = runtime
 
     def reset(self) -> None:
-        return None
+        self.runtime.reset()
 
     def token(
         self, *, snapshot: Any, camera_frame: Any, state: np.ndarray, task: str
     ) -> np.ndarray:
         del snapshot
-        values = self.runtime.predict_tokens(
-            agent_rgb=[_chw_rgb(camera_frame.views["agent"].rgb, "agent RGB")],
-            wrist_rgb=[_chw_rgb(camera_frame.views["wrist"].rgb, "wrist RGB")],
-            state=[state],
-            task=[task],
+        values = self.runtime.predict_token(
+            agent_rgb=_chw_rgb(camera_frame.views["agent"].rgb, "agent RGB"),
+            wrist_rgb=_chw_rgb(camera_frame.views["wrist"].rgb, "wrist RGB"),
+            state=state,
+            task=task,
         )
-        return validate_token(np.asarray(values)[0])
+        return validate_token(values)
 
 
-class OracleCurrentTokenProvider(PredictedTokenProvider):
-    def __init__(self, runtime: FrozenGraphRuntime | Any, teacher: Any) -> None:
-        super().__init__(runtime)
+class OracleGraphV2TokenProvider:
+    def __init__(
+        self, *, teacher: Any, normalization: GraphV2Normalization
+    ) -> None:
         self.teacher = teacher
+        self.normalization = normalization
+        self.tracker = CausalGraphV2Tracker()
 
     def reset(self) -> None:
         self.teacher.reset()
+        self.tracker.reset()
 
     def bind_model(self, model: Any) -> None:
         if hasattr(self.teacher, "model"):
@@ -89,20 +101,14 @@ class OracleCurrentTokenProvider(PredictedTokenProvider):
     def token(
         self, *, snapshot: Any, camera_frame: Any, state: np.ndarray, task: str
     ) -> np.ndarray:
-        predicted = super().token(
-            snapshot=snapshot,
-            camera_frame=camera_frame,
-            state=state,
-            task=task,
-        )
+        del task
         frame = self.teacher.extract(snapshot, camera_frame, state=state)
-        current = CurrentGraphFields(
-            entity_mask=frame.entity_mask,
-            entity_visibility=frame.entity_visibility,
-            relation_mask=frame.relation_mask,
-            relation_semantics=frame.relation_values[:, 12:22],
+        targets = self.tracker.update(frame)
+        return pack_oracle_current(
+            targets,
+            frame_index=0,
+            normalization=self.normalization,
         )
-        return pack_oracle_current(current, predicted, self.runtime.normalization)
 
 
 def augment_policy_observation(
@@ -130,10 +136,12 @@ def paired_evaluation_cases(
     cases_per_cell: int,
     master_seed: int,
 ) -> tuple[EvaluationCase, ...]:
-    if tuple(layouts) != ("normal", "crowded"):
-        raise ValueError("paired evaluation layouts must be normal and crowded")
-    if tuple(int(value) for value in object_counts) != (2, 3):
-        raise ValueError("paired evaluation object counts must be 2 and 3")
+    matrix = (tuple(layouts), tuple(int(value) for value in object_counts))
+    if matrix not in {
+        (("normal",), (2,)),
+        (("normal", "crowded"), (2, 3)),
+    }:
+        raise ValueError("paired evaluation matrix is incompatible")
     if cases_per_cell < 1 or master_seed < 0:
         raise ValueError("paired evaluation counts and seed are invalid")
     cases: list[EvaluationCase] = []
@@ -167,11 +175,18 @@ _AGGREGATE_FIELDS = {
     "action_clipping_rate": "action_clipping_rate",
     "mean_gripper_switch_count": "gripper_switch_count",
 }
-_CONTRASTS = (
-    ("predicted_reflect", "flat"),
-    ("predicted_reflect", "predicted_random"),
-    ("oracle_current", "predicted_reflect"),
+_FULL_CONTRASTS = (
+    ("predicted_reflect_v2", "flat"),
+    ("predicted_reflect_v2", "predicted_random_v2"),
+    ("oracle_graph_v2", "predicted_reflect_v2"),
 )
+
+
+def _active_conditions(conditions: Sequence[str]) -> tuple[str, ...]:
+    values = tuple(str(value) for value in conditions)
+    if values not in {ORACLE_CONDITIONS, ALL_CONDITIONS}:
+        raise ValueError("conditions must be the oracle pair or full Graph v2 matrix")
+    return values
 
 
 def _means(records: Sequence[Mapping[str, object]]) -> dict[str, float]:
@@ -184,7 +199,15 @@ def _means(records: Sequence[Mapping[str, object]]) -> dict[str, float]:
     return result
 
 
-def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, object]:
+def aggregate_rollouts(
+    records: Sequence[Mapping[str, object]], *, conditions: Sequence[str]
+) -> dict[str, object]:
+    active = _active_conditions(conditions)
+    contrasts_to_compute = (
+        (("oracle_graph_v2", "flat"),)
+        if active == ORACLE_CONDITIONS
+        else _FULL_CONTRASTS
+    )
     values = [dict(record) for record in records]
     if not values:
         raise ValueError("rollout aggregation requires records")
@@ -201,7 +224,7 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
         missing = required - set(record)
         if missing:
             raise ValueError("rollout record is missing: " + ", ".join(sorted(missing)))
-        if record["condition"] not in CONDITIONS:
+        if record["condition"] not in active:
             raise ValueError("rollout record condition is invalid")
     groups: dict[tuple[int, str], set[str]] = {}
     identities: dict[tuple[int, str], tuple[int, str, int]] = {}
@@ -224,9 +247,9 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
                 "rollout paired case identity mismatch: " + ", ".join(differing)
             )
         identities[key] = identity
-    if any(group != set(CONDITIONS) for group in groups.values()):
+    if any(group != set(active) for group in groups.values()):
         raise ValueError("rollout records are not paired across all conditions")
-    if len(values) != len(groups) * len(CONDITIONS):
+    if len(values) != len(groups) * len(active):
         raise ValueError("rollout records contain duplicate paired cases")
 
     records_by_case = {
@@ -242,7 +265,7 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
         policy_seed, case_id = key
         paired = records_by_case[key]
         environment_seed, layout, object_count = identities[key]
-        for first, second in _CONTRASTS:
+        for first, second in contrasts_to_compute:
             for metric, source_name in _AGGREGATE_FIELDS.items():
                 paired_case_deltas.append(
                     {
@@ -262,12 +285,12 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
         condition: _means(
             [record for record in values if record["condition"] == condition]
         )
-        for condition in CONDITIONS
+        for condition in active
     }
     policy_seeds = sorted({int(record["policy_seed"]) for record in values})
     by_seed_condition: dict[tuple[int, str], dict[str, float]] = {}
     for seed in policy_seeds:
-        for condition in CONDITIONS:
+        for condition in active:
             by_seed_condition[(seed, condition)] = _means(
                 [
                     record
@@ -277,7 +300,7 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
                 ]
             )
     contrasts: dict[str, object] = {}
-    for first, second in _CONTRASTS:
+    for first, second in contrasts_to_compute:
         metrics: dict[str, object] = {}
         for metric in _AGGREGATE_FIELDS:
             deltas = {
@@ -293,8 +316,28 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
                 "policy_seeds": len(array),
             }
         contrasts[f"{first}-{second}"] = metrics
-    return {
-        "passed": True,
+    oracle_gate: dict[str, object] | None = None
+    passed = True
+    if active == ORACLE_CONDITIONS:
+        success_delta = round(
+            by_condition["oracle_graph_v2"]["success_rate"]
+            - by_condition["flat"]["success_rate"],
+            12,
+        )
+        wrong_grasp_delta = round(
+            by_condition["oracle_graph_v2"]["wrong_object_stable_grasp_rate"]
+            - by_condition["flat"]["wrong_object_stable_grasp_rate"],
+            12,
+        )
+        passed = success_delta >= 0.10 and wrong_grasp_delta <= 0.0
+        oracle_gate = {
+            "passed": passed,
+            "success_delta": success_delta,
+            "wrong_object_stable_grasp_delta": wrong_grasp_delta,
+            "required_success_delta": 0.10,
+        }
+    result: dict[str, object] = {
+        "passed": passed,
         "records": len(values),
         "paired_cases": len(groups),
         "policy_seeds": policy_seeds,
@@ -303,6 +346,9 @@ def aggregate_rollouts(records: Sequence[Mapping[str, object]]) -> dict[str, obj
         "by_condition": by_condition,
         "contrasts": contrasts,
     }
+    if oracle_gate is not None:
+        result["oracle_gate"] = oracle_gate
+    return result
 
 
 @dataclass
@@ -363,7 +409,7 @@ def rollout_case(
     *,
     max_steps: int,
 ) -> dict[str, object]:
-    if runtime.condition not in CONDITIONS:
+    if runtime.condition not in ALL_CONDITIONS:
         raise ValueError("Graph policy runtime condition is invalid")
     if max_steps < 1:
         raise ValueError("rollout max_steps must be positive")
@@ -417,6 +463,10 @@ def rollout_case(
                 )
 
             selected = _next_queued_action(queue, runtime, observation_factory)
+            if selected.queue_index != 0:
+                raise ValueError(
+                    "Graph-conditioned ACT requires receding-horizon queue index 0"
+                )
             raw = selected.action.copy()
             action = raw.copy()
             action[:6] = np.clip(action[:6], -1.0, 1.0)
@@ -472,15 +522,17 @@ def evaluate_runtimes(
     cases: Sequence[EvaluationCase],
     *,
     max_steps: int,
+    conditions: Sequence[str],
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
+    active = _active_conditions(conditions)
     seeds = sorted({seed for seed, _ in runtimes})
-    expected = {(seed, condition) for seed in seeds for condition in CONDITIONS}
+    expected = {(seed, condition) for seed in seeds for condition in active}
     if set(runtimes) != expected:
         raise ValueError("evaluation runtimes do not form the paired condition matrix")
     records = [
         rollout_case(config, runtimes[(seed, condition)], case, max_steps=max_steps)
         for seed in seeds
         for case in cases
-        for condition in CONDITIONS
+        for condition in active
     ]
-    return records, aggregate_rollouts(records)
+    return records, aggregate_rollouts(records, conditions=active)

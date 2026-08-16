@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 import torch
 
-from interaction_vla.graph_control.features import GraphNormalization
+from interaction_vla.graph_finetune.schema import GraphV2Normalization
 from interaction_vla.graph_control.rollout import (
     FlatTokenProvider,
-    OracleCurrentTokenProvider,
+    OracleGraphV2TokenProvider,
     PredictedTokenProvider,
     _next_queued_action,
     aggregate_rollouts,
@@ -17,7 +17,12 @@ from interaction_vla.graph_control.rollout import (
     paired_evaluation_cases,
 )
 from interaction_vla.lerobot_bridge.rollout import ActionChunkQueue
-from interaction_vla.graph_control.schema import TOKEN_DIM, TOKEN_SLICES
+from interaction_vla.graph_control.schema import (
+    ORACLE_CONDITIONS,
+    TOKEN_DIM,
+    TOKEN_SLICES,
+)
+from interaction_vla.lerobot_bridge.teacher_schema import TeacherFrame
 
 
 def _camera() -> SimpleNamespace:
@@ -31,22 +36,24 @@ def _camera() -> SimpleNamespace:
 class _Runtime:
     def __init__(self) -> None:
         self.calls = []
-        self.normalization = GraphNormalization(
+        self.reset_calls = 0
+        self.normalization = GraphV2Normalization(
             state_mean=np.zeros(10, dtype=np.float32),
             state_std=np.ones(10, dtype=np.float32),
-            relation_mean=np.zeros((8, 10), dtype=np.float32),
-            relation_std=np.ones((8, 10), dtype=np.float32),
-            residual_mean=0.0,
-            residual_std=1.0,
+            workspace_scale=1.0,
+            velocity_scale=1.0,
         )
 
-    def predict_tokens(self, **kwargs):
+    def reset(self):
+        self.reset_calls += 1
+
+    def predict_token(self, **kwargs):
         self.calls.append(kwargs)
-        token = np.zeros((1, TOKEN_DIM), dtype=np.float32)
-        token[:, TOKEN_SLICES["next_relation"]] = 1.0 / 8.0
-        token[:, TOKEN_SLICES["relation_operator"]] = 1.0 / 5.0
-        token[:, TOKEN_SLICES["predicate"]] = 1.0 / 7.0
-        token[:, TOKEN_SLICES["goal_residual"]] = 0.5
+        token = np.zeros(TOKEN_DIM, dtype=np.float32)
+        token[TOKEN_SLICES["next_relation"]] = 1.0 / 8.0
+        token[TOKEN_SLICES["relation_operator"]] = 1.0 / 5.0
+        token[TOKEN_SLICES["predicate"]] = 1.0 / 7.0
+        token[TOKEN_SLICES["goal_residual"]] = 0.5
         return token
 
 
@@ -60,17 +67,22 @@ class _Teacher:
 
     def extract(self, snapshot, camera_frame, *, state):
         self.calls.append((snapshot, camera_frame, state.copy()))
-        relation_values = np.zeros((8, 24), dtype=np.float32)
-        relation_values[:, 12:22] = np.arange(80, dtype=np.float32).reshape(8, 10)
-        return SimpleNamespace(
-            entity_mask=np.ones(6, dtype=np.bool_),
-            entity_visibility=np.full((6, 2), 0.75, dtype=np.float32),
-            relation_mask=np.ones(8, dtype=np.bool_),
-            relation_values=relation_values,
+        frame = TeacherFrame.zeros(
+            frame_index=len(self.calls) - 1,
+            timestamp=float(len(self.calls) - 1),
+            state_hash=f"frame-{len(self.calls)}",
         )
+        frame.entity_pose[:, 3:] = np.asarray((1, 0, 0, 0, 1, 0), dtype=np.float32)
+        frame.entity_mask[:] = True
+        frame.entity_visibility[:] = 0.75
+        frame.relation_mask[:] = True
+        frame.relation_values[:, 16:20] = 0.5
+        frame.relation_values[:, 20:22] = 0.25
+        frame.relation_values[:, 22:24] = 1.0
+        return frame
 
 
-def test_online_token_providers_are_causal_and_keep_goals_predicted() -> None:
+def test_online_token_providers_are_causal_and_oracle_needs_no_graph_runtime() -> None:
     camera = _camera()
     state = np.zeros(10, dtype=np.float32)
     snapshot = object()
@@ -83,13 +95,18 @@ def test_online_token_providers_are_causal_and_keep_goals_predicted() -> None:
 
     runtime = _Runtime()
     predicted = PredictedTokenProvider(runtime)
+    predicted.reset()
     predicted_token = predicted.token(
         snapshot=snapshot, camera_frame=camera, state=state, task="place"
     )
     assert len(runtime.calls) == 1
+    assert runtime.reset_calls == 1
 
     teacher = _Teacher()
-    oracle = OracleCurrentTokenProvider(runtime, teacher)
+    oracle = OracleGraphV2TokenProvider(
+        teacher=teacher,
+        normalization=runtime.normalization,
+    )
     oracle.reset()
     oracle_token = oracle.token(
         snapshot=snapshot, camera_frame=camera, state=state, task="place"
@@ -100,15 +117,12 @@ def test_online_token_providers_are_causal_and_keep_goals_predicted() -> None:
     assert teacher.calls[0][0] is snapshot
     assert teacher.calls[0][1] is camera
     np.testing.assert_array_equal(teacher.calls[0][2], state)
-    assert len(runtime.calls) == 2
+    assert len(runtime.calls) == 1
     np.testing.assert_array_equal(
         oracle_token[TOKEN_SLICES["entity_presence"]], np.ones(6)
     )
-    for name in ("next_relation", "relation_operator", "predicate", "goal_residual"):
-        np.testing.assert_array_equal(
-            oracle_token[TOKEN_SLICES[name]], predicted_token[TOKEN_SLICES[name]]
-        )
-    assert not hasattr(teacher.calls[0], "relation_goal")
+    assert oracle_token[TOKEN_SLICES["phase"]].sum() == 1.0
+    assert oracle_token[TOKEN_SLICES["next_relation"]].sum() == 1.0
 
 
 def test_policy_observation_keeps_graph_separate_from_10d_state() -> None:
@@ -156,6 +170,14 @@ def test_paired_case_schedule_crosses_cells_and_is_deterministic() -> None:
         ("crowded", 3),
     }
 
+    oracle = paired_evaluation_cases(
+        layouts=("normal",),
+        object_counts=(2,),
+        cases_per_cell=20,
+        master_seed=17,
+    )
+    assert len(oracle) == 20
+
 
 def _record(condition: str, seed: int, case: str, success: bool) -> dict[str, object]:
     return {
@@ -184,46 +206,40 @@ def test_rollout_aggregation_keeps_policy_seed_as_replication_unit() -> None:
             records.extend(
                 [
                     _record("flat", seed, case, False),
-                    _record("predicted_random", seed, case, seed > 0),
-                    _record("predicted_reflect", seed, case, True),
-                    _record("oracle_current", seed, case, True),
+                    _record("oracle_graph_v2", seed, case, True),
                 ]
             )
-    report = aggregate_rollouts(records)
+    report = aggregate_rollouts(records, conditions=ORACLE_CONDITIONS)
 
     assert report["by_condition"]["flat"]["success_rate"] == 0.0
-    assert report["by_condition"]["predicted_reflect"]["success_rate"] == 1.0
-    primary = report["contrasts"]["predicted_reflect-flat"]
+    assert report["by_condition"]["oracle_graph_v2"]["success_rate"] == 1.0
+    primary = report["contrasts"]["oracle_graph_v2-flat"]
     assert primary["success_rate"]["per_seed"] == {"0": 1.0, "1": 1.0, "2": 1.0}
     assert primary["success_rate"]["mean"] == 1.0
     assert report["replication_unit"] == "policy_seed"
     case_deltas = report["paired_case_deltas"]
-    assert len(case_deltas) == 3 * 2 * 3 * 9
+    assert len(case_deltas) == 3 * 2 * 1 * 9
     assert {
         "policy_seed": 0,
         "case_id": "a",
         "environment_seed": 100,
         "layout": "normal",
         "object_count": 2,
-        "contrast": "predicted_reflect-flat",
+        "contrast": "oracle_graph_v2-flat",
         "metric": "success_rate",
         "delta": 1.0,
     } in case_deltas
 
 
 def test_rollout_aggregation_rejects_unpaired_cases() -> None:
-    records = [_record(condition, 0, "a", True) for condition in (
-        "flat", "predicted_random", "predicted_reflect"
-    )]
+    records = [_record("flat", 0, "a", True)]
     with pytest.raises(ValueError, match="paired"):
-        aggregate_rollouts(records)
+        aggregate_rollouts(records, conditions=ORACLE_CONDITIONS)
 
 
 @pytest.mark.parametrize("field", ["environment_seed", "layout", "object_count"])
 def test_rollout_aggregation_rejects_mismatched_case_identity(field: str) -> None:
-    records = [_record(condition, 0, "a", True) for condition in (
-        "flat", "predicted_random", "predicted_reflect", "oracle_current"
-    )]
+    records = [_record(condition, 0, "a", True) for condition in ORACLE_CONDITIONS]
     records[-1][field] = {
         "environment_seed": 999,
         "layout": "crowded",
@@ -231,10 +247,10 @@ def test_rollout_aggregation_rejects_mismatched_case_identity(field: str) -> Non
     }[field]
 
     with pytest.raises(ValueError, match=field):
-        aggregate_rollouts(records)
+        aggregate_rollouts(records, conditions=ORACLE_CONDITIONS)
 
 
-def test_graph_observation_is_built_only_when_action_chunk_refills(monkeypatch) -> None:
+def test_graph_observation_is_rebuilt_at_receding_horizon_queue_index_zero(monkeypatch) -> None:
     calls = []
 
     def observation_factory():
@@ -245,9 +261,36 @@ def test_graph_observation_is_built_only_when_action_chunk_refills(monkeypatch) 
         "interaction_vla.graph_control.rollout._predict_chunk",
         lambda runtime, observation: np.zeros((8, 7), dtype=np.float32),
     )
-    queue = ActionChunkQueue(chunk_size=8, n_action_steps=8)
+    queue = ActionChunkQueue(chunk_size=8, n_action_steps=1)
 
     for _ in range(9):
         _next_queued_action(queue, object(), observation_factory)
 
-    assert len(calls) == 2
+    assert len(calls) == 9
+
+
+def test_oracle_gate_requires_ten_point_gain_without_more_wrong_grasps() -> None:
+    records = []
+    for index in range(20):
+        records.append(_record("flat", 0, str(index), index < 3))
+        records.append(_record("oracle_graph_v2", 0, str(index), index < 5))
+        records[-2]["case_id"] = records[-1]["case_id"] = str(index)
+        records[-2]["environment_seed"] = records[-1]["environment_seed"] = index
+        records[-2]["layout"] = records[-1]["layout"] = "normal"
+        records[-2]["object_count"] = records[-1]["object_count"] = 2
+
+    report = aggregate_rollouts(records, conditions=ORACLE_CONDITIONS)
+
+    assert report["oracle_gate"] == {
+        "passed": True,
+        "success_delta": 0.1,
+        "wrong_object_stable_grasp_delta": 0.0,
+        "required_success_delta": 0.1,
+    }
+
+    for record in records:
+        if record["condition"] == "oracle_graph_v2" and record["case_id"] == "4":
+            record["success"] = False
+    assert aggregate_rollouts(records, conditions=ORACLE_CONDITIONS)["oracle_gate"][
+        "passed"
+    ] is False

@@ -59,6 +59,28 @@ def test_cli_failures_are_one_json_object(monkeypatch, capsys) -> None:
     }
 
 
+def test_cli_scientific_gate_failure_prints_report_and_exits_one(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.cli.evaluate_from_config",
+        lambda config: {
+            "passed": False,
+            "oracle_gate": {"passed": False, "success_delta": 0.05},
+            "report_path": Path("outputs/report.json"),
+        },
+    )
+    with pytest.raises(SystemExit) as raised:
+        main(["evaluate", "--config", "config.yaml"])
+
+    assert raised.value.code == 1
+    assert json.loads(capsys.readouterr().out) == {
+        "passed": False,
+        "oracle_gate": {"passed": False, "success_delta": 0.05},
+        "report_path": "outputs/report.json",
+    }
+
+
 def test_cli_usage_failure_is_json(capsys) -> None:
     with pytest.raises(SystemExit) as raised:
         main(["cache"])
@@ -82,4 +104,3 @@ def test_repository_configs_lock_smoke_and_formal_matrices() -> None:
     for seed in pilot.seeds:
         assert "fraction_1" in str(pilot.graph_checkpoint("predicted_reflect", seed))
         assert f"seed_{seed}" in str(pilot.graph_checkpoint("predicted_random", seed))
-

@@ -12,7 +12,12 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from interaction_vla.graph_finetune.schema import SCHEMA_VERSION as GRAPH_SCHEMA_VERSION
+from interaction_vla.graph_finetune.schema import (
+    GRAPH_SCHEMA_VERSION,
+    TOKEN_DIM,
+    TOKEN_FEATURE_NAMES,
+    TOKEN_SCHEMA_VERSION,
+)
 from interaction_vla.lerobot_bridge.act_smoke import (
     ACTION_CODEC_VERSION,
     STATE_CODEC_VERSION,
@@ -24,6 +29,7 @@ from interaction_vla.lerobot_bridge.act_smoke import (
     _write_checkpoint_metadata,
     bounded_batches,
     build_act_bundle_from_dataset,
+    require_cached_backbone_weights,
     row_order_sha256,
     seeded_train_loader,
 )
@@ -37,10 +43,10 @@ from interaction_vla.lerobot_bridge.rollout import load_act_runtime
 
 from .cache import TokenCache
 from .dataset import GraphConditionedDataset
-from .schema import CONDITIONS, TOKEN_DIM
+from .schema import ALL_CONDITIONS, ORACLE_CONDITIONS
 
 
-ACT_GRAPH_SCHEMA_VERSION = "graph_conditioned_act_v1"
+ACT_GRAPH_SCHEMA_VERSION = "graph_conditioned_act_v2"
 _PARTITIONS = ("train", "validation", "test")
 
 
@@ -83,6 +89,9 @@ def load_control_split(path: str | Path) -> ControlSplit:
         raise ValueError(f"invalid Graph fine-tune split manifest: {source}") from error
     if not isinstance(payload, Mapping) or set(payload) != {
         "schema_version",
+        "token_schema_version",
+        "token_dim",
+        "token_feature_names",
         "split_seed",
         "episode_indices",
         "row_indices",
@@ -90,6 +99,12 @@ def load_control_split(path: str | Path) -> ControlSplit:
         raise ValueError("Graph fine-tune split manifest fields are incompatible")
     if payload["schema_version"] != GRAPH_SCHEMA_VERSION:
         raise ValueError("Graph fine-tune split schema is incompatible")
+    if payload["token_schema_version"] != TOKEN_SCHEMA_VERSION:
+        raise ValueError("Graph fine-tune split token schema is incompatible")
+    if int(payload["token_dim"]) != TOKEN_DIM:
+        raise ValueError("Graph fine-tune split token dimension is incompatible")
+    if payload["token_feature_names"] != list(TOKEN_FEATURE_NAMES):
+        raise ValueError("Graph fine-tune split token features are incompatible")
     split_seed = int(payload["split_seed"])
     if split_seed < 0:
         raise ValueError("Graph fine-tune split seed must be non-negative")
@@ -109,10 +124,10 @@ def assert_checkpoint_split(
     condition: str,
     seed: int,
 ) -> None:
-    if condition not in CONDITIONS or condition == "flat":
+    if condition not in {"predicted_random_v2", "predicted_reflect_v2"}:
         raise ValueError("checkpoint split validation requires a predicted condition")
     expected_initialization = (
-        "random_init" if condition == "predicted_random" else "reflectvlm_init"
+        "random_init" if condition == "predicted_random_v2" else "reflectvlm_init"
     )
     expected = {
         "split_seed": split.split_seed,
@@ -156,12 +171,26 @@ def _control_source_fingerprint() -> str:
     return digest.hexdigest()
 
 
-def _graph_bindings(condition: str, seed: int, cache: TokenCache) -> dict[str, object]:
+def _graph_bindings(
+    condition: str,
+    seed: int,
+    cache: TokenCache,
+    *,
+    recovery_report_sha256: str,
+) -> dict[str, object]:
+    if len(recovery_report_sha256) != 64 or any(
+        character not in "0123456789abcdef"
+        for character in recovery_report_sha256
+    ):
+        raise ValueError("recovery_report_sha256 must be a lowercase SHA-256 digest")
     return {
         "schema_version": ACT_GRAPH_SCHEMA_VERSION,
         "condition": condition,
         "seed": int(seed),
         "token_dim": TOKEN_DIM,
+        "token_schema_version": TOKEN_SCHEMA_VERSION,
+        "token_feature_names": list(TOKEN_FEATURE_NAMES),
+        "recovery_report_sha256": recovery_report_sha256,
         "cache_sha256": cache.sha256,
         "cache_provenance": asdict(cache.provenance),
         "source_fingerprint": _control_source_fingerprint(),
@@ -171,9 +200,18 @@ def _graph_bindings(condition: str, seed: int, cache: TokenCache) -> dict[str, o
 
 
 def graph_checkpoint_bindings(
-    condition: str, seed: int, cache: TokenCache
+    condition: str,
+    seed: int,
+    cache: TokenCache,
+    *,
+    recovery_report_sha256: str,
 ) -> dict[str, object]:
-    return _graph_bindings(condition, seed, cache)
+    return _graph_bindings(
+        condition,
+        seed,
+        cache,
+        recovery_report_sha256=recovery_report_sha256,
+    )
 
 
 def expected_graph_checkpoint_metadata(
@@ -198,8 +236,7 @@ def expected_graph_checkpoint_metadata(
         for key, feature in policy_features.items()
         if key not in act_config.output_features
     }
-    return _jsonable(
-        {
+    payload: dict[str, object] = {
             "dataset_fingerprint": fingerprint_tree(dataset_root),
             "features": features,
             "state_codec_version": STATE_CODEC_VERSION,
@@ -209,8 +246,20 @@ def expected_graph_checkpoint_metadata(
             "device": str(device),
             "source_fingerprint": source_fingerprint(),
             "graph_control": dict(bindings),
-        }
+    }
+    pretrained_identifier = getattr(
+        act_config, "pretrained_backbone_weights", None
     )
+    if pretrained_identifier is not None:
+        cached_weights = require_cached_backbone_weights(pretrained_identifier)
+        assert cached_weights is not None
+        payload.update(
+            {
+                "pretrained_backbone_weights": pretrained_identifier,
+                "backbone_weights_sha256": sha256_file(cached_weights),
+            }
+        )
+    return _jsonable(payload)
 
 
 def load_graph_act_checkpoint(
@@ -327,6 +376,7 @@ def _train_condition(
     batch_size: int,
     smoke_steps: int | None,
     initial_epochs: int | None,
+    recovery_report_sha256: str,
 ) -> dict[str, object]:
     _seed_all(seed)
     conditioned_train = GraphConditionedDataset(train_dataset, cache)
@@ -417,7 +467,12 @@ def _train_condition(
         "device": str(device),
         "batch_size": batch_size,
     }
-    bindings = _graph_bindings(condition, seed, cache)
+    bindings = _graph_bindings(
+        condition,
+        seed,
+        cache,
+        recovery_report_sha256=recovery_report_sha256,
+    )
     reload_error = _save_condition(
         bundle=bundle,
         output_dir=output_dir,
@@ -431,16 +486,26 @@ def _train_condition(
     return summary
 
 
-def assert_paired_summaries(summaries: Mapping[str, object]) -> None:
-    if set(summaries) != set(CONDITIONS):
+def _validated_conditions(conditions: tuple[str, ...]) -> tuple[str, ...]:
+    values = tuple(conditions)
+    if values not in {ORACLE_CONDITIONS, ALL_CONDITIONS}:
+        raise ValueError("conditions must be the oracle pair or full Graph v2 matrix")
+    return values
+
+
+def assert_paired_summaries(
+    summaries: Mapping[str, object], *, conditions: tuple[str, ...]
+) -> None:
+    active = _validated_conditions(conditions)
+    if set(summaries) != set(active):
         raise ValueError("paired summaries must contain the exact condition matrix")
     typed: dict[str, Mapping[str, object]] = {}
-    for condition in CONDITIONS:
+    for condition in active:
         value = summaries[condition]
         if not isinstance(value, Mapping):
             raise ValueError(f"paired summary for {condition} must be a mapping")
         typed[condition] = value
-    reference = typed[CONDITIONS[0]]
+    reference = typed[active[0]]
     paired_fields = (
         "initial_state_hash",
         "parameter_count",
@@ -452,7 +517,7 @@ def assert_paired_summaries(summaries: Mapping[str, object]) -> None:
     differing = [
         field
         for field in paired_fields
-        if any(typed[condition].get(field) != reference.get(field) for condition in CONDITIONS[1:])
+        if any(typed[condition].get(field) != reference.get(field) for condition in active[1:])
     ]
     if differing:
         raise ValueError("paired ACT summaries differ: " + ", ".join(differing))
@@ -472,9 +537,12 @@ def train_paired_seed(
     smoke_steps: int | None,
     initial_epochs: int | None,
     maximum_epochs: int | None,
+    conditions: tuple[str, ...],
+    recovery_report_sha256: str,
     bridge_config: BridgeConfig | None = None,
 ) -> dict[str, object]:
-    if set(caches) != set(CONDITIONS):
+    active = _validated_conditions(conditions)
+    if set(caches) != set(active):
         raise ValueError("paired training requires the exact cache condition matrix")
     if batch_size < 1:
         raise ValueError("paired training batch_size must be positive")
@@ -489,24 +557,26 @@ def train_paired_seed(
     if destination.exists() and any(destination.iterdir()):
         raise FileExistsError(f"paired ACT output must be empty: {destination}")
     destination.mkdir(parents=True, exist_ok=True)
-    reference_rows = caches[CONDITIONS[0]].row_indices
+    reference_rows = caches[active[0]].row_indices
     dataset_fingerprints = {
         cache.provenance.dataset_fingerprint for cache in caches.values()
     }
     split_hashes = {cache.provenance.split_manifest_sha256 for cache in caches.values()}
-    for condition in CONDITIONS:
+    for condition in active:
         cache = caches[condition]
         if cache.provenance.condition != condition:
             raise ValueError(f"cache provenance condition mismatch: {condition}")
         if not np.array_equal(cache.row_indices, reference_rows):
             raise ValueError("paired ACT caches use different global rows")
-        if condition != "flat" and cache.provenance.graph_seed != seed:
+        if condition in {"predicted_random_v2", "predicted_reflect_v2"} and (
+            cache.provenance.graph_seed != seed
+        ):
             raise ValueError(f"cache Graph seed mismatch: {condition}")
     if len(dataset_fingerprints) != 1 or len(split_hashes) != 1:
         raise ValueError("paired ACT caches disagree on dataset or split provenance")
 
     summaries: dict[str, dict[str, object]] = {}
-    for condition in CONDITIONS:
+    for condition in active:
         condition_dir = destination / condition
         condition_dir.mkdir()
         summaries[condition] = _train_condition(
@@ -523,14 +593,16 @@ def train_paired_seed(
             batch_size=batch_size,
             smoke_steps=smoke_steps,
             initial_epochs=initial_epochs,
+            recovery_report_sha256=recovery_report_sha256,
         )
         gc.collect()
-    assert_paired_summaries(summaries)
+    assert_paired_summaries(summaries, conditions=active)
     report: dict[str, object] = {
         "passed": True,
         "schema_version": ACT_GRAPH_SCHEMA_VERSION,
         "seed": seed,
-        "conditions": list(CONDITIONS),
+        "conditions": list(active),
+        "recovery_report_sha256": recovery_report_sha256,
         "summaries": summaries,
         "fixed_epochs": initial_epochs,
         "maximum_epochs": maximum_epochs,
