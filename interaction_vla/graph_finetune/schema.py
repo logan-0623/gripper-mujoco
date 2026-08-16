@@ -6,7 +6,7 @@ from typing import Final, Mapping
 
 import numpy as np
 
-from interaction_vla.lerobot_bridge.interaction_phase import PHASE_NAMES
+from interaction_vla.lerobot_bridge.interaction_phase import PHASE_IDS, PHASE_NAMES
 from interaction_vla.lerobot_bridge.teacher_schema import (
     ENTITY_SLOTS,
     OPERATOR_IDS,
@@ -80,6 +80,17 @@ def _array(
 def _bounded(values: np.ndarray, name: str) -> None:
     if np.any((values < 0.0) | (values > 1.0)):
         raise ValueError(f"{name} probabilities/confidences must lie within [0, 1]")
+
+
+def _float_array(
+    value: np.ndarray,
+    shape: tuple[int, ...],
+    name: str,
+) -> np.ndarray:
+    result = np.asarray(value, dtype=np.float32)
+    if result.shape != shape or not np.isfinite(result).all():
+        raise ValueError(f"{name} must be finite with shape {shape}")
+    return result.copy()
 
 
 @dataclass(frozen=True)
@@ -158,6 +169,115 @@ class GraphV2Targets:
                 raise ValueError("inactive distractor geometry must be zero")
         for name, value in values.items():
             object.__setattr__(self, name, value)
+
+
+@dataclass(frozen=True)
+class GraphV2Normalization:
+    state_mean: np.ndarray
+    state_std: np.ndarray
+    workspace_scale: float
+    velocity_scale: float
+
+    def __post_init__(self) -> None:
+        state_mean = _float_array(self.state_mean, (10,), "state_mean")
+        state_std = _float_array(self.state_std, (10,), "state_std")
+        if np.any(state_std <= 0.0):
+            raise ValueError("state_std must be positive")
+        scales: dict[str, float] = {}
+        for name in ("workspace_scale", "velocity_scale"):
+            value = float(getattr(self, name))
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{name} must be finite and positive")
+            scales[name] = value
+        object.__setattr__(self, "state_mean", state_mean)
+        object.__setattr__(self, "state_std", state_std)
+        for name, value in scales.items():
+            object.__setattr__(self, name, value)
+
+
+def normalized_graph_v2_frame(
+    targets: GraphV2Targets,
+    frame: int,
+    normalization: GraphV2Normalization,
+) -> dict[str, np.ndarray]:
+    index = int(frame)
+    frames = len(targets.phase)
+    if index != frame or not 0 <= index < frames:
+        raise IndexError(f"Graph v2 frame must lie within [0, {frames})")
+    workspace = np.float32(normalization.workspace_scale)
+    velocity = np.float32(normalization.velocity_scale)
+
+    gripper_target = targets.gripper_target_geometry[index].copy()
+    gripper_target[:4] /= workspace
+    gripper_target[4] /= velocity
+
+    target_receptacle = targets.target_receptacle_geometry[index].copy()
+    target_receptacle[:8] /= workspace
+
+    distractors = targets.distractor_geometry[index].copy()
+    distractors[:, :4] /= workspace
+
+    trends = targets.relation_trends[index].copy()
+    trends[[0, 2, 3]] /= workspace
+
+    residual = np.float32(targets.goal_residual[index])
+    if int(targets.phase[index]) in {
+        PHASE_IDS["approach"],
+        PHASE_IDS["transport"],
+    }:
+        residual /= workspace
+    residual = np.clip(residual, -1.0, 1.0).astype(np.float32)
+
+    result = {
+        "gripper_target_geometry": gripper_target,
+        "target_receptacle_geometry": target_receptacle,
+        "distractor_geometry": distractors,
+        "relation_trends": trends,
+        "goal_residual": np.asarray(residual, dtype=np.float32),
+    }
+    if not all(np.isfinite(value).all() for value in result.values()):
+        raise ValueError("normalized Graph v2 target must be finite")
+    return result
+
+
+def pack_oracle_target(
+    targets: GraphV2Targets,
+    frame: int,
+    normalization: GraphV2Normalization,
+) -> np.ndarray:
+    index = int(frame)
+    normalized = normalized_graph_v2_frame(targets, index, normalization)
+    token = np.zeros(TOKEN_DIM, dtype=np.float32)
+    token[TOKEN_SLICES["entity_presence"]] = targets.entity_mask[index]
+    token[TOKEN_SLICES["entity_visibility"]] = (
+        targets.entity_visibility[index].reshape(-1)
+    )
+    token[TOKEN_SLICES["relation_presence"]] = targets.relation_mask[index]
+    token[TOKEN_SLICES["gripper_target_geometry"]] = normalized[
+        "gripper_target_geometry"
+    ]
+    token[TOKEN_SLICES["target_receptacle_geometry"]] = normalized[
+        "target_receptacle_geometry"
+    ]
+    token[TOKEN_SLICES["distractor_geometry"]] = normalized[
+        "distractor_geometry"
+    ].reshape(-1)
+    token[TOKEN_SLICES["phase"].start + int(targets.phase[index])] = 1.0
+    token[TOKEN_SLICES["relation_trends"]] = normalized["relation_trends"]
+    token[
+        TOKEN_SLICES["next_relation"].start + int(targets.goal_relation[index])
+    ] = 1.0
+    token[
+        TOKEN_SLICES["relation_operator"].start
+        + int(targets.goal_operator[index])
+    ] = 1.0
+    token[
+        TOKEN_SLICES["predicate"].start + int(targets.goal_predicate[index])
+    ] = 1.0
+    token[TOKEN_SLICES["goal_residual"]] = normalized["goal_residual"]
+    if token.shape != (TOKEN_DIM,) or not np.isfinite(token).all():
+        raise ValueError(f"Graph v2 token must be finite with shape [{TOKEN_DIM}]")
+    return token
 
 
 @dataclass(frozen=True)

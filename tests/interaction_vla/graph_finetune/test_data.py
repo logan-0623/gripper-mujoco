@@ -13,13 +13,11 @@ from interaction_vla.graph_finetune.data import (
     prepare_corpus,
     resize_rgb,
     select_training_fraction,
-    semantic_targets,
     split_episode_indices,
 )
 from interaction_vla.graph_pretrain.reflectvlm import Vocabulary
 from interaction_vla.graph_finetune.schema import (
     GRAPH_SCHEMA_VERSION,
-    SEMANTIC_CHANNELS,
     TOKEN_DIM,
     TOKEN_FEATURE_NAMES,
     TOKEN_SCHEMA_VERSION,
@@ -185,22 +183,6 @@ def manifest_records(count: int = 5) -> list[dict[str, object]]:
     ]
 
 
-def test_semantic_target_selects_only_coordinate_invariant_channels() -> None:
-    arrays = teacher_arrays()
-
-    target = semantic_targets(arrays)
-
-    assert SEMANTIC_CHANNELS == tuple(range(12, 22))
-    np.testing.assert_array_equal(
-        target.relation_semantics,
-        arrays["annotation.tc_tig.relation_values"][:, :, 12:22],
-    )
-    assert target.relation_semantics.shape == (3, 8, 10)
-    assert not hasattr(target, "entity_pose")
-    assert not hasattr(target, "depth_agent")
-    assert not hasattr(target, "action")
-
-
 def test_public_rgb_resize_matches_graph_training_contract() -> None:
     image = torch.linspace(0.0, 1.0, 3 * 20 * 24).reshape(3, 20, 24)
 
@@ -212,23 +194,6 @@ def test_public_rgb_resize_matches_graph_training_contract() -> None:
 
     with pytest.raises(ValueError, match=r"\[0, 1\]"):
         resize_rgb(image * 2.0, 16, "agent RGB")
-
-
-def test_semantic_target_extracts_goal_categories_and_residual() -> None:
-    target = semantic_targets(teacher_arrays())
-
-    assert target.goal_relation.tolist() == [0, 1, 2]
-    assert target.goal_operator.tolist() == [0, 1, 2]
-    assert target.goal_predicate.tolist() == [0, 1, 2]
-    np.testing.assert_allclose(target.goal_residual, [-0.3, -0.15, 0.0])
-
-
-def test_semantic_target_rejects_out_of_range_goal_id() -> None:
-    arrays = teacher_arrays()
-    arrays["annotation.tc_tig.relation_goal"][0, 0] = 8
-
-    with pytest.raises(ValueError, match="goal_relation"):
-        semantic_targets(arrays)
 
 
 def test_episode_split_is_deterministic_and_never_splits_frames() -> None:
@@ -424,7 +389,15 @@ def test_dataset_aligns_teacher_by_episode_and_frame_and_drops_action() -> None:
     assert sample["wrist_rgb"].shape == (3, 32, 32)
     assert sample["state"].shape == (10,)
     assert sample["language_tokens"].shape == (16,)
-    assert sample["goal_relation"].item() == (first_episode + 2) % 8
+    assert sample["previous_graph"].shape == (TOKEN_DIM,)
+    assert sample["gripper_target_geometry"].shape == (8,)
+    assert sample["target_receptacle_geometry"].shape == (10,)
+    assert sample["distractor_geometry"].shape == (2, 7)
+    assert sample["phase"].shape == ()
+    assert sample["relation_trends"].shape == (4,)
+    assert sample["goal_relation"].item() == int(
+        training.corpus.targets[first_episode].goal_relation[2]
+    )
 
 
 def test_statistics_and_vocabulary_use_selected_training_episodes_only() -> None:
@@ -445,9 +418,75 @@ def test_statistics_and_vocabulary_use_selected_training_episodes_only() -> None
 
     assert np.max(np.abs(prepared.normalization.state_mean)) < 10.0
     assert "heldoutword" not in prepared.vocabulary.token_to_id
-    assert prepared.normalization.relation_mean.shape == (8, 10)
-    assert prepared.normalization.relation_std.shape == (8, 10)
-    assert np.all(prepared.normalization.relation_std > 0.0)
+    assert prepared.normalization.workspace_scale >= 0.10
+    assert prepared.normalization.velocity_scale >= 0.05
+
+
+def test_v2_normalization_uses_selected_train_episodes_only() -> None:
+    records = manifest_records()
+    source = SyntheticSource(records)
+    first_sidecars = sidecars(records)
+    split = split_episode_indices(records, seed=3, ratios=(0.6, 0.2, 0.2))
+    held_out = split["test"][0]
+    changed_sidecars = {
+        episode: {name: value.copy() for name, value in arrays.items()}
+        for episode, arrays in first_sidecars.items()
+    }
+    changed = changed_sidecars[held_out]
+    changed["annotation.tc_tig.entity_pose"][:, 1:3, :3] += 1000.0
+    changed["annotation.tc_tig.relation_values"][:, :, :3] += 1000.0
+    changed["annotation.tc_tig.relation_values"][:, :, 6:9] += 1000.0
+    changed["annotation.tc_tig.relation_values"][:, :, 12:16] += 1000.0
+
+    first = prepare_corpus(
+        source,
+        records,
+        first_sidecars,
+        split_seed=3,
+        split_ratios=(0.6, 0.2, 0.2),
+    ).for_training_fraction(0.25, seed=0)
+    second = prepare_corpus(
+        source,
+        records,
+        changed_sidecars,
+        split_seed=3,
+        split_ratios=(0.6, 0.2, 0.2),
+    ).for_training_fraction(0.25, seed=0)
+
+    np.testing.assert_array_equal(
+        first.normalization.state_mean, second.normalization.state_mean
+    )
+    np.testing.assert_array_equal(
+        first.normalization.state_std, second.normalization.state_std
+    )
+    assert first.normalization.workspace_scale == second.normalization.workspace_scale
+    assert first.normalization.velocity_scale == second.normalization.velocity_scale
+
+
+def test_dataset_previous_token_is_zero_only_at_episode_start() -> None:
+    records = manifest_records()
+    source = SyntheticSource(records)
+    corpus = prepare_corpus(
+        source,
+        records,
+        sidecars(records),
+        split_seed=3,
+        split_ratios=(0.6, 0.2, 0.2),
+    )
+    training = corpus.for_training_fraction(1.0, seed=9)
+    dataset = MuJoCoGraphDataset(
+        training,
+        partition="train",
+        image_size=32,
+        max_language_tokens=8,
+    )
+
+    first = dataset[0]
+    second = dataset[1]
+
+    assert first["previous_graph"].shape == (TOKEN_DIM,)
+    assert torch.count_nonzero(first["previous_graph"]) == 0
+    assert torch.count_nonzero(second["previous_graph"]) > 0
 
 
 def test_dataset_rejects_forbidden_teacher_input_key() -> None:

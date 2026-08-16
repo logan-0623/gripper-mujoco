@@ -34,16 +34,15 @@ from interaction_vla.lerobot_bridge.teacher_schema import (
     TeacherFrame,
 )
 
-from .schema import GraphV2Targets, MuJoCoGraphTargets, SEMANTIC_CHANNELS
+from .schema import (
+    TOKEN_DIM,
+    GraphV2Normalization,
+    GraphV2Targets,
+    normalized_graph_v2_frame,
+    pack_oracle_target,
+)
 
 
-_TARGET_KEYS = {
-    "annotation.tc_tig.entity_mask",
-    "annotation.tc_tig.entity_visibility",
-    "annotation.tc_tig.relation_mask",
-    "annotation.tc_tig.relation_values",
-    "annotation.tc_tig.relation_goal",
-}
 _V2_TARGET_KEYS = {
     "annotation.tc_tig.entity_pose",
     "annotation.tc_tig.entity_mask",
@@ -78,44 +77,17 @@ MODEL_BATCH_KEYS = {
     "entity_mask",
     "entity_visibility",
     "relation_mask",
-    "relation_semantics",
+    "gripper_target_geometry",
+    "target_receptacle_geometry",
+    "distractor_geometry",
+    "phase",
+    "relation_trends",
     "goal_relation",
     "goal_operator",
     "goal_predicate",
     "goal_residual",
+    "previous_graph",
 }
-
-
-def semantic_targets(arrays: Mapping[str, np.ndarray]) -> MuJoCoGraphTargets:
-    missing = _TARGET_KEYS - set(arrays)
-    if missing:
-        raise ValueError("teacher arrays are missing: " + ", ".join(sorted(missing)))
-    relation_values = np.asarray(
-        arrays["annotation.tc_tig.relation_values"], dtype=np.float32
-    )
-    if relation_values.ndim != 3 or relation_values.shape[1:] != (8, 24):
-        raise ValueError("teacher relation_values must have shape [frames, 8, 24]")
-    goals = np.asarray(arrays["annotation.tc_tig.relation_goal"], dtype=np.float32)
-    if goals.shape != (len(relation_values), 5) or not np.isfinite(goals).all():
-        raise ValueError("teacher relation_goal must be finite with shape [frames, 5]")
-    if not np.equal(goals[:, :3], np.floor(goals[:, :3])).all():
-        raise ValueError("teacher relation_goal categorical IDs must be integers")
-    return MuJoCoGraphTargets(
-        entity_mask=np.asarray(
-            arrays["annotation.tc_tig.entity_mask"], dtype=np.bool_
-        ),
-        entity_visibility=np.asarray(
-            arrays["annotation.tc_tig.entity_visibility"], dtype=np.float32
-        ),
-        relation_mask=np.asarray(
-            arrays["annotation.tc_tig.relation_mask"], dtype=np.bool_
-        ),
-        relation_semantics=relation_values[:, :, SEMANTIC_CHANNELS],
-        goal_relation=goals[:, 0].astype(np.int64),
-        goal_operator=goals[:, 1].astype(np.int64),
-        goal_predicate=goals[:, 2].astype(np.int64),
-        goal_residual=goals[:, 3].astype(np.float32),
-    )
 
 
 PHASE_GOALS = {
@@ -528,54 +500,11 @@ def select_training_fraction(
     return sorted(ordered[:count])
 
 
-def _float_array(value: np.ndarray, shape: tuple[int, ...], name: str) -> np.ndarray:
-    result = np.asarray(value, dtype=np.float32)
-    if result.shape != shape or not np.isfinite(result).all():
-        raise ValueError(f"{name} must be finite with shape {shape}")
-    return result.copy()
-
-
-@dataclass(frozen=True)
-class GraphNormalization:
-    state_mean: np.ndarray
-    state_std: np.ndarray
-    relation_mean: np.ndarray
-    relation_std: np.ndarray
-    residual_mean: float
-    residual_std: float
-
-    def __post_init__(self) -> None:
-        values = {
-            "state_mean": _float_array(self.state_mean, (10,), "state_mean"),
-            "state_std": _float_array(self.state_std, (10,), "state_std"),
-            "relation_mean": _float_array(
-                self.relation_mean, (8, 10), "relation_mean"
-            ),
-            "relation_std": _float_array(
-                self.relation_std, (8, 10), "relation_std"
-            ),
-        }
-        if np.any(values["state_std"] <= 0.0) or np.any(
-            values["relation_std"] <= 0.0
-        ):
-            raise ValueError("normalization standard deviations must be positive")
-        residual_mean = float(self.residual_mean)
-        residual_std = float(self.residual_std)
-        if not np.isfinite(residual_mean) or not np.isfinite(residual_std):
-            raise ValueError("residual normalization must be finite")
-        if residual_std <= 0.0:
-            raise ValueError("residual_std must be positive")
-        for name, value in values.items():
-            object.__setattr__(self, name, value)
-        object.__setattr__(self, "residual_mean", residual_mean)
-        object.__setattr__(self, "residual_std", residual_std)
-
-
 @dataclass(frozen=True)
 class PreparedMuJoCoCorpus:
     source: Any
     records: tuple[dict[str, object], ...]
-    targets: dict[int, MuJoCoGraphTargets]
+    targets: dict[int, GraphV2Targets]
     tasks: dict[int, str]
     states: np.ndarray
     row_indices: dict[int, tuple[int, ...]]
@@ -604,7 +533,7 @@ class TrainingCorpus:
     corpus: PreparedMuJoCoCorpus
     selected_train_episodes: tuple[int, ...]
     vocabulary: Vocabulary
-    normalization: GraphNormalization
+    normalization: GraphV2Normalization
 
 
 def _source_columns(source: Any) -> Mapping[str, Sequence[Any]]:
@@ -654,7 +583,7 @@ def prepare_corpus(
     if set(sidecars) != set(record_by_episode):
         raise ValueError("teacher sidecars must match manifest episodes")
     targets = {
-        int(episode): semantic_targets(arrays)
+        int(episode): graph_v2_targets(arrays)
         for episode, arrays in sidecars.items()
     }
     columns = _source_columns(source)
@@ -691,7 +620,7 @@ def prepare_corpus(
             frame_values[rows], np.arange(frames)
         ):
             raise ValueError(f"source frame alignment mismatch for episode {episode}")
-        if len(targets[episode].goal_relation) != frames:
+        if len(targets[episode].phase) != frames:
             raise ValueError(f"teacher frame alignment mismatch for episode {episode}")
         episode_tasks = np.unique(task_values[rows])
         if len(episode_tasks) != 1 or not 0 <= int(episode_tasks[0]) < len(task_names):
@@ -724,35 +653,51 @@ def _safe_mean_std(values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def fit_normalization(
     corpus: PreparedMuJoCoCorpus, episodes: Sequence[int]
-) -> GraphNormalization:
+) -> GraphV2Normalization:
     rows = [row for episode in episodes for row in corpus.row_indices[int(episode)]]
     if not rows:
         raise ValueError("normalization requires training rows")
     state_mean, state_std = _safe_mean_std(corpus.states[rows])
-    relation_mean = np.zeros((8, 10), dtype=np.float32)
-    relation_std = np.ones((8, 10), dtype=np.float32)
-    residuals = [corpus.targets[int(episode)].goal_residual for episode in episodes]
-    for relation in range(8):
-        active_values = []
-        for episode in episodes:
-            target = corpus.targets[int(episode)]
-            active_values.append(
-                target.relation_semantics[target.relation_mask[:, relation], relation]
+    workspace_values: list[np.ndarray] = []
+    velocity_values: list[np.ndarray] = []
+    for episode in episodes:
+        target = corpus.targets[int(episode)]
+        gripper_active = target.relation_mask[:, 0]
+        gripper = target.gripper_target_geometry[gripper_active]
+        workspace_values.extend(np.abs(gripper[:, index]) for index in range(4))
+        velocity_values.append(np.abs(gripper[:, 4]))
+
+        goal_active = target.relation_mask[:, 1]
+        goal = target.target_receptacle_geometry[goal_active]
+        workspace_values.extend(np.abs(goal[:, index]) for index in range(8))
+
+        for distractor, relation_index in enumerate((3, 5)):
+            active = target.relation_mask[:, relation_index]
+            geometry = target.distractor_geometry[active, distractor]
+            workspace_values.extend(
+                np.abs(geometry[:, index]) for index in range(4)
             )
-        combined = np.concatenate(active_values, axis=0)
-        if len(combined):
-            relation_mean[relation], relation_std[relation] = _safe_mean_std(combined)
-    residual_values = np.concatenate(residuals)
-    residual_mean_values, residual_std_values = _safe_mean_std(
-        residual_values[:, None]
+    workspace_percentiles = [
+        float(np.percentile(values, 95.0))
+        for values in workspace_values
+        if len(values)
+    ]
+    active_speeds = [values for values in velocity_values if len(values)]
+    closing_speeds = (
+        np.concatenate(active_speeds, axis=0)
+        if active_speeds
+        else np.zeros(0, dtype=np.float32)
     )
-    return GraphNormalization(
+    workspace_scale = max([0.10, *workspace_percentiles])
+    velocity_scale = max(
+        0.05,
+        float(np.percentile(closing_speeds, 95.0)) if len(closing_speeds) else 0.0,
+    )
+    return GraphV2Normalization(
         state_mean=state_mean,
         state_std=state_std,
-        relation_mean=relation_mean,
-        relation_std=relation_std,
-        residual_mean=float(residual_mean_values[0]),
-        residual_std=float(residual_std_values[0]),
+        workspace_scale=workspace_scale,
+        velocity_scale=velocity_scale,
     )
 
 
@@ -835,12 +780,12 @@ class MuJoCoGraphDataset(Dataset[dict[str, torch.Tensor]]):
         tokens, token_mask = self.training.vocabulary.encode(
             (task,), self.max_language_tokens
         )
-        relation_semantics = (
-            target.relation_semantics[frame] - normalization.relation_mean
-        ) / normalization.relation_std
-        goal_residual = (
-            float(target.goal_residual[frame]) - normalization.residual_mean
-        ) / normalization.residual_std
+        normalized = normalized_graph_v2_frame(target, frame, normalization)
+        previous_graph = (
+            np.zeros(TOKEN_DIM, dtype=np.float32)
+            if frame == 0
+            else pack_oracle_target(target, frame - 1, normalization)
+        )
         return {
             "agent_rgb": resize_rgb(
                 sample["observation.images.agent"], self.image_size, "agent RGB"
@@ -858,11 +803,26 @@ class MuJoCoGraphDataset(Dataset[dict[str, torch.Tensor]]):
                 target.entity_visibility[frame].copy()
             ),
             "relation_mask": torch.from_numpy(target.relation_mask[frame].copy()),
-            "relation_semantics": torch.from_numpy(relation_semantics.copy()),
+            "gripper_target_geometry": torch.from_numpy(
+                normalized["gripper_target_geometry"].copy()
+            ),
+            "target_receptacle_geometry": torch.from_numpy(
+                normalized["target_receptacle_geometry"].copy()
+            ),
+            "distractor_geometry": torch.from_numpy(
+                normalized["distractor_geometry"].copy()
+            ),
+            "phase": torch.tensor(target.phase[frame], dtype=torch.long),
+            "relation_trends": torch.from_numpy(
+                normalized["relation_trends"].copy()
+            ),
             "goal_relation": torch.tensor(target.goal_relation[frame], dtype=torch.long),
             "goal_operator": torch.tensor(target.goal_operator[frame], dtype=torch.long),
             "goal_predicate": torch.tensor(
                 target.goal_predicate[frame], dtype=torch.long
             ),
-            "goal_residual": torch.tensor(goal_residual, dtype=torch.float32),
+            "goal_residual": torch.tensor(
+                float(normalized["goal_residual"]), dtype=torch.float32
+            ),
+            "previous_graph": torch.from_numpy(previous_graph),
         }
