@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -11,12 +11,30 @@ from torch.nn import functional as F
 from torch.utils.data import Dataset
 
 from interaction_vla.graph_pretrain.reflectvlm import Vocabulary
+from interaction_vla.lerobot_bridge.codecs import EndEffectorStateCodec
+from interaction_vla.lerobot_bridge.interaction_phase import (
+    PHASE_IDS,
+    causal_phase_step,
+)
 from interaction_vla.lerobot_bridge.teacher_schema import (
+    CONFIDENCE,
     FORBIDDEN_FIELD_FRAGMENTS,
+    OPERATOR_IDS,
+    PREDICATE_IDS,
+    PROBABILITY_0,
+    PROBABILITY_1,
+    RELATIVE_LINEAR_VELOCITY,
+    RELATIVE_POSITION,
+    RISK_0,
+    RISK_1,
     SCHEMA_VERSION as TEACHER_SCHEMA,
+    SIGNED_MARGIN_0,
+    SIGNED_MARGIN_1,
+    SIGNED_MARGIN_2,
+    TeacherFrame,
 )
 
-from .schema import MuJoCoGraphTargets, SEMANTIC_CHANNELS
+from .schema import GraphV2Targets, MuJoCoGraphTargets, SEMANTIC_CHANNELS
 
 
 _TARGET_KEYS = {
@@ -25,6 +43,13 @@ _TARGET_KEYS = {
     "annotation.tc_tig.relation_mask",
     "annotation.tc_tig.relation_values",
     "annotation.tc_tig.relation_goal",
+}
+_V2_TARGET_KEYS = {
+    "annotation.tc_tig.entity_pose",
+    "annotation.tc_tig.entity_mask",
+    "annotation.tc_tig.entity_visibility",
+    "annotation.tc_tig.relation_mask",
+    "annotation.tc_tig.relation_values",
 }
 _RAW_REQUIRED_KEYS = {
     "observation.images.agent",
@@ -90,6 +115,350 @@ def semantic_targets(arrays: Mapping[str, np.ndarray]) -> MuJoCoGraphTargets:
         goal_operator=goals[:, 1].astype(np.int64),
         goal_predicate=goals[:, 2].astype(np.int64),
         goal_residual=goals[:, 3].astype(np.float32),
+    )
+
+
+PHASE_GOALS = {
+    PHASE_IDS["approach"]: (
+        0,
+        OPERATOR_IDS["establish"],
+        PREDICATE_IDS["proximity"],
+    ),
+    PHASE_IDS["grasp"]: (
+        0,
+        OPERATOR_IDS["establish"],
+        PREDICATE_IDS["enclosure"],
+    ),
+    PHASE_IDS["lift"]: (
+        0,
+        OPERATOR_IDS["establish"],
+        PREDICATE_IDS["co_motion"],
+    ),
+    PHASE_IDS["transport"]: (
+        1,
+        OPERATOR_IDS["establish"],
+        PREDICATE_IDS["proximity"],
+    ),
+    PHASE_IDS["place"]: (
+        1,
+        OPERATOR_IDS["establish"],
+        PREDICATE_IDS["containment"],
+    ),
+    PHASE_IDS["release"]: (
+        0,
+        OPERATOR_IDS["break"],
+        PREDICATE_IDS["co_motion"],
+    ),
+}
+
+
+def _closing_speed(position: np.ndarray, velocity: np.ndarray) -> np.ndarray:
+    displacement = np.asarray(position, dtype=np.float32)
+    relative_velocity = np.asarray(velocity, dtype=np.float32)
+    distance = np.linalg.norm(displacement, axis=-1)
+    return np.divide(
+        -np.sum(displacement * relative_velocity, axis=-1),
+        distance,
+        out=np.zeros_like(distance, dtype=np.float32),
+        where=distance > 1e-6,
+    ).astype(np.float32)
+
+
+def teacher_frame_arrays(frame: TeacherFrame) -> dict[str, np.ndarray]:
+    return {
+        "frame_index": np.asarray([frame.frame_index], dtype=np.int64),
+        "timestamp": np.asarray([frame.timestamp], dtype=np.float64),
+        "state_hash": np.asarray([frame.state_hash]),
+        "annotation.tc_tig.entity_pose": frame.entity_pose[None].copy(),
+        "annotation.tc_tig.entity_size": frame.entity_size[None].copy(),
+        "annotation.tc_tig.entity_mask": frame.entity_mask[None].copy(),
+        "annotation.tc_tig.entity_visibility": (
+            frame.entity_visibility[None].copy()
+        ),
+        "annotation.tc_tig.relation_mask": frame.relation_mask[None].copy(),
+        "annotation.tc_tig.relation_values": frame.relation_values[None].copy(),
+    }
+
+
+def _geometry_teacher_frames(
+    arrays: Mapping[str, np.ndarray],
+) -> tuple[TeacherFrame, ...]:
+    missing = _V2_TARGET_KEYS - set(arrays)
+    if missing:
+        raise ValueError("teacher arrays are missing: " + ", ".join(sorted(missing)))
+    relation = np.asarray(
+        arrays["annotation.tc_tig.relation_values"], dtype=np.float32
+    )
+    frames = len(relation)
+    if (
+        frames < 1
+        or relation.shape != (frames, 8, 24)
+        or not np.isfinite(relation).all()
+    ):
+        raise ValueError("teacher relation_values must be finite [frames, 8, 24]")
+
+    def value(
+        name: str,
+        shape: tuple[int, ...],
+        dtype: np.dtype,
+        default: np.ndarray,
+    ) -> np.ndarray:
+        result = np.asarray(arrays.get(name, default))
+        if result.shape != shape or result.dtype != dtype:
+            raise ValueError(f"{name} must have shape {shape} and dtype {dtype}")
+        if np.issubdtype(dtype, np.floating) and not np.isfinite(result).all():
+            raise ValueError(f"{name} must be finite")
+        return result
+
+    entity_pose = value(
+        "annotation.tc_tig.entity_pose",
+        (frames, 6, 9),
+        np.dtype(np.float32),
+        np.zeros((frames, 6, 9), dtype=np.float32),
+    )
+    entity_size = value(
+        "annotation.tc_tig.entity_size",
+        (frames, 6, 3),
+        np.dtype(np.float32),
+        np.zeros((frames, 6, 3), dtype=np.float32),
+    )
+    entity_mask = value(
+        "annotation.tc_tig.entity_mask",
+        (frames, 6),
+        np.dtype(np.bool_),
+        np.zeros((frames, 6), dtype=np.bool_),
+    )
+    entity_visibility = value(
+        "annotation.tc_tig.entity_visibility",
+        (frames, 6, 2),
+        np.dtype(np.float32),
+        np.zeros((frames, 6, 2), dtype=np.float32),
+    )
+    relation_mask = value(
+        "annotation.tc_tig.relation_mask",
+        (frames, 8),
+        np.dtype(np.bool_),
+        np.zeros((frames, 8), dtype=np.bool_),
+    )
+    frame_indices = np.asarray(
+        arrays.get("frame_index", np.arange(frames)), dtype=np.int64
+    )
+    timestamps = np.asarray(
+        arrays.get("timestamp", np.arange(frames) / 20.0), dtype=np.float64
+    )
+    state_hashes = np.asarray(
+        arrays.get("state_hash", [f"graph-v2-{index}" for index in range(frames)])
+    ).astype(str)
+    if (
+        frame_indices.shape != (frames,)
+        or timestamps.shape != (frames,)
+        or state_hashes.shape != (frames,)
+    ):
+        raise ValueError("teacher frame metadata must align with geometry rows")
+    result = []
+    for index in range(frames):
+        result.append(
+            TeacherFrame(
+                frame_index=int(frame_indices[index]),
+                timestamp=float(timestamps[index]),
+                state_hash=str(state_hashes[index]),
+                entity_pose=entity_pose[index],
+                entity_size=entity_size[index],
+                entity_role=np.arange(6, dtype=np.int32),
+                entity_visibility=entity_visibility[index],
+                entity_mask=entity_mask[index],
+                relation_values=relation[index],
+                relation_type=np.arange(8, dtype=np.int32),
+                relation_mask=relation_mask[index],
+                instance_agent=np.zeros((1, 1), dtype=np.int32),
+                instance_wrist=np.zeros((1, 1), dtype=np.int32),
+                depth_agent=np.zeros((1, 1), dtype=np.float32),
+                depth_wrist=np.zeros((1, 1), dtype=np.float32),
+                camera_intrinsics=np.zeros((2, 3, 3), dtype=np.float32),
+                camera_extrinsics_base=np.zeros((2, 4, 4), dtype=np.float32),
+            )
+        )
+    return tuple(result)
+
+
+def graph_v2_trend_scalars(targets: GraphV2Targets) -> np.ndarray:
+    gripper_distance = targets.gripper_target_geometry[:, 3]
+    grasp_confidence = (
+        targets.gripper_target_geometry[:, 5]
+        * targets.gripper_target_geometry[:, 6]
+    )
+    goal_distance = np.linalg.norm(
+        targets.target_receptacle_geometry[:, :3], axis=1
+    )
+    active = targets.relation_mask[:, (3, 5)]
+    clearances = targets.distractor_geometry[:, :, 3]
+    minimum_clearance = np.min(
+        np.where(active, clearances, np.inf), axis=1
+    )
+    minimum_clearance[~np.any(active, axis=1)] = 0.0
+    return np.stack(
+        (
+            gripper_distance,
+            grasp_confidence,
+            goal_distance,
+            minimum_clearance,
+        ),
+        axis=1,
+    ).astype(np.float32)
+
+
+def current_graph_v2_target(
+    arrays: Mapping[str, np.ndarray],
+    *,
+    previous_scalars: np.ndarray | None,
+    previous_phase: int,
+) -> GraphV2Targets:
+    missing = _V2_TARGET_KEYS - set(arrays)
+    if missing:
+        raise ValueError("teacher arrays are missing: " + ", ".join(sorted(missing)))
+    relation = np.asarray(
+        arrays["annotation.tc_tig.relation_values"], dtype=np.float32
+    )
+    pose = np.asarray(arrays["annotation.tc_tig.entity_pose"], dtype=np.float32)
+    if relation.shape != (1, 8, 24) or not np.isfinite(relation).all():
+        raise ValueError("current relation must be finite with shape [1, 8, 24]")
+    if pose.shape != (1, 6, 9) or not np.isfinite(pose).all():
+        raise ValueError("current entity_pose must be finite with shape [1, 6, 9]")
+    entity_mask = np.asarray(
+        arrays["annotation.tc_tig.entity_mask"], dtype=np.bool_
+    )
+    visibility = np.asarray(
+        arrays["annotation.tc_tig.entity_visibility"], dtype=np.float32
+    )
+    relation_mask = np.asarray(
+        arrays["annotation.tc_tig.relation_mask"], dtype=np.bool_
+    )
+    if entity_mask.shape != (1, 6) or relation_mask.shape != (1, 8):
+        raise ValueError("current entity/relation masks have invalid shapes")
+    if visibility.shape != (1, 6, 2) or not np.isfinite(visibility).all():
+        raise ValueError("current entity_visibility must be finite [1, 6, 2]")
+
+    gripper_delta = relation[:, 0, RELATIVE_POSITION]
+    gripper_target = np.concatenate(
+        (
+            gripper_delta,
+            np.linalg.norm(gripper_delta, axis=1, keepdims=True),
+            _closing_speed(
+                gripper_delta,
+                relation[:, 0, RELATIVE_LINEAR_VELOCITY],
+            )[:, None],
+            relation[:, 0, [PROBABILITY_0, PROBABILITY_1, CONFIDENCE]],
+        ),
+        axis=1,
+    ).astype(np.float32)
+
+    gripper_rotation = EndEffectorStateCodec.decode_rotation(pose[0, 0, 3:])
+    target_to_goal_action = gripper_rotation.T @ (pose[0, 2, :3] - pose[0, 1, :3])
+    placement = relation[0, 1]
+    target_receptacle = np.asarray(
+        [
+            *target_to_goal_action,
+            *placement[RELATIVE_POSITION],
+            min(placement[SIGNED_MARGIN_0], placement[SIGNED_MARGIN_1]),
+            -abs(float(placement[SIGNED_MARGIN_2])),
+            placement[PROBABILITY_0],
+            placement[CONFIDENCE],
+        ],
+        dtype=np.float32,
+    )[None]
+
+    distractors = np.zeros((1, 2, 7), dtype=np.float32)
+    for slot, relation_index in enumerate((3, 5)):
+        if relation_mask[0, relation_index]:
+            values = relation[0, relation_index]
+            distractors[0, slot] = np.asarray(
+                [
+                    *values[RELATIVE_POSITION],
+                    values[SIGNED_MARGIN_0],
+                    values[RISK_1],
+                    values[RISK_0],
+                    values[CONFIDENCE],
+                ],
+                dtype=np.float32,
+            )
+
+    phase = causal_phase_step(relation[0], int(previous_phase))
+    goal_relation, goal_operator, goal_predicate = PHASE_GOALS[phase]
+    contact = float(gripper_target[0, 5])
+    co_motion = float(gripper_target[0, 6])
+    goal_distance = float(np.linalg.norm(target_to_goal_action))
+    containment = float(target_receptacle[0, 8])
+    residuals = {
+        PHASE_IDS["approach"]: -float(gripper_target[0, 3]),
+        PHASE_IDS["grasp"]: -(1.0 - contact),
+        PHASE_IDS["lift"]: -(1.0 - co_motion),
+        PHASE_IDS["transport"]: -goal_distance,
+        PHASE_IDS["place"]: -(1.0 - containment),
+        PHASE_IDS["release"]: -co_motion,
+    }
+    provisional = GraphV2Targets(
+        entity_mask=entity_mask,
+        entity_visibility=visibility,
+        relation_mask=relation_mask,
+        gripper_target_geometry=gripper_target,
+        target_receptacle_geometry=target_receptacle,
+        distractor_geometry=distractors,
+        phase=np.asarray([phase], dtype=np.int64),
+        relation_trends=np.zeros((1, 4), dtype=np.float32),
+        goal_relation=np.asarray([goal_relation], dtype=np.int64),
+        goal_operator=np.asarray([goal_operator], dtype=np.int64),
+        goal_predicate=np.asarray([goal_predicate], dtype=np.int64),
+        goal_residual=np.asarray([residuals[phase]], dtype=np.float32),
+    )
+    scalars = graph_v2_trend_scalars(provisional)[0]
+    if previous_scalars is None:
+        trends = np.zeros((1, 4), dtype=np.float32)
+    else:
+        previous = np.asarray(previous_scalars, dtype=np.float32)
+        if previous.shape != (4,) or not np.isfinite(previous).all():
+            raise ValueError("previous Graph v2 scalars must be finite with shape [4]")
+        trends = (scalars - previous)[None].astype(np.float32)
+    return GraphV2Targets(
+        **{
+            field.name: (
+                trends
+                if field.name == "relation_trends"
+                else getattr(provisional, field.name)
+            )
+            for field in fields(GraphV2Targets)
+        }
+    )
+
+
+class CausalGraphV2Tracker:
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self._previous_scalars: np.ndarray | None = None
+        self._previous_phase = PHASE_IDS["approach"]
+
+    def update(self, frame: TeacherFrame) -> GraphV2Targets:
+        current = current_graph_v2_target(
+            teacher_frame_arrays(frame),
+            previous_scalars=self._previous_scalars,
+            previous_phase=self._previous_phase,
+        )
+        self._previous_scalars = graph_v2_trend_scalars(current)[0].copy()
+        self._previous_phase = int(current.phase[0])
+        return current
+
+
+def graph_v2_targets(arrays: Mapping[str, np.ndarray]) -> GraphV2Targets:
+    tracker = CausalGraphV2Tracker()
+    targets = [tracker.update(frame) for frame in _geometry_teacher_frames(arrays)]
+    return GraphV2Targets(
+        **{
+            field.name: np.concatenate(
+                [getattr(target, field.name) for target in targets], axis=0
+            )
+            for field in fields(GraphV2Targets)
+        }
     )
 
 

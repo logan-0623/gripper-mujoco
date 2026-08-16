@@ -5,6 +5,10 @@ import mujoco
 import numpy as np
 
 from interaction_vla.config import PhysicsConfig
+from interaction_vla.graph_finetune.data import (
+    graph_v2_targets,
+    teacher_frame_arrays,
+)
 from interaction_vla.lerobot_bridge.capture import (
     CameraFrame,
     DualViewFrame,
@@ -66,6 +70,20 @@ def test_local_relations_are_invariant_to_passive_translation_and_yaw() -> None:
         second.relation_values[second.relation_mask],
         atol=1e-5,
     )
+    first_graph = graph_v2_targets(teacher_frame_arrays(first))
+    second_graph = graph_v2_targets(teacher_frame_arrays(second))
+    for name in (
+        "gripper_target_geometry",
+        "target_receptacle_geometry",
+        "distractor_geometry",
+        "relation_trends",
+        "goal_residual",
+    ):
+        np.testing.assert_allclose(
+            getattr(first_graph, name),
+            getattr(second_graph, name),
+            atol=1e-6,
+        )
 
 
 def test_distractor_slots_do_not_depend_on_input_object_order() -> None:

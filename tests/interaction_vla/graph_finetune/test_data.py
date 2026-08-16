@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, replace
 
 import numpy as np
 import pytest
@@ -9,6 +9,7 @@ import torch
 from interaction_vla.graph_finetune.data import (
     MODEL_BATCH_KEYS,
     MuJoCoGraphDataset,
+    graph_v2_targets,
     prepare_corpus,
     resize_rgb,
     select_training_fraction,
@@ -113,7 +114,18 @@ def teacher_arrays(frames: int = 3) -> dict[str, np.ndarray]:
     relation_goal[:, 2] = np.arange(frames) % 7
     relation_goal[:, 3] = np.linspace(-0.3, 0.0, frames, dtype=np.float32)
     relation_goal[:, 4] = 1.0
+    entity_pose = np.zeros((frames, 6, 9), dtype=np.float32)
+    entity_pose[:, :, 3:] = np.asarray(
+        (1.0, 0.0, 0.0, 0.0, 1.0, 0.0), dtype=np.float32
+    )
+    entity_pose[:, 0, :3] = (0.0, 0.0, 0.4)
+    entity_pose[:, 1, :3] = (0.1, 0.2, 0.3)
+    entity_pose[:, 2, :3] = (0.4, 0.5, 0.2)
     return {
+        "annotation.tc_tig.entity_pose": entity_pose,
+        "annotation.tc_tig.entity_size": np.full(
+            (frames, 6, 3), 0.1, dtype=np.float32
+        ),
         "annotation.tc_tig.entity_mask": np.ones((frames, 6), dtype=np.bool_),
         "annotation.tc_tig.entity_visibility": np.full(
             (frames, 6, 2), 0.25, dtype=np.float32
@@ -122,6 +134,42 @@ def teacher_arrays(frames: int = 3) -> dict[str, np.ndarray]:
         "annotation.tc_tig.relation_values": relation_values,
         "annotation.tc_tig.relation_goal": relation_goal,
     }
+
+
+def test_graph_v2_extracts_geometry_phase_trends_and_causal_goal() -> None:
+    arrays = teacher_arrays()
+
+    targets = graph_v2_targets(arrays)
+
+    np.testing.assert_allclose(
+        targets.gripper_target_geometry[:, :3],
+        arrays["annotation.tc_tig.relation_values"][:, 0, :3],
+    )
+    np.testing.assert_allclose(
+        targets.target_receptacle_geometry[:, 3:6],
+        arrays["annotation.tc_tig.relation_values"][:, 1, :3],
+    )
+    assert targets.relation_trends[0].tolist() == [0.0, 0.0, 0.0, 0.0]
+    assert set(targets.phase.tolist()) <= set(range(6))
+    assert np.isfinite(targets.goal_residual).all()
+
+
+def test_graph_v2_targets_never_read_future_window_relation_goal() -> None:
+    first_arrays = teacher_arrays()
+    changed_arrays = {
+        name: value.copy() for name, value in first_arrays.items()
+    }
+    changed_arrays["annotation.tc_tig.relation_goal"][:] = np.asarray(
+        (7.0, 4.0, 6.0, 999.0, 0.0), dtype=np.float32
+    )
+
+    first = graph_v2_targets(first_arrays)
+    second = graph_v2_targets(changed_arrays)
+
+    for field in fields(GraphV2Targets):
+        np.testing.assert_array_equal(
+            getattr(first, field.name), getattr(second, field.name)
+        )
 
 
 def manifest_records(count: int = 5) -> list[dict[str, object]]:
