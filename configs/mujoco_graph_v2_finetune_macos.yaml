@@ -1,0 +1,23 @@
+dataset:
+  repo_id: local/franka_lerobot_act_pilot
+  root: outputs/lerobot/franka_lerobot_act_pilot
+  reflect_checkpoint: outputs/graph_pretrain/reflectvlm/checkpoint.pt
+  split_seed: 17
+  split_ratios: [0.8, 0.1, 0.1]
+model:
+  image_size: 128
+  max_language_tokens: 32
+  image_embedding_dim: 128
+  text_embedding_dim: 64
+  graph_embedding_dim: 128
+training:
+  output_dir: outputs/graph_finetune/mujoco_graph_v2
+  required_oracle_report: outputs/graph_control/graph_v2_oracle/runs/evaluation/report.json
+  device: auto
+  batch_size: 16
+  num_workers: 0
+  epochs: 10
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+  fractions: [0.1, 0.25, 1.0]
+  seeds: [0, 1, 2]

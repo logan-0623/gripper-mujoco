@@ -8,9 +8,10 @@ import pytest
 from interaction_vla.graph_finetune.cli import build_parser, main
 
 
-def test_cli_exposes_inspect_compare_and_evaluate() -> None:
+def test_cli_exposes_split_inspect_compare_and_evaluate() -> None:
     parser = build_parser()
 
+    split = parser.parse_args(["split", "--config", "config.yaml"])
     inspect = parser.parse_args(["inspect", "--config", "config.yaml"])
     compare = parser.parse_args(["compare", "--config", "config.yaml"])
     evaluate = parser.parse_args(
@@ -25,12 +26,27 @@ def test_cli_exposes_inspect_compare_and_evaluate() -> None:
         ]
     )
 
+    assert split.command == "split"
+    assert split.config == Path("config.yaml")
     assert inspect.command == "inspect"
     assert compare.command == "compare"
     assert evaluate.command == "evaluate"
     assert evaluate.config == Path("config.yaml")
     assert evaluate.checkpoint == Path("run/checkpoint.pt")
     assert evaluate.partition == "validation"
+
+
+def test_cli_dispatches_split_and_prints_json(monkeypatch, capsys) -> None:
+    received: list[Path] = []
+    monkeypatch.setattr(
+        "interaction_vla.graph_finetune.cli.split_from_config",
+        lambda config: received.append(config) or {"passed": True},
+    )
+
+    main(["split", "--config", "config.yaml"])
+
+    assert received == [Path("config.yaml")]
+    assert json.loads(capsys.readouterr().out) == {"passed": True}
 
 
 def test_cli_dispatches_compare_and_prints_json(monkeypatch, capsys) -> None:

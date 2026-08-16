@@ -51,6 +51,7 @@ class ModelConfig:
 @dataclass(frozen=True)
 class TrainingConfig:
     output_dir: Path
+    required_oracle_report: Path | None = None
     device: str = "auto"
     batch_size: int = 8
     num_workers: int = 0
@@ -112,6 +113,10 @@ def load_graph_finetune_config(path: str | Path) -> GraphFinetuneConfig:
     if "output_dir" not in training_raw:
         raise ValueError("training.output_dir is required")
     training_raw["output_dir"] = Path(training_raw["output_dir"])
+    if training_raw.get("required_oracle_report") is not None:
+        training_raw["required_oracle_report"] = Path(
+            training_raw["required_oracle_report"]
+        )
     if "fractions" in training_raw:
         training_raw["fractions"] = tuple(training_raw["fractions"])
     if "seeds" in training_raw:

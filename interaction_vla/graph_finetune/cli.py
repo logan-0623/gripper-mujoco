@@ -7,7 +7,12 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from .pipeline import compare_from_config, evaluate_from_config, inspect_from_config
+from .pipeline import (
+    compare_from_config,
+    evaluate_from_config,
+    inspect_from_config,
+    split_from_config,
+)
 
 
 class CLIUsageError(ValueError):
@@ -26,9 +31,11 @@ def _add_config(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = JSONArgumentParser(
         prog="python -m interaction_vla.graph_finetune",
-        description="Paired MuJoCo semantic graph fine-tuning experiment.",
+        description="Paired MuJoCo Interaction Graph v2 fine-tuning experiment.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
+    split = commands.add_parser("split", help="write the frozen episode split")
+    _add_config(split)
     inspect = commands.add_parser("inspect", help="validate local aligned graph data")
     _add_config(inspect)
     compare = commands.add_parser(
@@ -59,6 +66,8 @@ def _jsonable(value: Any) -> Any:
 
 
 def _dispatch(args: argparse.Namespace) -> Any:
+    if args.command == "split":
+        return split_from_config(args.config)
     if args.command == "inspect":
         return inspect_from_config(args.config)
     if args.command == "compare":

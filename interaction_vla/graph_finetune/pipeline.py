@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import hashlib
 import json
 import math
 import os
@@ -22,19 +23,25 @@ from interaction_vla.lerobot_bridge.validator import validate_dataset_root
 
 from .config import GraphFinetuneConfig, ModelConfig, load_graph_finetune_config
 from .data import (
-    GraphNormalization,
     MuJoCoGraphDataset,
     PreparedMuJoCoCorpus,
     TrainingCorpus,
     prepare_corpus,
 )
 from .model import (
+    LOSS_WEIGHTS,
     MuJoCoGraphEstimator,
     TransferReport,
     graph_finetune_loss,
     initialize_paired_models,
 )
-from .schema import RELATION_COUNT, SCHEMA_VERSION, SEMANTIC_DIM
+from .schema import (
+    GRAPH_SCHEMA_VERSION,
+    TOKEN_DIM,
+    TOKEN_FEATURE_NAMES,
+    TOKEN_SCHEMA_VERSION,
+    GraphV2Normalization,
+)
 
 
 def _jsonable(value: Any) -> Any:
@@ -122,6 +129,7 @@ def _transfer_report_dict(report: TransferReport | None) -> dict[str, Any]:
     if report is None:
         return {
             "copied_modules": [],
+            "identical_random_modules": [],
             "copied_tensors": [],
             "skipped_tensors": [],
             "copied_token_count": 0,
@@ -167,7 +175,9 @@ def inspect_with_source(
     )
     report = {
         "passed": not overlap,
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": GRAPH_SCHEMA_VERSION,
+        "token_schema_version": TOKEN_SCHEMA_VERSION,
+        "token_dim": TOKEN_DIM,
         "teacher_schema_version": TEACHER_SCHEMA,
         "repo_id": config.dataset.repo_id,
         "episodes": len(corpus.records),
@@ -229,6 +239,55 @@ def inspect_from_config(path: str | Path) -> dict[str, Any]:
     return inspect_with_source(config, source, records, sidecars)
 
 
+def split_manifest_payload(
+    config: GraphFinetuneConfig,
+    corpus: PreparedMuJoCoCorpus,
+) -> dict[str, Any]:
+    return {
+        "schema_version": GRAPH_SCHEMA_VERSION,
+        "token_schema_version": TOKEN_SCHEMA_VERSION,
+        "token_dim": TOKEN_DIM,
+        "token_feature_names": list(TOKEN_FEATURE_NAMES),
+        "split_seed": config.dataset.split_seed,
+        "episode_indices": corpus.splits,
+        "row_indices": {
+            name: [
+                row
+                for episode in episodes
+                for row in corpus.row_indices[episode]
+            ]
+            for name, episodes in corpus.splits.items()
+        },
+    }
+
+
+def write_split_manifest(
+    config: GraphFinetuneConfig,
+    corpus: PreparedMuJoCoCorpus,
+) -> Path:
+    destination = config.training.output_dir / "split_manifest.json"
+    expected = split_manifest_payload(config, corpus)
+    if destination.exists():
+        existing = json.loads(destination.read_text(encoding="utf-8"))
+        if existing != expected:
+            raise ValueError("existing Graph v2 split manifest is incompatible")
+    else:
+        _write_json_atomic(destination, expected)
+    return destination
+
+
+def split_from_config(path: str | Path) -> dict[str, object]:
+    config = load_graph_finetune_config(path)
+    source, records, sidecars = _load_local_inputs(config)
+    corpus = _prepare(config, source, records, sidecars)
+    destination = write_split_manifest(config, corpus)
+    return {
+        "passed": True,
+        "path": destination,
+        "episodes": corpus.splits,
+    }
+
+
 def _dataset(
     config: GraphFinetuneConfig,
     training: TrainingCorpus,
@@ -274,6 +333,7 @@ def _forward(
         batch["state"],
         batch["language_tokens"],
         batch["language_mask"],
+        batch["previous_graph"],
     )
 
 
@@ -308,7 +368,6 @@ def _evaluate_loader(
     loader: DataLoader[dict[str, Tensor]],
     *,
     device: torch.device,
-    normalization: GraphNormalization,
 ) -> dict[str, Any]:
     model.eval()
     examples = 0
@@ -317,16 +376,13 @@ def _evaluate_loader(
     relation_counts = [0, 0, 0]
     visibility_error = 0.0
     visibility_count = 0
-    semantic_error = 0.0
-    semantic_count = 0
-    relation_error = np.zeros(RELATION_COUNT, dtype=np.float64)
-    relation_value_count = np.zeros(RELATION_COUNT, dtype=np.int64)
+    gripper_error = target_error = distractor_error = 0.0
+    gripper_count = target_count = distractor_count = 0
+    phase_correct = 0
+    trend_error = 0.0
+    trend_count = 0
     relation_correct = operator_correct = predicate_correct = exact_correct = 0
     residual_error = 0.0
-    relation_std = torch.as_tensor(
-        normalization.relation_std, dtype=torch.float32, device=device
-    )
-    residual_std = float(normalization.residual_std)
     with torch.inference_mode():
         for raw_batch in loader:
             batch = _to_device(raw_batch, device)
@@ -354,19 +410,39 @@ def _evaluate_loader(
             )
             visibility_count += int(entity_mask.sum().cpu()) * 2
             relation_mask = batch["relation_mask"].bool()
-            absolute_semantic_error = torch.abs(
-                outputs["relation_semantics"] - batch["relation_semantics"]
-            ) * relation_std
-            semantic_error += float(
-                absolute_semantic_error[relation_mask].sum().cpu()
+            gripper_active = relation_mask[:, 0]
+            target_active = relation_mask[:, 1]
+            distractor_active = relation_mask[:, (3, 5)]
+            gripper_error += float(
+                torch.abs(
+                    outputs["gripper_target_geometry"]
+                    - batch["gripper_target_geometry"]
+                )[gripper_active].sum().cpu()
             )
-            semantic_count += int(relation_mask.sum().cpu()) * SEMANTIC_DIM
-            for relation in range(RELATION_COUNT):
-                active = relation_mask[:, relation]
-                relation_error[relation] += float(
-                    absolute_semantic_error[:, relation][active].sum().cpu()
-                )
-                relation_value_count[relation] += int(active.sum().cpu()) * SEMANTIC_DIM
+            gripper_count += int(gripper_active.sum().cpu()) * 8
+            target_error += float(
+                torch.abs(
+                    outputs["target_receptacle_geometry"]
+                    - batch["target_receptacle_geometry"]
+                )[target_active].sum().cpu()
+            )
+            target_count += int(target_active.sum().cpu()) * 10
+            distractor_error += float(
+                torch.abs(
+                    outputs["distractor_geometry"]
+                    - batch["distractor_geometry"]
+                )[distractor_active].sum().cpu()
+            )
+            distractor_count += int(distractor_active.sum().cpu()) * 7
+            phase_correct += int(
+                (outputs["phase_logits"].argmax(-1) == batch["phase"]).sum().cpu()
+            )
+            trend_error += float(
+                torch.abs(
+                    outputs["relation_trends"] - batch["relation_trends"]
+                ).sum().cpu()
+            )
+            trend_count += count * 4
             relation_prediction = outputs["goal_relation_logits"].argmax(-1)
             operator_prediction = outputs["goal_operator_logits"].argmax(-1)
             predicate_prediction = outputs["goal_predicate_logits"].argmax(-1)
@@ -380,19 +456,18 @@ def _evaluate_loader(
                 (relation_match & operator_match & predicate_match).sum().cpu()
             )
             residual_error += float(
-                (
-                    torch.abs(outputs["goal_residual"] - batch["goal_residual"])
-                    * residual_std
+                torch.abs(
+                    outputs["goal_residual"] - batch["goal_residual"]
                 ).sum().cpu()
             )
-    if examples == 0 or visibility_count == 0 or semantic_count == 0:
+    if (
+        examples == 0
+        or visibility_count == 0
+        or min(gripper_count, target_count, distractor_count, trend_count) == 0
+    ):
         raise ValueError("evaluation requires active held-out graph examples")
     entity_precision, entity_recall, entity_f1 = _prf(*entity_counts)
     relation_precision, relation_recall, relation_f1 = _prf(*relation_counts)
-    per_relation = [
-        float(relation_error[index] / max(1, relation_value_count[index]))
-        for index in range(RELATION_COUNT)
-    ]
     return {
         "test_examples": examples,
         "mean_loss": loss_sum / examples,
@@ -403,8 +478,11 @@ def _evaluate_loader(
         "relation_mask_recall": relation_recall,
         "relation_mask_f1": relation_f1,
         "entity_visibility_mae": visibility_error / visibility_count,
-        "semantic_relation_mae": semantic_error / semantic_count,
-        "semantic_relation_mae_by_slot": per_relation,
+        "gripper_target_geometry_mae": gripper_error / gripper_count,
+        "target_receptacle_geometry_mae": target_error / target_count,
+        "distractor_geometry_mae": distractor_error / distractor_count,
+        "phase_accuracy": phase_correct / examples,
+        "relation_trend_mae": trend_error / trend_count,
         "goal_relation_accuracy": relation_correct / examples,
         "goal_operator_accuracy": operator_correct / examples,
         "goal_predicate_accuracy": predicate_correct / examples,
@@ -413,14 +491,12 @@ def _evaluate_loader(
     }
 
 
-def _normalization_payload(value: GraphNormalization) -> dict[str, Any]:
+def _normalization_payload(value: GraphV2Normalization) -> dict[str, Any]:
     return {
         "state_mean": value.state_mean,
         "state_std": value.state_std,
-        "relation_mean": value.relation_mean,
-        "relation_std": value.relation_std,
-        "residual_mean": value.residual_mean,
-        "residual_std": value.residual_std,
+        "workspace_scale": value.workspace_scale,
+        "velocity_scale": value.velocity_scale,
     }
 
 
@@ -433,6 +509,35 @@ def _model_from_config(config: ModelConfig, vocab_size: int) -> MuJoCoGraphEstim
     )
 
 
+def _checkpoint_contract() -> dict[str, Any]:
+    return {
+        "schema_version": GRAPH_SCHEMA_VERSION,
+        "token_schema_version": TOKEN_SCHEMA_VERSION,
+        "token_dim": TOKEN_DIM,
+        "token_feature_names": list(TOKEN_FEATURE_NAMES),
+        "loss_weights": dict(LOSS_WEIGHTS),
+        "causal_goal_labels": True,
+        "future_relation_goal_used": False,
+    }
+
+
+def _require_oracle_report(config: GraphFinetuneConfig) -> str:
+    path = config.training.required_oracle_report
+    if path is None:
+        raise ValueError("training.required_oracle_report is required for compare")
+    if not path.is_file():
+        raise FileNotFoundError(f"required Graph v2 oracle report not found: {path}")
+    encoded = path.read_bytes()
+    try:
+        payload = json.loads(encoded)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("required Graph v2 oracle report is invalid JSON") from error
+    gate = payload.get("oracle_gate") if isinstance(payload, Mapping) else None
+    if not isinstance(gate, Mapping) or gate.get("passed") is not True:
+        raise ValueError("required Graph v2 oracle gate did not pass")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def load_finetune_checkpoint(
     path: str | Path, *, device: str | torch.device
 ) -> tuple[MuJoCoGraphEstimator, Vocabulary, dict[str, Any]]:
@@ -440,12 +545,22 @@ def load_finetune_checkpoint(
     if not checkpoint.is_file():
         raise FileNotFoundError(f"MuJoCo graph checkpoint not found: {checkpoint}")
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
-    if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != GRAPH_SCHEMA_VERSION
+    ):
         raise ValueError("MuJoCo graph checkpoint schema is incompatible")
+    for name, expected in _checkpoint_contract().items():
+        if payload.get(name) != expected:
+            raise ValueError(f"MuJoCo graph checkpoint {name} contract is incompatible")
     required = {"model_config", "vocabulary", "model_state", "normalization"}
     missing = required - set(payload)
     if missing:
         raise ValueError("MuJoCo graph checkpoint is missing: " + ", ".join(sorted(missing)))
+    normalization = payload["normalization"]
+    if not isinstance(normalization, Mapping):
+        raise ValueError("MuJoCo graph checkpoint normalization is invalid")
+    GraphV2Normalization(**normalization)
     model_config = ModelConfig(**payload["model_config"])
     vocabulary = Vocabulary(tuple(str(value) for value in payload["vocabulary"]))
     model = _model_from_config(model_config, len(vocabulary.tokens)).to(
@@ -466,6 +581,7 @@ def _train_condition(
     seed: int,
     transfer: TransferReport | None,
     run_dir: Path,
+    oracle_report_sha256: str,
 ) -> dict[str, Any]:
     device = resolve_device(config.training.device)
     _seed_all(seed)
@@ -508,7 +624,6 @@ def _train_condition(
             model,
             validation_loader,
             device=device,
-            normalization=training.normalization,
         )
         training_loss = total / max(1, examples)
         validation_loss = float(validation["mean_loss"])
@@ -531,7 +646,7 @@ def _train_condition(
     model.load_state_dict(best_state)
     checkpoint = run_dir / "checkpoint.pt"
     checkpoint_payload = {
-        "schema_version": SCHEMA_VERSION,
+        **_checkpoint_contract(),
         "teacher_schema_version": TEACHER_SCHEMA,
         "repo_id": config.dataset.repo_id,
         "split_seed": config.dataset.split_seed,
@@ -546,6 +661,7 @@ def _train_condition(
         "validation_row_indices": list(validation_dataset.row_indices),
         "test_row_indices": list(test_dataset.row_indices),
         "transfer_report": _transfer_report_dict(transfer),
+        "oracle_report_sha256": oracle_report_sha256,
         "model_state": best_state,
     }
     _save_checkpoint_atomic(checkpoint, checkpoint_payload)
@@ -554,12 +670,11 @@ def _train_condition(
         reloaded,
         test_loader,
         device=device,
-        normalization=training.normalization,
     )
     evaluation.update(
         {
             "passed": True,
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": GRAPH_SCHEMA_VERSION,
             "initialization": initialization,
             "fraction": fraction,
             "seed": seed,
@@ -599,7 +714,11 @@ def _aggregate_runs(runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "entity_mask_f1",
         "relation_mask_f1",
         "entity_visibility_mae",
-        "semantic_relation_mae",
+        "gripper_target_geometry_mae",
+        "target_receptacle_geometry_mae",
+        "distractor_geometry_mae",
+        "phase_accuracy",
+        "relation_trend_mae",
         "goal_relation_accuracy",
         "goal_operator_accuracy",
         "goal_predicate_accuracy",
@@ -622,7 +741,8 @@ def _aggregate_runs(runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     for name in (
         "goal_exact_accuracy",
         "relation_mask_f1",
-        "semantic_relation_mae",
+        "gripper_target_geometry_mae",
+        "target_receptacle_geometry_mae",
     ):
         values = np.asarray(
             [float(run["delta"][name]) for run in runs], dtype=np.float64
@@ -642,24 +762,13 @@ def compare_with_source(
     sidecars: Mapping[int, Mapping[str, np.ndarray]],
 ) -> dict[str, Any]:
     output_dir = config.training.output_dir
-    if output_dir.exists() and any(output_dir.iterdir()):
+    oracle_report_sha256 = _require_oracle_report(config)
+    if output_dir.exists() and any(
+        path.name != "split_manifest.json" for path in output_dir.iterdir()
+    ):
         raise FileExistsError(f"graph fine-tune output directory must be empty: {output_dir}")
-    output_dir.mkdir(parents=True, exist_ok=True)
     corpus = _prepare(config, source, records, sidecars)
-    split_manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "split_seed": config.dataset.split_seed,
-        "episode_indices": corpus.splits,
-        "row_indices": {
-            name: [
-                row
-                for episode in episodes
-                for row in corpus.row_indices[episode]
-            ]
-            for name, episodes in corpus.splits.items()
-        },
-    }
-    _write_json_atomic(output_dir / "split_manifest.json", split_manifest)
+    write_split_manifest(config, corpus)
     runs: list[dict[str, Any]] = []
     for fraction in config.training.fractions:
         for seed in config.training.seeds:
@@ -687,6 +796,7 @@ def compare_with_source(
                     seed=seed,
                     transfer=report,
                     run_dir=run_dir,
+                    oracle_report_sha256=oracle_report_sha256,
                 )
             if results["random_init"]["test_row_indices"] != results[
                 "reflectvlm_init"
@@ -698,13 +808,17 @@ def compare_with_source(
                 for name in (
                     "goal_exact_accuracy",
                     "relation_mask_f1",
-                    "semantic_relation_mae",
+                    "gripper_target_geometry_mae",
+                    "target_receptacle_geometry_mae",
                 )
             }
             runs.append(results)
     comparison = {
         "passed": True,
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": GRAPH_SCHEMA_VERSION,
+        "token_schema_version": TOKEN_SCHEMA_VERSION,
+        "token_dim": TOKEN_DIM,
+        "oracle_report_sha256": oracle_report_sha256,
         "conditions": ["random_init", "reflectvlm_init"],
         "fractions": list(config.training.fractions),
         "seeds": list(config.training.seeds),
@@ -736,6 +850,10 @@ def evaluate_with_source(
         raise ValueError("evaluation partition must be validation or test")
     device = resolve_device(config.training.device)
     model, vocabulary, payload = load_finetune_checkpoint(checkpoint, device=device)
+    if config.training.required_oracle_report is not None:
+        oracle_report_sha256 = _require_oracle_report(config)
+        if payload.get("oracle_report_sha256") != oracle_report_sha256:
+            raise ValueError("checkpoint oracle report does not match config")
     if payload.get("repo_id") != config.dataset.repo_id:
         raise ValueError("checkpoint dataset repo_id does not match config")
     if int(payload.get("split_seed", -1)) != config.dataset.split_seed:
@@ -755,7 +873,7 @@ def evaluate_with_source(
         corpus=corpus,
         selected_train_episodes=tuple(int(value) for value in selected_raw),
         vocabulary=vocabulary,
-        normalization=GraphNormalization(**normalization_raw),
+        normalization=GraphV2Normalization(**normalization_raw),
     )
     dataset, loader = _loader(
         config,
@@ -771,12 +889,11 @@ def evaluate_with_source(
         model,
         loader,
         device=device,
-        normalization=training.normalization,
     )
     evaluation.update(
         {
             "passed": True,
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": GRAPH_SCHEMA_VERSION,
             "initialization": payload.get("initialization"),
             "fraction": payload.get("fraction"),
             "seed": payload.get("seed"),
