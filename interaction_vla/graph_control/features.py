@@ -208,8 +208,8 @@ class FrozenGraphRuntime:
             agent,
             wrist,
             torch.from_numpy(current_state[None]).to(self.device),
-            torch.from_numpy(tokens).to(self.device),
-            torch.from_numpy(mask).to(self.device),
+            torch.from_numpy(tokens[None]).to(self.device),
+            torch.from_numpy(mask[None]).to(self.device),
             torch.from_numpy(self.previous_graph[None]).to(self.device),
         )
         token = pack_predicted(outputs, sample_index=0)

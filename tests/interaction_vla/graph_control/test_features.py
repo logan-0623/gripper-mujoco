@@ -162,9 +162,11 @@ def test_normalization_payload_is_validated_and_copied() -> None:
 class _RecordingModel:
     def __init__(self) -> None:
         self.previous: list[np.ndarray] = []
+        self.language_shapes: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
 
     def __call__(self, agent, wrist, state, tokens, mask, previous):
         self.previous.append(previous.detach().cpu().numpy().copy())
+        self.language_shapes.append((tuple(tokens.shape), tuple(mask.shape)))
         return _outputs()
 
 
@@ -197,6 +199,7 @@ def test_frozen_runtime_recurrence_uses_previous_prediction_and_reset() -> None:
     assert np.count_nonzero(runtime.model.previous[0]) == 0
     np.testing.assert_array_equal(runtime.model.previous[1][0], first)
     assert np.count_nonzero(runtime.model.previous[2]) == 0
+    assert runtime.model.language_shapes == [((1, 4), (1, 4))] * 3
 
 
 def test_pack_predicted_rejects_missing_nonfinite_and_unbounded_outputs() -> None:
