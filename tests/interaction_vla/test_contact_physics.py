@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import mujoco
 import numpy as np
+import pytest
 
 from interaction_vla.contact_physics import (
     ContactDiagnostics,
     ContactParser,
+    NonFiniteContactForceError,
     StableGraspTracker,
+    contact_force_components,
 )
 from interaction_vla.franka import (
     ARM_JOINT_NAMES,
@@ -41,6 +44,18 @@ def test_interaction_signal_rejects_negative_or_non_finite_force() -> None:
             assert "force" in str(error)
         else:
             raise AssertionError("invalid force was accepted")
+
+
+@pytest.mark.parametrize(
+    "force",
+    (
+        np.asarray((np.nan, 0.0, 0.0, 0.0, 0.0, 0.0)),
+        np.asarray((1.0, np.inf, 0.0, 0.0, 0.0, 0.0)),
+    ),
+)
+def test_contact_force_components_reject_non_finite_mujoco_output(force) -> None:
+    with pytest.raises(NonFiniteContactForceError, match="non-finite"):
+        contact_force_components(force)
 
 
 def test_stable_grasp_requires_bilateral_lift_for_ten_physics_frames() -> None:

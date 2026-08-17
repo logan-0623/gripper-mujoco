@@ -10,6 +10,21 @@ from .franka import OBJECT_NAMES
 from .graph.schema import InteractionSignal
 
 
+class NonFiniteContactForceError(FloatingPointError):
+    """MuJoCo returned a contact force that cannot label a valid graph."""
+
+
+def contact_force_components(force: np.ndarray) -> tuple[float, float]:
+    values = np.asarray(force, dtype=np.float64)
+    if values.shape != (6,) or not np.isfinite(values).all():
+        raise NonFiniteContactForceError("MuJoCo contact force is non-finite")
+    normal = abs(float(values[0]))
+    tangential = float(np.linalg.norm(values[1:3]))
+    if not np.isfinite(normal) or not np.isfinite(tangential):
+        raise NonFiniteContactForceError("MuJoCo contact force is non-finite")
+    return normal, tangential
+
+
 @dataclass(frozen=True)
 class ContactDiagnostics:
     left_objects: frozenset[str]
@@ -259,8 +274,7 @@ class ContactParser:
                 continue
             force = np.zeros(6, dtype=np.float64)
             mujoco.mj_contactForce(self.model, data, contact_id, force)
-            normal = abs(float(force[0]))
-            tangential = float(np.linalg.norm(force[1:3]))
+            normal, tangential = contact_force_components(force)
 
             finger: str | None = None
             object_name: str | None = None
@@ -356,5 +370,11 @@ class ContactParser:
         tangential: float,
     ) -> None:
         values = aggregates.setdefault(frozenset((first, second)), [0.0, 0.0])
-        values[0] += normal
-        values[1] += tangential
+        updated = np.asarray(values, dtype=np.float64) + np.asarray(
+            (normal, tangential), dtype=np.float64
+        )
+        if not np.isfinite(updated).all():
+            raise NonFiniteContactForceError(
+                "aggregated contact force is non-finite"
+            )
+        values[0], values[1] = float(updated[0]), float(updated[1])
