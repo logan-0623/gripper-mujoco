@@ -126,6 +126,12 @@ LeRobotDataset 保持原路径 `outputs/lerobot/franka_lerobot_act_pilot/`。CUD
 `physics_pilot_macos.yaml` 的文件名是历史遗留；其 MuJoCo 物理参数不依赖 macOS，CUDA
 bridge 复用它是为了保持 expert gate 和数据合同一致。
 
+采集期间 FFmpeg 的 `moving the moov atom` 是正常的 MP4 finalize 信息。MuJoCo 如果产生
+非有限 contact force，environment 会将该 rollout 分类为
+`physics_failure=non_finite_contact_force`；collector 清空当前未提交帧，并继续使用下一个
+确定性 seed。旧版本留下的 `INCOMPLETE` dataset 不能安全续采：先将整个目录移动到备份
+路径，再从新的 dataset root 重新采集。
+
 先在 CUDA 上重新建立 ACT recovery gate：
 
 ```bash
