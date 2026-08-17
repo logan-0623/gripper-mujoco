@@ -13,6 +13,7 @@ from .contact_physics import (
     ContactDiagnostics,
     ContactParser,
     GraspState,
+    NonFiniteContactForceError,
     StableGraspTracker,
 )
 from .env import EnvStep, LayoutMode, TerminationReason
@@ -238,7 +239,15 @@ class FrankaContactEnv:
         )
         for _ in range(self.physics.substeps):
             mujoco.mj_step(self.model, self.data)
-            self.contact_diagnostics = self.contact_parser.parse(self.data)
+            try:
+                self.contact_diagnostics = self.contact_parser.parse(self.data)
+            except NonFiniteContactForceError:
+                self.step_count += 1
+                return self._failure_transition(
+                    "non_finite_contact_force",
+                    diagnostics=diagnostics,
+                    refresh_snapshot=False,
+                )
             self.grasp_state = self.grasp_tracker.update(
                 self.contact_diagnostics,
                 object_bottom_heights=self._object_bottom_heights(),
@@ -301,7 +310,14 @@ class FrankaContactEnv:
                     controller_diagnostics=diagnostics,
                     physics_failure=failure,
                 )
-            self.contact_diagnostics = self.contact_parser.parse(self.data)
+            try:
+                self.contact_diagnostics = self.contact_parser.parse(self.data)
+            except NonFiniteContactForceError:
+                return PhysicsInterventionResult(
+                    snapshot=self._last_snapshot,
+                    controller_diagnostics=diagnostics,
+                    physics_failure="non_finite_contact_force",
+                )
             self.grasp_state = self.grasp_tracker.update(
                 self.contact_diagnostics,
                 object_bottom_heights=self._object_bottom_heights(),
@@ -647,11 +663,12 @@ class FrankaContactEnv:
         failure: str,
         *,
         diagnostics: ControllerDiagnostics | None = None,
+        refresh_snapshot: bool = True,
     ) -> EnvStep:
         finite_state = bool(
             np.isfinite(self.data.qpos).all() and np.isfinite(self.data.qvel).all()
         )
-        if finite_state:
+        if finite_state and refresh_snapshot:
             self._last_snapshot = self._build_snapshot()
         info = self._info(diagnostics)
         info["physics_failure"] = failure

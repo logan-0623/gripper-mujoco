@@ -148,6 +148,25 @@ def test_rejected_attempt_clears_buffer_without_episode_commit() -> None:
     assert result.accepted is False
 
 
+def test_physics_failure_attempt_is_rejected_and_cleared() -> None:
+    events: list[str] = []
+    writer = FakePolicyWriter(events)
+    result = collect_attempt(
+        env=FakeEnv(events, terminal_reason="physics_failure"),
+        expert=FakeExpert(events),
+        capture=FakeCapture(events),
+        policy_writer=writer,
+        teacher=FakeTeacher(events),
+        seed=11,
+        object_count=2,
+        task="Pick up the green target object and place it inside the receptacle.",
+    )
+
+    assert result.accepted is False
+    assert result.reason == "physics_failure"
+    assert writer.clear_count == 1
+
+
 def test_seed_schedule_is_deterministic_and_collision_free() -> None:
     values = [collection_seed(42, attempt) for attempt in range(50)]
     assert values == [collection_seed(42, attempt) for attempt in range(50)]

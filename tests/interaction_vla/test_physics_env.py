@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from interaction_vla.config import PhysicsConfig, RandomizationConfig
+from interaction_vla.contact_physics import NonFiniteContactForceError
 from interaction_vla.env import LayoutMode, TerminationReason
 from interaction_vla.physics_env import FrankaContactEnv
 
@@ -178,6 +179,41 @@ def test_non_finite_state_terminates_as_physics_failure() -> None:
     assert result.done
     assert result.reason is TerminationReason.PHYSICS_FAILURE
     assert result.info["physics_failure"] == "non_finite_state"
+
+
+def test_non_finite_contact_force_terminates_as_physics_failure(monkeypatch) -> None:
+    env = make_env()
+    before = env.reset(seed=11, object_count=2)
+
+    def invalid_force(*args, **kwargs):
+        raise NonFiniteContactForceError("MuJoCo contact force is non-finite")
+
+    monkeypatch.setattr(env.contact_parser, "parse", invalid_force)
+    result = env.step(
+        np.asarray((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0))
+    )
+
+    assert result.done
+    assert result.reason is TerminationReason.PHYSICS_FAILURE
+    assert result.info["physics_failure"] == "non_finite_contact_force"
+    assert result.snapshot is before
+
+
+def test_non_finite_contact_force_stops_intervention(monkeypatch) -> None:
+    env = make_env()
+    before = env.reset(seed=11, object_count=2)
+
+    def invalid_force(*args, **kwargs):
+        raise NonFiniteContactForceError("MuJoCo contact force is non-finite")
+
+    monkeypatch.setattr(env.contact_parser, "parse", invalid_force)
+    result = env.advance_intervention(
+        np.asarray((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)),
+        substeps=1,
+    )
+
+    assert result.snapshot is before
+    assert result.physics_failure == "non_finite_contact_force"
 
 
 def test_severe_penetration_is_a_physics_failure_with_current_failure_state() -> None:
