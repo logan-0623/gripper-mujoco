@@ -28,3 +28,6 @@ diagnostics:
   bootstrap_seed: 2057736129
   max_lag: 3
   active_epsilon: 1.0e-6
+  sensitivity_rows_per_episode: 8
+  sensitivity_batch_size: 16
+  sensitivity_scale: 0.25

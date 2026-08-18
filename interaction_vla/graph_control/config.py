@@ -83,6 +83,9 @@ class DiagnosticsConfig:
     bootstrap_seed: int = 2057736129
     max_lag: int = 3
     active_epsilon: float = 1.0e-6
+    sensitivity_rows_per_episode: int = 4
+    sensitivity_batch_size: int = 4
+    sensitivity_scale: float = 0.25
 
     def __post_init__(self) -> None:
         if self.bootstrap_samples < 1:
@@ -94,6 +97,19 @@ class DiagnosticsConfig:
         if not np.isfinite(self.active_epsilon) or self.active_epsilon <= 0.0:
             raise ValueError(
                 "diagnostics.active_epsilon must be finite and positive"
+            )
+        if self.sensitivity_rows_per_episode < 1:
+            raise ValueError(
+                "diagnostics.sensitivity_rows_per_episode must be positive"
+            )
+        if self.sensitivity_batch_size < 1:
+            raise ValueError("diagnostics.sensitivity_batch_size must be positive")
+        if (
+            not np.isfinite(self.sensitivity_scale)
+            or not 0.0 < self.sensitivity_scale <= 1.0
+        ):
+            raise ValueError(
+                "diagnostics.sensitivity_scale must lie within (0, 1]"
             )
 
 
@@ -231,6 +247,9 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
                 "bootstrap_seed",
                 "max_lag",
                 "active_epsilon",
+                "sensitivity_rows_per_episode",
+                "sensitivity_batch_size",
+                "sensitivity_scale",
             },
             "diagnostics",
         )
@@ -282,6 +301,15 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
                 max_lag=int(diagnostics_raw.get("max_lag", 3)),
                 active_epsilon=float(
                     diagnostics_raw.get("active_epsilon", 1.0e-6)
+                ),
+                sensitivity_rows_per_episode=int(
+                    diagnostics_raw.get("sensitivity_rows_per_episode", 4)
+                ),
+                sensitivity_batch_size=int(
+                    diagnostics_raw.get("sensitivity_batch_size", 4)
+                ),
+                sensitivity_scale=float(
+                    diagnostics_raw.get("sensitivity_scale", 0.25)
                 ),
             )
         ),

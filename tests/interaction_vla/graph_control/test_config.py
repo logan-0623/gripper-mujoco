@@ -42,6 +42,9 @@ diagnostics:
   bootstrap_seed: 2057736129
   max_lag: 3
   active_epsilon: 1.0e-6
+  sensitivity_rows_per_episode: 4
+  sensitivity_batch_size: 4
+  sensitivity_scale: 0.25
 """.lstrip(),
         encoding="utf-8",
     )
@@ -72,6 +75,9 @@ def test_oracle_config_locks_two_conditions_and_recovery_prerequisite(
     assert config.diagnostics.bootstrap_seed == 2057736129
     assert config.diagnostics.max_lag == 3
     assert config.diagnostics.active_epsilon == 1.0e-6
+    assert config.diagnostics.sensitivity_rows_per_episode == 4
+    assert config.diagnostics.sensitivity_batch_size == 4
+    assert config.diagnostics.sensitivity_scale == 0.25
 
 
 def test_full_matrix_requires_graph_runs_root(tmp_path: Path) -> None:
@@ -146,6 +152,17 @@ def test_config_rejects_invalid_oracle_values(
         ("bootstrap_seed: 2057736129", "bootstrap_seed: -1", "bootstrap_seed"),
         ("max_lag: 3", "max_lag: -1", "max_lag"),
         ("active_epsilon: 1.0e-6", "active_epsilon: 0", "active_epsilon"),
+        (
+            "sensitivity_rows_per_episode: 4",
+            "sensitivity_rows_per_episode: 0",
+            "sensitivity_rows_per_episode",
+        ),
+        (
+            "sensitivity_batch_size: 4",
+            "sensitivity_batch_size: 0",
+            "sensitivity_batch_size",
+        ),
+        ("sensitivity_scale: 0.25", "sensitivity_scale: 2", "sensitivity_scale"),
     ],
 )
 def test_config_rejects_invalid_diagnostics_values(
