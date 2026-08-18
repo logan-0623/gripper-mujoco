@@ -5,6 +5,7 @@ import hashlib
 from typing import Final
 
 import numpy as np
+import torch
 
 from .schema import TOKEN_DIM, TOKEN_SLICES
 from .diagnostics import EpisodeLayout, cluster_bootstrap_mean
@@ -428,3 +429,63 @@ def build_sensitivity_report(
         "by_seed_condition": by_seed_condition,
         "across_policy_seeds": across,
     }
+
+
+def predict_first_actions(
+    *,
+    policy: object,
+    preprocessor: object,
+    postprocessor: object,
+    raw_batches: object,
+    tokens: object,
+) -> np.ndarray:
+    values = _tokens(tokens, "sensitivity tokens").astype(np.float32)
+    if not isinstance(raw_batches, (list, tuple)) or not raw_batches:
+        raise ValueError("raw_batches must be a non-empty sequence")
+    if not callable(preprocessor) or not callable(postprocessor):
+        raise ValueError("policy processors must be callable")
+    if not hasattr(policy, "predict_action_chunk"):
+        raise ValueError("policy must expose predict_action_chunk")
+    if hasattr(policy, "eval"):
+        policy.eval()
+
+    results: list[np.ndarray] = []
+    cursor = 0
+    for raw in raw_batches:
+        if not isinstance(raw, Mapping):
+            raise ValueError("each raw batch must be a mapping")
+        state = raw.get("observation.state")
+        if not isinstance(state, torch.Tensor) or state.ndim < 1 or len(state) < 1:
+            raise ValueError("raw batch observation.state must have a batch dimension")
+        batch_rows = len(state)
+        stop = cursor + batch_rows
+        if stop > len(values):
+            raise ValueError("sensitivity tokens do not match raw batch rows")
+        batch = dict(raw)
+        batch["observation.environment_state"] = torch.from_numpy(
+            values[cursor:stop].copy()
+        )
+        if hasattr(policy, "reset"):
+            policy.reset()
+        processed = preprocessor(batch)
+        with torch.no_grad():
+            normalized = policy.predict_action_chunk(processed)
+            actions = postprocessor(normalized)
+        if (
+            not isinstance(actions, torch.Tensor)
+            or actions.ndim != 3
+            or actions.shape[0] != batch_rows
+            or actions.shape[1] < 1
+            or actions.shape[2] != 7
+        ):
+            raise ValueError(
+                "Graph-conditioned ACT action chunk must have shape [batch, chunk, 7]"
+            )
+        first = actions[:, 0, :].detach().cpu().numpy().astype(np.float64)
+        if not np.isfinite(first).all():
+            raise ValueError("Graph-conditioned ACT first actions must be finite")
+        results.append(first)
+        cursor = stop
+    if cursor != len(values):
+        raise ValueError("sensitivity tokens do not match raw batch rows")
+    return np.concatenate(results, axis=0)

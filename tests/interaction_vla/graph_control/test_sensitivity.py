@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 from interaction_vla.graph_control.schema import TOKEN_DIM, TOKEN_SLICES
 from interaction_vla.graph_control.sensitivity import (
@@ -10,6 +11,7 @@ from interaction_vla.graph_control.sensitivity import (
     finite_difference_interventions,
     make_sensitivity_records,
     mask_token_group,
+    predict_first_actions,
     select_episode_balanced_positions,
     standardized_perturbation_magnitude,
     training_feature_statistics,
@@ -239,3 +241,67 @@ def test_sensitivity_report_clusters_frames_by_episode_and_policy_seed() -> None
         "policy_seed_std": pytest.approx(np.sqrt(0.5)),
         "policy_seeds": 2,
     }
+
+
+class _FakePolicy:
+    def __init__(self) -> None:
+        self.reset_count = 0
+
+    def reset(self) -> None:
+        self.reset_count += 1
+
+    def eval(self) -> None:
+        return None
+
+    def predict_action_chunk(self, batch):
+        token = batch["observation.environment_state"]
+        result = torch.zeros((len(token), 8, 7), dtype=torch.float32)
+        result[:, 0, :] = token[:, :7]
+        return result
+
+
+def test_first_action_inference_resets_policy_for_each_independent_batch() -> None:
+    policy = _FakePolicy()
+    raw_batches = [
+        {"observation.state": torch.zeros((2, 10))},
+        {"observation.state": torch.zeros((1, 10))},
+    ]
+    tokens = np.zeros((3, TOKEN_DIM), dtype=np.float32)
+    tokens[:, :7] = np.arange(21, dtype=np.float32).reshape(3, 7)
+
+    actions = predict_first_actions(
+        policy=policy,
+        preprocessor=lambda batch: batch,
+        postprocessor=lambda action: action,
+        raw_batches=raw_batches,
+        tokens=tokens,
+    )
+
+    assert policy.reset_count == 2
+    assert actions.shape == (3, 7)
+    np.testing.assert_array_equal(actions, tokens[:, :7])
+
+
+def test_first_action_inference_rejects_batch_or_action_shape_mismatch() -> None:
+    policy = _FakePolicy()
+    with pytest.raises(ValueError, match="batch rows"):
+        predict_first_actions(
+            policy=policy,
+            preprocessor=lambda batch: batch,
+            postprocessor=lambda action: action,
+            raw_batches=[{"observation.state": torch.zeros((2, 10))}],
+            tokens=np.zeros((1, TOKEN_DIM), dtype=np.float32),
+        )
+
+    class WrongPolicy(_FakePolicy):
+        def predict_action_chunk(self, batch):
+            return torch.zeros((len(batch["observation.environment_state"]), 7))
+
+    with pytest.raises(ValueError, match="action chunk"):
+        predict_first_actions(
+            policy=WrongPolicy(),
+            preprocessor=lambda batch: batch,
+            postprocessor=lambda action: action,
+            raw_batches=[{"observation.state": torch.zeros((1, 10))}],
+            tokens=np.zeros((1, TOKEN_DIM), dtype=np.float32),
+        )
