@@ -4,7 +4,10 @@ import numpy as np
 import pytest
 
 from interaction_vla.graph_control.diagnostics import (
+    categorical_sequence_metrics,
+    covariance_effective_rank,
     feature_distribution,
+    temporal_feature_metrics,
     validate_episode_layout,
     validate_tokens,
 )
@@ -101,3 +104,91 @@ def test_feature_distribution_rejects_invalid_inputs(epsilon: float) -> None:
         feature_distribution(np.array([]), active_epsilon=1.0e-6)
     with pytest.raises(ValueError, match="finite"):
         feature_distribution(np.array([np.nan]), active_epsilon=1.0e-6)
+
+
+def test_temporal_metrics_do_not_cross_episode_boundaries() -> None:
+    values = np.array([0.0, 1.0, 100.0, 102.0, 105.0])
+
+    metrics = temporal_feature_metrics(values, _layout())
+
+    assert metrics["first_difference_count"] == 3
+    assert metrics["first_difference_mae"] == 2.0
+    assert metrics["first_difference_rms"] == pytest.approx(np.sqrt(14.0 / 3.0))
+    assert metrics["second_difference_count"] == 1
+    assert metrics["second_difference_mae"] == 1.0
+
+
+def test_temporal_metrics_report_missing_second_difference() -> None:
+    layout = validate_episode_layout(
+        row_indices=np.array([0, 1]),
+        episode_indices=np.array([0, 0]),
+        frame_indices=np.array([0, 1]),
+    )
+
+    metrics = temporal_feature_metrics(np.array([1.0, 2.0]), layout)
+
+    assert metrics["second_difference_count"] == 0
+    assert metrics["second_difference_mae"] is None
+
+
+def test_categorical_metrics_treat_zero_vectors_as_missing_and_count_false_flips() -> None:
+    predicted = np.array(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [0.0, 1.0],
+        ]
+    )
+    teacher = np.array(
+        [
+            [1.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [0.0, 1.0],
+        ]
+    )
+
+    metrics = categorical_sequence_metrics(
+        predicted, _layout(), teacher_probabilities=teacher
+    )
+
+    assert metrics["valid_frames"] == 4
+    assert metrics["missing_frames"] == 1
+    assert metrics["mean_entropy"] == 0.0
+    assert metrics["flip_numerator"] == 1
+    assert metrics["flip_denominator"] == 2
+    assert metrics["flip_rate"] == 0.5
+    assert metrics["mean_dwell_length"] == pytest.approx(4.0 / 3.0)
+    assert metrics["false_flip_numerator"] == 1
+    assert metrics["false_flip_denominator"] == 2
+    assert metrics["false_flip_rate"] == 0.5
+
+
+def test_categorical_metrics_validate_shapes_and_probability_mass() -> None:
+    with pytest.raises(ValueError, match="shape"):
+        categorical_sequence_metrics(np.ones((4, 2)), _layout())
+    invalid = np.ones((5, 2))
+    invalid[0, 0] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        categorical_sequence_metrics(invalid, _layout())
+    invalid = np.ones((5, 2))
+    invalid[0, 0] = -1.0
+    with pytest.raises(ValueError, match="non-negative"):
+        categorical_sequence_metrics(invalid, _layout())
+
+
+def test_covariance_effective_rank_handles_degenerate_and_balanced_groups() -> None:
+    assert covariance_effective_rank(np.ones((4, 2))) == 0.0
+    assert covariance_effective_rank(np.array([[0.0], [1.0], [2.0]])) == 1.0
+    balanced = np.array([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]])
+    assert covariance_effective_rank(balanced) == pytest.approx(2.0)
+
+
+def test_covariance_effective_rank_rejects_nonfinite_or_invalid_shapes() -> None:
+    with pytest.raises(ValueError, match="two-dimensional"):
+        covariance_effective_rank(np.ones(3))
+    with pytest.raises(ValueError, match="finite"):
+        covariance_effective_rank(np.array([[np.nan]]))
