@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import sys
 import types
 
+import numpy as np
 import pytest
 import torch
 
@@ -17,8 +19,10 @@ from interaction_vla.graph_control.pipeline import (
     _require_recovery_report,
     _train_seed_with_fallback,
     _validate_formal_epochs,
+    diagnose_from_config,
     evaluate_from_config,
 )
+from interaction_vla.graph_control.schema import ALL_CONDITIONS, TOKEN_DIM
 
 
 def test_accelerator_memory_cleanup_releases_cuda_cache(
@@ -239,3 +243,165 @@ def test_seed_oom_discards_partial_matrix_and_restarts_all_conditions(
     assert sorted(path.name for path in destination.iterdir()) == [
         "flat", "oracle_graph_v2"
     ]
+
+
+def _diagnostic_fixture(tmp_path: Path):
+    diagnostics = SimpleNamespace(
+        output_dir=tmp_path / "diagnostics",
+        bootstrap_samples=10,
+        bootstrap_seed=17,
+        max_lag=1,
+        active_epsilon=1.0e-6,
+    )
+    config = SimpleNamespace(
+        config_path=tmp_path / "config.yaml",
+        diagnostics=diagnostics,
+        conditions=ALL_CONDITIONS,
+        seeds=(0,),
+    )
+    split = SimpleNamespace(
+        rows={
+            "train": (10,),
+            "validation": (11,),
+            "test": (0, 1, 2, 3),
+        },
+        episodes={"train": (8,), "validation": (9,), "test": (0, 1)},
+        sha256="1" * 64,
+        path=tmp_path / "split.json",
+    )
+    source = SimpleNamespace(
+        hf_dataset={
+            "episode_index": np.array([0, 0, 1, 1]),
+            "frame_index": np.array([0, 1, 0, 1]),
+        }
+    )
+    teacher = np.linspace(0.1, 0.9, 4 * TOKEN_DIM).reshape(4, TOKEN_DIM)
+    provenance = SimpleNamespace(dataset_fingerprint="2" * 64)
+    caches = {
+        "flat": SimpleNamespace(
+            row_indices=np.arange(4),
+            tokens=np.zeros_like(teacher),
+            sha256="3" * 64,
+            provenance=provenance,
+        ),
+        "oracle_graph_v2": SimpleNamespace(
+            row_indices=np.arange(4),
+            tokens=teacher.copy(),
+            sha256="4" * 64,
+            provenance=provenance,
+        ),
+        "predicted_random_v2": SimpleNamespace(
+            row_indices=np.arange(4),
+            tokens=teacher * 0.9,
+            sha256="5" * 64,
+            provenance=provenance,
+        ),
+        "predicted_reflect_v2": SimpleNamespace(
+            row_indices=np.arange(4),
+            tokens=teacher * 1.1,
+            sha256="6" * 64,
+            provenance=provenance,
+        ),
+    }
+    context = (config, SimpleNamespace(), split, source, "7" * 64, "8" * 64)
+    return config, context, caches
+
+
+def _patch_diagnostic_context(monkeypatch, config, context, caches) -> None:
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.load_graph_control_config",
+        lambda path: config,
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline._context", lambda path: context
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline._load_cache_matrix",
+        lambda *args, **kwargs: caches,
+    )
+
+
+def test_diagnostics_requires_configured_output(tmp_path: Path, monkeypatch) -> None:
+    config = SimpleNamespace(diagnostics=None)
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.load_graph_control_config",
+        lambda path: config,
+    )
+
+    with pytest.raises(ValueError, match="diagnostics config"):
+        diagnose_from_config(tmp_path / "config.yaml", partition="test")
+
+
+def test_diagnostics_preflights_output_before_loading_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, _, _ = _diagnostic_fixture(tmp_path)
+    destination = config.diagnostics.output_dir / "test"
+    destination.mkdir(parents=True)
+    (destination / "report.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.load_graph_control_config",
+        lambda path: config,
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline._context",
+        lambda path: pytest.fail("context must not load for an existing diagnostic"),
+    )
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        diagnose_from_config(tmp_path / "config.yaml", partition="test")
+
+
+def test_diagnostics_rejects_cache_rows_before_computing_metrics(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, context, caches = _diagnostic_fixture(tmp_path)
+    caches["predicted_random_v2"].row_indices = np.array([0, 1, 3, 2])
+    _patch_diagnostic_context(monkeypatch, config, context, caches)
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.build_representation_diagnostics",
+        lambda **kwargs: pytest.fail("metrics must not run for misaligned rows"),
+    )
+
+    with pytest.raises(ValueError, match="cache rows"):
+        diagnose_from_config(tmp_path / "config.yaml", partition="test")
+
+
+def test_diagnostics_publication_is_atomic_on_report_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, context, caches = _diagnostic_fixture(tmp_path)
+    _patch_diagnostic_context(monkeypatch, config, context, caches)
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline._write_json_atomic",
+        lambda path, payload: (_ for _ in ()).throw(RuntimeError("report failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="report failed"):
+        diagnose_from_config(tmp_path / "config.yaml", partition="test")
+
+    assert not (config.diagnostics.output_dir / "test").exists()
+
+
+def test_diagnostics_selects_partition_rows_and_publishes_jsonl(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, context, caches = _diagnostic_fixture(tmp_path)
+    _patch_diagnostic_context(monkeypatch, config, context, caches)
+
+    result = diagnose_from_config(tmp_path / "config.yaml", partition="test")
+
+    assert result["passed"] is True
+    assert result["partition"] == "test"
+    assert result["rows"] == 4
+    assert result["episodes"] == 2
+    assert result["report_path"].is_file()
+    assert result["per_episode_path"].is_file()
+    report = json.loads(result["report_path"].read_text(encoding="utf-8"))
+    assert report["cache_sha256"]["seed_0/predicted_random_v2"] == "5" * 64
+    records = [
+        json.loads(line)
+        for line in result["per_episode_path"].read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(records) == 8
+    assert {record["episode_id"] for record in records} == {0, 1}

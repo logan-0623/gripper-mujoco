@@ -40,6 +40,11 @@ from .cache import (
 )
 from .config import GraphControlConfig, load_graph_control_config
 from .dataset import GraphDatasetMetadata
+from .diagnostics import (
+    DIAGNOSTICS_SCHEMA_VERSION,
+    build_representation_diagnostics,
+    validate_episode_layout,
+)
 from .features import FrozenGraphRuntime
 from .rollout import (
     FlatTokenProvider,
@@ -50,7 +55,12 @@ from .rollout import (
     paired_evaluation_cases,
     rollout_case,
 )
-from .schema import ALL_CONDITIONS, ORACLE_CONDITIONS, TOKEN_DIM
+from .schema import (
+    ALL_CONDITIONS,
+    ORACLE_CONDITIONS,
+    TOKEN_DIM,
+    TOKEN_SCHEMA_VERSION,
+)
 from .training import (
     ControlSplit,
     assert_checkpoint_split,
@@ -237,6 +247,69 @@ def _publish_evaluation(
     return final
 
 
+def _diagnostics_source_fingerprint() -> str:
+    digest = hashlib.sha256()
+    for source in (Path(__file__), Path(__file__).with_name("diagnostics.py")):
+        relative = source.relative_to(Path(__file__).resolve().parents[2])
+        content = source.read_bytes()
+        encoded = relative.as_posix().encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(hashlib.sha256(content).digest())
+    return digest.hexdigest()
+
+
+def _select_diagnostic_cache_rows(
+    cache: Any, partition_rows: tuple[int, ...]
+) -> np.ndarray:
+    rows = np.asarray(cache.row_indices)
+    tokens = np.asarray(cache.tokens)
+    if rows.ndim != 1 or tokens.shape != (len(rows), TOKEN_DIM):
+        raise ValueError("diagnostic cache arrays are incompatible")
+    positions_by_row = {int(row): index for index, row in enumerate(rows)}
+    if len(positions_by_row) != len(rows):
+        raise ValueError("diagnostic cache rows must be unique")
+    try:
+        positions = np.asarray(
+            [positions_by_row[row] for row in partition_rows], dtype=np.int64
+        )
+    except KeyError as error:
+        raise ValueError("diagnostic cache rows do not cover the partition") from error
+    if len(positions) > 1 and np.any(positions[1:] <= positions[:-1]):
+        raise ValueError("diagnostic cache rows differ from split order")
+    if not np.array_equal(rows[positions], np.asarray(partition_rows)):
+        raise ValueError("diagnostic cache rows differ from the requested partition")
+    selected = np.asarray(tokens[positions], dtype=np.float64)
+    if selected.shape != (len(partition_rows), TOKEN_DIM) or not np.isfinite(selected).all():
+        raise ValueError("selected diagnostic cache tokens are invalid")
+    return selected
+
+
+def _publish_diagnostics(
+    destination: Path,
+    *,
+    episode_records: list[dict[str, object]],
+    report: Mapping[str, object],
+) -> dict[str, object]:
+    report_path = destination / "report.json"
+    per_episode_path = destination / "per_episode.jsonl"
+    final = {
+        **report,
+        "report_path": report_path,
+        "per_episode_path": per_episode_path,
+    }
+    with _atomic_output_directory(destination) as staging:
+        records_path = staging / "per_episode.jsonl"
+        with records_path.open("w", encoding="utf-8") as handle:
+            for record in episode_records:
+                handle.write(json.dumps(_jsonable(record), sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        _write_json_atomic(staging / "report.json", final)
+    return final
+
+
 def _load_source(bridge: BridgeConfig):
     validate_dataset_root(
         bridge.dataset.root,
@@ -321,6 +394,108 @@ def _context(
         source,
         recovery_report_sha256,
         oracle_report_sha256,
+    )
+
+
+def diagnose_from_config(
+    path: str | Path, *, partition: str | None = None
+) -> dict[str, object]:
+    preliminary = load_graph_control_config(path)
+    diagnostics = preliminary.diagnostics
+    if diagnostics is None:
+        raise ValueError("graph control diagnostics config is required")
+    selected_partition = "test" if partition is None else str(partition)
+    if selected_partition not in {"train", "validation", "test"}:
+        raise ValueError("diagnostics partition must be train, validation, or test")
+    destination = diagnostics.output_dir / selected_partition
+    if destination.exists() and (
+        not destination.is_dir() or any(destination.iterdir())
+    ):
+        raise FileExistsError("Graph diagnostics output already exists")
+
+    (
+        config,
+        bridge,
+        split,
+        source,
+        recovery_report_sha256,
+        oracle_report_sha256,
+    ) = _context(path)
+    if config.diagnostics is None:
+        raise ValueError("graph control diagnostics config is required")
+    controls = config.diagnostics
+    partition_rows = tuple(int(row) for row in split.rows[selected_partition])
+    if not partition_rows:
+        raise ValueError("diagnostics partition rows must be non-empty")
+
+    episode_column = np.asarray(source.hf_dataset["episode_index"])
+    frame_column = np.asarray(source.hf_dataset["frame_index"])
+    if (
+        episode_column.ndim != 1
+        or frame_column.ndim != 1
+        or len(episode_column) != len(frame_column)
+        or max(partition_rows) >= len(episode_column)
+    ):
+        raise ValueError("diagnostic dataset episode/frame columns are incompatible")
+    layout = validate_episode_layout(
+        row_indices=np.asarray(partition_rows, dtype=np.int64),
+        episode_indices=episode_column[np.asarray(partition_rows, dtype=np.int64)],
+        frame_indices=frame_column[np.asarray(partition_rows, dtype=np.int64)],
+    )
+
+    condition_tokens: dict[tuple[int, str], np.ndarray] = {}
+    cache_sha256: dict[str, str] = {}
+    dataset_fingerprints: set[str] = set()
+    for seed in config.seeds:
+        caches = _load_cache_matrix(
+            config,
+            bridge,
+            split,
+            seed,
+            oracle_report_sha256=oracle_report_sha256,
+        )
+        if set(caches) != set(config.conditions):
+            raise ValueError("diagnostic cache condition matrix is incomplete")
+        for condition in config.conditions:
+            cache = caches[condition]
+            condition_tokens[(seed, condition)] = _select_diagnostic_cache_rows(
+                cache, partition_rows
+            )
+            cache_sha256[f"seed_{seed}/{condition}"] = str(cache.sha256)
+            dataset_fingerprints.add(str(cache.provenance.dataset_fingerprint))
+    if len(dataset_fingerprints) != 1:
+        raise ValueError("diagnostic caches bind different datasets")
+    teacher_tokens = condition_tokens[(config.seeds[0], "oracle_graph_v2")]
+    report, episode_records = build_representation_diagnostics(
+        condition_tokens=condition_tokens,
+        teacher_tokens=teacher_tokens,
+        layout=layout,
+        partition=selected_partition,
+        bootstrap_samples=controls.bootstrap_samples,
+        bootstrap_seed=controls.bootstrap_seed,
+        max_lag=controls.max_lag,
+        active_epsilon=controls.active_epsilon,
+    )
+    final_report = {
+        **report,
+        "config": config.config_path,
+        "split_manifest": split.path,
+        "split_manifest_sha256": split.sha256,
+        "dataset_fingerprint": next(iter(dataset_fingerprints)),
+        "token_schema_version": TOKEN_SCHEMA_VERSION,
+        "token_dim": TOKEN_DIM,
+        "diagnostics_schema_version": DIAGNOSTICS_SCHEMA_VERSION,
+        "diagnostics_source_fingerprint": _diagnostics_source_fingerprint(),
+        "cache_sha256": cache_sha256,
+        "recovery_report_sha256": recovery_report_sha256,
+        "oracle_report_sha256": oracle_report_sha256,
+    }
+    del source
+    gc.collect()
+    return _publish_diagnostics(
+        destination,
+        episode_records=episode_records,
+        report=final_report,
     )
 
 
