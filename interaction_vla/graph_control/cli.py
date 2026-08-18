@@ -7,6 +7,13 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
+from .ablation_pipeline import (
+    ablation_cache_from_config,
+    ablation_compare_from_config,
+    ablation_evaluate_from_config,
+    ablation_inspect_from_config,
+    ablation_smoke_from_config,
+)
 from .pipeline import (
     cache_from_config,
     compare_from_config,
@@ -42,6 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
         ("compare", "train the fixed-epoch paired ACT matrix"),
         ("evaluate", "run paired MuJoCo closed-loop evaluation"),
         ("trace", "run resumable step-level closed-loop tracing"),
+        ("ablation-inspect", "validate progressive ablation prerequisites"),
+        ("ablation-cache", "build provenance-bound progressive token caches"),
+        ("ablation-smoke", "run one paired ACT update for five ablations"),
+        ("ablation-compare", "train the paired progressive ablation matrix"),
+        ("ablation-evaluate", "evaluate the progressive ablation matrix"),
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--config", required=True, type=Path)
@@ -93,6 +105,15 @@ def _dispatch(args: argparse.Namespace) -> Any:
         return sensitivity_from_config(args.config, partition=args.partition)
     if args.command == "failure-analysis":
         return failure_analysis_from_config(args.config, traces=args.traces)
+    ablation_functions = {
+        "ablation-inspect": ablation_inspect_from_config,
+        "ablation-cache": ablation_cache_from_config,
+        "ablation-smoke": ablation_smoke_from_config,
+        "ablation-compare": ablation_compare_from_config,
+        "ablation-evaluate": ablation_evaluate_from_config,
+    }
+    if args.command in ablation_functions:
+        return ablation_functions[args.command](args.config)
     functions = {
         "inspect": inspect_from_config,
         "cache": cache_from_config,

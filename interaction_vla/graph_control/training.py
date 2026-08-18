@@ -44,7 +44,7 @@ from interaction_vla.lerobot_bridge.rollout import load_act_runtime
 
 from .cache import TokenCache
 from .dataset import GraphConditionedDataset
-from .schema import ALL_CONDITIONS, ORACLE_CONDITIONS
+from .schema import ABLATION_CONDITIONS, ALL_CONDITIONS, ORACLE_CONDITIONS
 
 
 ACT_GRAPH_SCHEMA_VERSION = "graph_conditioned_act_v2"
@@ -575,8 +575,11 @@ def _train_condition(
 
 def _validated_conditions(conditions: tuple[str, ...]) -> tuple[str, ...]:
     values = tuple(conditions)
-    if values not in {ORACLE_CONDITIONS, ALL_CONDITIONS}:
-        raise ValueError("conditions must be the oracle pair or full Graph v2 matrix")
+    if values not in {ORACLE_CONDITIONS, ALL_CONDITIONS, ABLATION_CONDITIONS}:
+        raise ValueError(
+            "conditions must be the oracle pair, full Graph v2 matrix, or "
+            "progressive ablation matrix"
+        )
     return values
 
 
@@ -632,7 +635,7 @@ def train_paired_seed(
     active = _validated_conditions(conditions)
     if active == ORACLE_CONDITIONS and oracle_report_sha256 is not None:
         raise ValueError("oracle ACT matrix must not bind an oracle report")
-    if active == ALL_CONDITIONS and oracle_report_sha256 is None:
+    if active in {ALL_CONDITIONS, ABLATION_CONDITIONS} and oracle_report_sha256 is None:
         raise ValueError("predicted ACT matrix requires an oracle report SHA-256")
     if set(caches) != set(active):
         raise ValueError("paired training requires the exact cache condition matrix")
@@ -665,6 +668,8 @@ def train_paired_seed(
             cache.provenance.graph_seed != seed
         ):
             raise ValueError(f"cache Graph seed mismatch: {condition}")
+        if active == ABLATION_CONDITIONS and cache.provenance.graph_seed != seed:
+            raise ValueError(f"ablation cache Graph seed mismatch: {condition}")
     if len(dataset_fingerprints) != 1 or len(split_hashes) != 1:
         raise ValueError("paired ACT caches disagree on dataset or split provenance")
     if oracle_hashes != {oracle_report_sha256}:

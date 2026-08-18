@@ -13,6 +13,7 @@ pytest.importorskip("lerobot")
 from interaction_vla.graph_control.cache import CacheProvenance, write_token_cache
 from interaction_vla.graph_control.dataset import GraphConditionedDataset
 from interaction_vla.graph_control.schema import (
+    ABLATION_CONDITIONS,
     ORACLE_CONDITIONS,
     TOKEN_DIM,
     TOKEN_FEATURE_NAMES,
@@ -374,3 +375,19 @@ def test_pairing_audit_rejects_different_initialization_or_rows() -> None:
     bad["oracle_graph_v2"]["epoch_order_hashes"] = ["a" * 63 + "b"]
     with pytest.raises(ValueError, match="epoch_order_hashes"):
         assert_paired_summaries(bad, conditions=ORACLE_CONDITIONS)
+
+
+def test_pairing_audit_accepts_the_exact_progressive_ablation_matrix() -> None:
+    summaries = {
+        condition: {
+            "initial_state_hash": "same",
+            "parameter_count": 123,
+            "source_row_indices": [1, 2],
+            "epoch_order_hashes": ["a" * 64],
+            "epochs": 10,
+            "extension_decisions": [],
+        }
+        for condition in ABLATION_CONDITIONS
+    }
+
+    assert_paired_summaries(summaries, conditions=ABLATION_CONDITIONS)

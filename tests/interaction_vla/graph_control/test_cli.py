@@ -21,6 +21,11 @@ def test_cli_exposes_complete_graph_control_workflow() -> None:
         "diagnose",
         "sensitivity",
         "trace",
+        "ablation-inspect",
+        "ablation-cache",
+        "ablation-smoke",
+        "ablation-compare",
+        "ablation-evaluate",
     ):
         parsed = parser.parse_args([command, "--config", "config.yaml"])
         assert parsed.command == command
@@ -210,6 +215,34 @@ def test_cli_rejects_invalid_diagnostics_partition_as_json(capsys) -> None:
 
     assert raised.value.code == 2
     assert json.loads(capsys.readouterr().out)["error"] == "CLIUsageError"
+
+
+@pytest.mark.parametrize(
+    ("command", "target"),
+    [
+        ("ablation-inspect", "ablation_inspect_from_config"),
+        ("ablation-cache", "ablation_cache_from_config"),
+        ("ablation-smoke", "ablation_smoke_from_config"),
+        ("ablation-compare", "ablation_compare_from_config"),
+        ("ablation-evaluate", "ablation_evaluate_from_config"),
+    ],
+)
+def test_cli_dispatches_progressive_ablation_commands(
+    monkeypatch, capsys, command: str, target: str
+) -> None:
+    received = []
+    monkeypatch.setattr(
+        f"interaction_vla.graph_control.cli.{target}",
+        lambda config: received.append(config) or {"passed": True, "command": command},
+    )
+
+    main([command, "--config", "ablation.yaml"])
+
+    assert received == [Path("ablation.yaml")]
+    assert json.loads(capsys.readouterr().out) == {
+        "passed": True,
+        "command": command,
+    }
 
 
 def test_repository_configs_lock_smoke_and_formal_matrices() -> None:

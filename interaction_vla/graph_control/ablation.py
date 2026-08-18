@@ -8,6 +8,7 @@ from interaction_vla.graph_control.schema import (
     ABLATION_CONDITIONS,
     TOKEN_DIM,
     TOKEN_SLICES,
+    validate_token,
 )
 
 
@@ -114,3 +115,85 @@ def resample_sequence_nearest(tokens: object, *, destination_length: int) -> np.
         np.linspace(0, source.shape[0] - 1, int(destination_length))
     ).astype(np.int64)
     return source[indices].copy()
+
+
+class MaskedPredictedTokenProvider:
+    """Apply the exact training-time ablation mask to a live Graph estimate."""
+
+    def __init__(self, provider: object, *, condition: str) -> None:
+        if condition not in {"entity_geometry", "interaction_state", "full_graph"}:
+            raise ValueError("masked provider condition is incompatible")
+        self.provider = provider
+        self.condition = condition
+
+    def reset(self) -> None:
+        self.provider.reset()  # type: ignore[attr-defined]
+
+    def bind_model(self, model: object) -> None:
+        if hasattr(self.provider, "bind_model"):
+            self.provider.bind_model(model)  # type: ignore[attr-defined]
+
+    def token(self, **kwargs: object) -> np.ndarray:
+        value = self.provider.token(**kwargs)  # type: ignore[attr-defined]
+        transformed = representation_transform(
+            validate_token(value)[None, :], self.condition
+        )
+        return transformed[0]
+
+
+class ScheduledShuffledTokenProvider:
+    """Serve a predeclared observation-independent test-reservoir sequence."""
+
+    def __init__(
+        self,
+        *,
+        sequences: Mapping[int, object],
+        case_schedule: Mapping[str, int],
+        max_steps: int,
+    ) -> None:
+        if max_steps < 1:
+            raise ValueError("shuffled provider max_steps must be positive")
+        self.sequences = {
+            int(episode): _validate_token_rows(tokens).copy()
+            for episode, tokens in sequences.items()
+        }
+        self.case_schedule = {
+            str(case): int(episode) for case, episode in case_schedule.items()
+        }
+        if not self.sequences or not self.case_schedule:
+            raise ValueError("shuffled provider requires sequences and a case schedule")
+        missing = set(self.case_schedule.values()) - set(self.sequences)
+        if missing:
+            raise ValueError("shuffled provider schedule references missing sequences")
+        self.max_steps = int(max_steps)
+        self._selected_episode: int | None = None
+        self._step = 0
+
+    def select_case(self, case_id: str) -> None:
+        try:
+            self._selected_episode = self.case_schedule[str(case_id)]
+        except KeyError as error:
+            raise ValueError(f"shuffled provider case is not scheduled: {case_id}") from error
+
+    def reset(self) -> None:
+        if self._selected_episode is None:
+            raise ValueError("shuffled provider case must be selected before reset")
+        self._step = 0
+
+    def token(self, **kwargs: object) -> np.ndarray:
+        del kwargs
+        if self._selected_episode is None:
+            raise ValueError("shuffled provider case must be selected before inference")
+        if self._step >= self.max_steps:
+            raise ValueError("shuffled provider exceeded configured max_steps")
+        sequence = self.sequences[self._selected_episode]
+        if self.max_steps == 1:
+            index = 0
+        else:
+            index = int(
+                np.rint(
+                    self._step * (sequence.shape[0] - 1) / (self.max_steps - 1)
+                )
+            )
+        self._step += 1
+        return validate_token(sequence[index])

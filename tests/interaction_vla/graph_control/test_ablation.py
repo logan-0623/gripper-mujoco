@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 
 from interaction_vla.graph_control.ablation import (
+    MaskedPredictedTokenProvider,
+    ScheduledShuffledTokenProvider,
     representation_transform,
     resample_sequence_nearest,
     stratified_episode_permutation,
@@ -80,3 +82,57 @@ def test_nearest_progress_resampling_preserves_values_without_interpolation() ->
     np.testing.assert_array_equal(contracted.ravel(), [0.0, 20.0])
     assert set(expanded.ravel()) <= set(source.ravel())
 
+
+class _PredictedProvider:
+    def __init__(self, token: np.ndarray) -> None:
+        self.value = token
+        self.reset_calls = 0
+
+    def reset(self) -> None:
+        self.reset_calls += 1
+
+    def token(self, **kwargs) -> np.ndarray:
+        return self.value.copy()
+
+
+def test_masked_predicted_provider_applies_the_training_transform() -> None:
+    source = np.ones(TOKEN_DIM, dtype=np.float32)
+    base = _PredictedProvider(source)
+    provider = MaskedPredictedTokenProvider(base, condition="entity_geometry")
+
+    provider.reset()
+    token = provider.token(snapshot=None, camera_frame=None, state=None, task="place")
+
+    assert base.reset_calls == 1
+    assert _active_groups(token[None, :]) == {
+        "entity_presence",
+        "entity_visibility",
+        "gripper_target_geometry",
+        "target_receptacle_geometry",
+        "distractor_geometry",
+    }
+
+
+def test_scheduled_shuffle_is_observation_independent_and_uses_nearest_progress() -> None:
+    sequence = np.zeros((3, TOKEN_DIM), dtype=np.float32)
+    sequence[:, 0] = [0.0, 10.0, 20.0]
+    provider = ScheduledShuffledTokenProvider(
+        sequences={7: sequence},
+        case_schedule={"case-a": 7},
+        max_steps=5,
+    )
+    provider.select_case("case-a")
+    provider.reset()
+
+    observed = [
+        provider.token(
+            snapshot=object(), camera_frame=object(), state=np.full(10, np.nan), task="x"
+        )[0]
+        for _ in range(5)
+    ]
+
+    assert observed == [0.0, 0.0, 10.0, 20.0, 20.0]
+    with np.testing.assert_raises_regex(ValueError, "selected before reset"):
+        ScheduledShuffledTokenProvider(
+            sequences={7: sequence}, case_schedule={"case-a": 7}, max_steps=5
+        ).reset()

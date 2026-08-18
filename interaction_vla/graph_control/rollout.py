@@ -29,7 +29,9 @@ from interaction_vla.physics_evaluate import InteractionRolloutTracker
 
 from .features import FrozenGraphRuntime, pack_oracle_current
 from .schema import (
+    ABLATION_CONDITIONS,
     ALL_CONDITIONS,
+    CONTROL_CONDITIONS,
     ORACLE_CONDITIONS,
     TOKEN_DIM,
     TOKEN_SLICES,
@@ -185,12 +187,22 @@ _FULL_CONTRASTS = (
     ("predicted_reflect_v2", "predicted_random_v2"),
     ("oracle_graph_v2", "predicted_reflect_v2"),
 )
+_ABLATION_CONTRASTS = (
+    ("entity_geometry", "flat"),
+    ("interaction_state", "entity_geometry"),
+    ("full_graph", "interaction_state"),
+    ("full_graph", "flat"),
+    ("full_graph", "shuffled_graph"),
+)
 
 
 def _active_conditions(conditions: Sequence[str]) -> tuple[str, ...]:
     values = tuple(str(value) for value in conditions)
-    if values not in {ORACLE_CONDITIONS, ALL_CONDITIONS}:
-        raise ValueError("conditions must be the oracle pair or full Graph v2 matrix")
+    if values not in {ORACLE_CONDITIONS, ALL_CONDITIONS, ABLATION_CONDITIONS}:
+        raise ValueError(
+            "conditions must be the oracle pair, full Graph v2 matrix, or "
+            "progressive ablation matrix"
+        )
     return values
 
 
@@ -208,11 +220,11 @@ def aggregate_rollouts(
     records: Sequence[Mapping[str, object]], *, conditions: Sequence[str]
 ) -> dict[str, object]:
     active = _active_conditions(conditions)
-    contrasts_to_compute = (
-        (("oracle_graph_v2", "flat"),)
-        if active == ORACLE_CONDITIONS
-        else _FULL_CONTRASTS
-    )
+    contrasts_to_compute = {
+        ORACLE_CONDITIONS: (("oracle_graph_v2", "flat"),),
+        ALL_CONDITIONS: _FULL_CONTRASTS,
+        ABLATION_CONDITIONS: _ABLATION_CONTRASTS,
+    }[active]
     values = [dict(record) for record in records]
     if not values:
         raise ValueError("rollout aggregation requires records")
@@ -605,7 +617,7 @@ def rollout_case(
     trace_callback: Callable[[dict[str, object]], None] | None = None,
     teacher_token_provider: Any | None = None,
 ) -> dict[str, object]:
-    if runtime.condition not in ALL_CONDITIONS:
+    if runtime.condition not in CONTROL_CONDITIONS:
         raise ValueError("Graph policy runtime condition is invalid")
     if max_steps < 1:
         raise ValueError("rollout max_steps must be positive")
@@ -625,6 +637,8 @@ def rollout_case(
         width=config.dataset.image_size[1],
         height=config.dataset.image_size[0],
     )
+    if hasattr(runtime.token_provider, "select_case"):
+        runtime.token_provider.select_case(case.case_id)
     runtime.reset()
     if hasattr(runtime.token_provider, "bind_model"):
         runtime.token_provider.bind_model(env.model)

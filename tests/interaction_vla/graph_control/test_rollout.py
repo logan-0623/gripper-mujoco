@@ -20,6 +20,7 @@ from interaction_vla.graph_control.rollout import (
 )
 from interaction_vla.lerobot_bridge.rollout import ActionChunkQueue
 from interaction_vla.graph_control.schema import (
+    ABLATION_CONDITIONS,
     ALL_CONDITIONS,
     ORACLE_CONDITIONS,
     TOKEN_DIM,
@@ -483,3 +484,30 @@ def test_full_matrix_gap_recovery_is_null_without_positive_oracle_gap() -> None:
     assert aggregate_rollouts(
         records, conditions=ALL_CONDITIONS
     )["oracle_gap_recovered"] is None
+
+
+def test_ablation_matrix_reports_prespecified_progressive_contrasts() -> None:
+    records = []
+    successes = {
+        "flat": False,
+        "entity_geometry": False,
+        "interaction_state": True,
+        "full_graph": True,
+        "shuffled_graph": False,
+    }
+    for seed in (0, 1, 2):
+        for condition in ABLATION_CONDITIONS:
+            records.append(_record(condition, seed, "a", successes[condition]))
+
+    report = aggregate_rollouts(records, conditions=ABLATION_CONDITIONS)
+
+    assert report["passed"] is True
+    assert set(report["contrasts"]) == {
+        "entity_geometry-flat",
+        "interaction_state-entity_geometry",
+        "full_graph-interaction_state",
+        "full_graph-flat",
+        "full_graph-shuffled_graph",
+    }
+    assert "oracle_gate" not in report
+    assert "oracle_gap_recovered" not in report
