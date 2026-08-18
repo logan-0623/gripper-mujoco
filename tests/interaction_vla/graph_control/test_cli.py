@@ -12,10 +12,15 @@ from interaction_vla.graph_control.schema import ALL_CONDITIONS, ORACLE_CONDITIO
 
 def test_cli_exposes_complete_graph_control_workflow() -> None:
     parser = build_parser()
-    for command in ("inspect", "cache", "smoke", "compare", "evaluate"):
+    for command in ("inspect", "cache", "smoke", "compare", "evaluate", "diagnose"):
         parsed = parser.parse_args([command, "--config", "config.yaml"])
         assert parsed.command == command
         assert parsed.config == Path("config.yaml")
+
+    parsed = parser.parse_args(
+        ["diagnose", "--config", "config.yaml", "--partition", "validation"]
+    )
+    assert parsed.partition == "validation"
 
 
 @pytest.mark.parametrize(
@@ -84,6 +89,47 @@ def test_cli_scientific_gate_failure_prints_report_and_exits_one(
 def test_cli_usage_failure_is_json(capsys) -> None:
     with pytest.raises(SystemExit) as raised:
         main(["cache"])
+    assert raised.value.code == 2
+    assert json.loads(capsys.readouterr().out)["error"] == "CLIUsageError"
+
+
+def test_cli_dispatches_diagnostics_partition(monkeypatch, capsys) -> None:
+    received = []
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.cli.diagnose_from_config",
+        lambda config, *, partition: received.append((config, partition))
+        or {"passed": True, "partition": partition or "test"},
+    )
+
+    main(
+        [
+            "diagnose",
+            "--config",
+            "config.yaml",
+            "--partition",
+            "validation",
+        ]
+    )
+
+    assert received == [(Path("config.yaml"), "validation")]
+    assert json.loads(capsys.readouterr().out) == {
+        "passed": True,
+        "partition": "validation",
+    }
+
+
+def test_cli_rejects_invalid_diagnostics_partition_as_json(capsys) -> None:
+    with pytest.raises(SystemExit) as raised:
+        main(
+            [
+                "diagnose",
+                "--config",
+                "config.yaml",
+                "--partition",
+                "heldout",
+            ]
+        )
+
     assert raised.value.code == 2
     assert json.loads(capsys.readouterr().out)["error"] == "CLIUsageError"
 

@@ -10,6 +10,7 @@ import numpy as np
 from .pipeline import (
     cache_from_config,
     compare_from_config,
+    diagnose_from_config,
     evaluate_from_config,
     inspect_from_config,
     smoke_from_config,
@@ -40,6 +41,15 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--config", required=True, type=Path)
+    diagnose = commands.add_parser(
+        "diagnose", help="analyze aligned Graph token representations"
+    )
+    diagnose.add_argument("--config", required=True, type=Path)
+    diagnose.add_argument(
+        "--partition",
+        choices=("train", "validation", "test"),
+        default=None,
+    )
     return parser
 
 
@@ -58,6 +68,8 @@ def _jsonable(value: Any) -> Any:
 
 
 def _dispatch(args: argparse.Namespace) -> Any:
+    if args.command == "diagnose":
+        return diagnose_from_config(args.config, partition=args.partition)
     functions = {
         "inspect": inspect_from_config,
         "cache": cache_from_config,
