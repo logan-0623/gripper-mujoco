@@ -6,11 +6,15 @@ import pytest
 from interaction_vla.graph_control.schema import TOKEN_DIM, TOKEN_SLICES
 from interaction_vla.graph_control.sensitivity import (
     action_change_metrics,
+    build_sensitivity_report,
     finite_difference_interventions,
+    make_sensitivity_records,
     mask_token_group,
+    select_episode_balanced_positions,
     standardized_perturbation_magnitude,
     training_feature_statistics,
 )
+from interaction_vla.graph_control.diagnostics import validate_episode_layout
 
 
 def _tokens(rows: int = 4) -> np.ndarray:
@@ -160,3 +164,78 @@ def test_action_change_metrics_separate_motion_and_gripper_effects() -> None:
     np.testing.assert_array_equal(metrics["translation_sign_changed"], [True, False])
     assert metrics["normalized_action_l2"][0] == pytest.approx(np.sqrt(5.0) / 2.0)
     assert np.isnan(metrics["normalized_action_l2"][1])
+
+
+def test_episode_balanced_selection_is_deterministic_and_includes_boundaries() -> None:
+    layout = validate_episode_layout(
+        row_indices=np.arange(8),
+        episode_indices=np.asarray([2, 2, 2, 2, 2, 7, 7, 7]),
+        frame_indices=np.asarray([0, 1, 2, 3, 4, 0, 1, 2]),
+    )
+
+    np.testing.assert_array_equal(
+        select_episode_balanced_positions(layout, rows_per_episode=2),
+        [0, 4, 5, 7],
+    )
+    np.testing.assert_array_equal(
+        select_episode_balanced_positions(layout, rows_per_episode=1),
+        [2, 6],
+    )
+
+
+def test_sensitivity_report_clusters_frames_by_episode_and_policy_seed() -> None:
+    metrics = {
+        name: np.asarray(value)
+        for name, value in {
+            "action_l1": [0.0, 2.0, 10.0],
+            "action_l2": [0.0, 2.0, 10.0],
+            "translation_l2": [0.0, 2.0, 10.0],
+            "rotation_l2": [0.0, 0.0, 0.0],
+            "gripper_absolute_change": [0.0, 0.0, 0.0],
+            "action_direction_cosine_change": [0.0, 0.0, 0.0],
+            "translation_sign_changed": [False, True, True],
+            "standardized_perturbation_magnitude": [1.0, 1.0, 1.0],
+            "normalized_action_l2": [0.0, 2.0, np.nan],
+        }.items()
+    }
+    records = []
+    for seed, offset in ((0, 0.0), (1, 1.0)):
+        shifted = {name: value.copy() for name, value in metrics.items()}
+        shifted["action_l2"] = shifted["action_l2"] + offset
+        records.extend(
+            make_sensitivity_records(
+                policy_seed=seed,
+                condition="predicted_random_v2",
+                group="phase",
+                intervention="mask",
+                row_indices=np.asarray([10, 11, 20]),
+                episode_indices=np.asarray([2, 2, 7]),
+                frame_indices=np.asarray([0, 4, 1]),
+                metrics=shifted,
+            )
+        )
+
+    report = build_sensitivity_report(
+        records,
+        partition="test",
+        bootstrap_samples=100,
+        bootstrap_seed=17,
+    )
+
+    assert report["passed"] is True
+    assert report["rows"] == 6
+    assert report["policy_seeds"] == [0, 1]
+    seed_zero = report["by_seed_condition"]["seed_0/predicted_random_v2"]
+    action_l2 = seed_zero["phase"]["mask"]["action_l2"]
+    assert action_l2["estimate"] == pytest.approx(5.5)
+    assert action_l2["episodes"] == 2
+    normalized = seed_zero["phase"]["mask"]["normalized_action_l2"]
+    assert normalized["estimate"] == pytest.approx(1.0)
+    across = report["across_policy_seeds"]["predicted_random_v2"]["phase"][
+        "mask"
+    ]["action_l2"]
+    assert across == {
+        "estimate": pytest.approx(6.0),
+        "policy_seed_std": pytest.approx(np.sqrt(0.5)),
+        "policy_seeds": 2,
+    }
