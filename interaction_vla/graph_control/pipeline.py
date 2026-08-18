@@ -48,6 +48,12 @@ from .diagnostics import (
     validate_episode_layout,
 )
 from .features import FrozenGraphRuntime
+from .failure_analysis import (
+    FAILURE_ANALYSIS_SCHEMA_VERSION,
+    build_failure_analysis_report,
+    episode_error_exposure,
+    training_error_thresholds,
+)
 from .rollout import (
     FlatTokenProvider,
     GraphPolicyRuntime,
@@ -1140,6 +1146,168 @@ def trace_from_config(path: str | Path) -> dict[str, object]:
         report=report,
         resumed=resumed,
     )
+
+
+def failure_analysis_from_config(
+    path: str | Path, *, traces: str | Path
+) -> dict[str, object]:
+    trace_root = Path(traces)
+    manifest_path = trace_root / "manifest.json"
+    manifest = _read_json_mapping(manifest_path, "Graph trace manifest")
+    if manifest.get("complete") is not True:
+        raise ValueError("Graph trace manifest is not complete")
+    output_dir = trace_root / "failure_analysis"
+    if output_dir.exists() and (
+        not output_dir.is_dir() or any(output_dir.iterdir())
+    ):
+        raise FileExistsError("Graph failure analysis output already exists")
+
+    (
+        config,
+        bridge,
+        split,
+        source,
+        recovery_report_sha256,
+        oracle_report_sha256,
+    ) = _context(path)
+    if config.diagnostics is None:
+        raise ValueError("graph control diagnostics config is required")
+    expected_manifest_fields = {
+        "trace_schema_version": TRACE_SCHEMA_VERSION,
+        "config_sha256": sha256_file(config.config_path),
+        "split_manifest_sha256": split.sha256,
+        "conditions": list(config.conditions),
+        "policy_seeds": list(config.seeds),
+    }
+    differing = sorted(
+        key
+        for key, value in expected_manifest_fields.items()
+        if manifest.get(key) != value
+    )
+    if differing:
+        raise ValueError(
+            "Graph failure analysis trace manifest mismatch: "
+            + ", ".join(differing)
+        )
+    cases = manifest.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("Graph trace manifest cases are invalid")
+
+    condition_tokens: dict[tuple[int, str], np.ndarray] = {}
+    teacher_tokens_by_seed: dict[int, np.ndarray] = {}
+    cache_sha256: dict[str, str] = {}
+    dataset_fingerprints: set[str] = set()
+    train_rows = tuple(int(row) for row in split.rows["train"])
+    for seed in config.seeds:
+        caches = _load_cache_matrix(
+            config,
+            bridge,
+            split,
+            seed,
+            oracle_report_sha256=oracle_report_sha256,
+        )
+        teacher_tokens_by_seed[seed] = _select_diagnostic_cache_rows(
+            caches["oracle_graph_v2"], train_rows
+        )
+        for condition in config.conditions:
+            cache = caches[condition]
+            condition_tokens[(seed, condition)] = _select_diagnostic_cache_rows(
+                cache, train_rows
+            )
+            cache_sha256[f"seed_{seed}/{condition}"] = str(cache.sha256)
+            dataset_fingerprints.add(str(cache.provenance.dataset_fingerprint))
+    if len(dataset_fingerprints) != 1:
+        raise ValueError("failure analysis caches bind different datasets")
+    dataset_fingerprint = next(iter(dataset_fingerprints))
+    if manifest.get("dataset_fingerprint") != dataset_fingerprint:
+        raise ValueError("Graph failure analysis trace dataset fingerprint mismatch")
+    thresholds = training_error_thresholds(
+        condition_tokens=condition_tokens,
+        teacher_tokens_by_seed=teacher_tokens_by_seed,
+        quantile=0.75,
+    )
+    del source, condition_tokens, teacher_tokens_by_seed
+    gc.collect()
+
+    exposures: list[dict[str, object]] = []
+    for seed in config.seeds:
+        for condition in config.conditions:
+            key = f"seed_{seed}/{condition}"
+            for case_value in cases:
+                if not isinstance(case_value, Mapping):
+                    raise ValueError("Graph trace manifest case is invalid")
+                case_id = str(case_value.get("case_id", ""))
+                trace_path = _trace_episode_path(
+                    trace_root,
+                    seed=seed,
+                    condition=condition,
+                    case_id=case_id,
+                )
+                trace_records = load_trace_episode(trace_path)
+                if not trace_records:
+                    raise ValueError("Graph trace episode is empty")
+                first = trace_records[0]
+                expected_identity = {
+                    "policy_seed": seed,
+                    "condition": condition,
+                    "case_id": case_id,
+                    "environment_seed": int(case_value["environment_seed"]),
+                    "layout": str(case_value["layout"]),
+                    "object_count": int(case_value["object_count"]),
+                }
+                identity_differences = sorted(
+                    name
+                    for name, expected in expected_identity.items()
+                    if first.get(name) != expected
+                )
+                if identity_differences:
+                    raise ValueError(
+                        "Graph trace episode identity mismatch: "
+                        + ", ".join(identity_differences)
+                    )
+                exposures.append(
+                    episode_error_exposure(
+                        trace_records,
+                        thresholds=thresholds[key],
+                    )
+                )
+    expected_episodes = len(config.seeds) * len(config.conditions) * len(cases)
+    if len(exposures) != expected_episodes:
+        raise ValueError("Graph failure analysis episode matrix is incomplete")
+    report = build_failure_analysis_report(
+        exposures,
+        thresholds=thresholds,
+        bootstrap_samples=config.diagnostics.bootstrap_samples,
+        bootstrap_seed=config.diagnostics.bootstrap_seed,
+    )
+    report = {
+        **report,
+        "schema_version": FAILURE_ANALYSIS_SCHEMA_VERSION,
+        "config": config.config_path,
+        "trace_root": trace_root,
+        "trace_manifest": manifest_path,
+        "trace_manifest_sha256": sha256_file(manifest_path),
+        "split_manifest": split.path,
+        "split_manifest_sha256": split.sha256,
+        "dataset_fingerprint": dataset_fingerprint,
+        "cache_sha256": cache_sha256,
+        "recovery_report_sha256": recovery_report_sha256,
+        "oracle_report_sha256": oracle_report_sha256,
+    }
+    report_path = output_dir / "report.json"
+    exposures_path = output_dir / "episode_exposures.jsonl"
+    with _atomic_output_directory(output_dir) as staging:
+        _write_jsonl_atomic(staging / "episode_exposures.jsonl", exposures)
+        _write_json_atomic(staging / "report.json", report)
+    return {
+        "passed": bool(report["passed"]),
+        "schema_version": report["schema_version"],
+        "episodes": int(report["episodes"]),
+        "policy_seeds": list(report["policy_seeds"]),
+        "conditions": list(report["conditions"]),
+        "report_path": report_path,
+        "exposures_path": exposures_path,
+    }
 
 
 def inspect_from_config(path: str | Path) -> dict[str, object]:

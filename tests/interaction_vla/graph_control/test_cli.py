@@ -36,6 +36,17 @@ def test_cli_exposes_complete_graph_control_workflow() -> None:
     )
     assert parsed.partition == "test"
 
+    parsed = parser.parse_args(
+        [
+            "failure-analysis",
+            "--config",
+            "config.yaml",
+            "--traces",
+            "traced_evaluation",
+        ]
+    )
+    assert parsed.traces == Path("traced_evaluation")
+
 
 @pytest.mark.parametrize(
     ("command", "target"),
@@ -155,6 +166,33 @@ def test_cli_dispatches_sensitivity_partition(monkeypatch, capsys) -> None:
     assert json.loads(capsys.readouterr().out) == {
         "passed": True,
         "partition": "validation",
+    }
+
+
+def test_cli_dispatches_failure_analysis_trace_root(monkeypatch, capsys) -> None:
+    received = []
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.cli.failure_analysis_from_config",
+        lambda config, *, traces: received.append((config, traces))
+        or {"passed": True, "episodes": 4},
+    )
+
+    main(
+        [
+            "failure-analysis",
+            "--config",
+            "config.yaml",
+            "--traces",
+            "traced_evaluation",
+        ]
+    )
+
+    assert received == [
+        (Path("config.yaml"), Path("traced_evaluation"))
+    ]
+    assert json.loads(capsys.readouterr().out) == {
+        "passed": True,
+        "episodes": 4,
     }
 
 

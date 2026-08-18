@@ -12,6 +12,7 @@ from .pipeline import (
     compare_from_config,
     diagnose_from_config,
     evaluate_from_config,
+    failure_analysis_from_config,
     inspect_from_config,
     sensitivity_from_config,
     smoke_from_config,
@@ -62,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("train", "validation", "test"),
         default=None,
     )
+    failure = commands.add_parser(
+        "failure-analysis",
+        help="analyze descriptive Graph-error and failure associations",
+    )
+    failure.add_argument("--config", required=True, type=Path)
+    failure.add_argument("--traces", required=True, type=Path)
     return parser
 
 
@@ -84,6 +91,8 @@ def _dispatch(args: argparse.Namespace) -> Any:
         return diagnose_from_config(args.config, partition=args.partition)
     if args.command == "sensitivity":
         return sensitivity_from_config(args.config, partition=args.partition)
+    if args.command == "failure-analysis":
+        return failure_analysis_from_config(args.config, traces=args.traces)
     functions = {
         "inspect": inspect_from_config,
         "cache": cache_from_config,

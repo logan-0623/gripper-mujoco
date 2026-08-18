@@ -21,6 +21,7 @@ from interaction_vla.graph_control.pipeline import (
     _validate_formal_epochs,
     diagnose_from_config,
     evaluate_from_config,
+    failure_analysis_from_config,
     sensitivity_from_config,
     trace_from_config,
 )
@@ -673,3 +674,107 @@ def test_trace_pipeline_is_resumable_and_manifest_bound(
     config.evaluation.max_steps = 3
     with pytest.raises(ValueError, match="manifest.*max_steps"):
         trace_from_config(tmp_path / "config.yaml")
+
+
+def test_failure_analysis_binds_complete_trace_and_train_cache_thresholds(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, context, caches = _trace_fixture(tmp_path)
+    _patch_diagnostic_context(monkeypatch, config, context, caches)
+    trace_root = config.trace.output_dir
+    trace_root.mkdir(parents=True)
+    cases = [
+        {
+            "case_id": "normal_n2_000",
+            "environment_seed": 17,
+            "layout": "normal",
+            "object_count": 2,
+        }
+    ]
+    (trace_root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "trace_schema_version": "graph_control_step_trace_v1",
+                "config_sha256": __import__("hashlib").sha256(
+                    config.config_path.read_bytes()
+                ).hexdigest(),
+                "split_manifest_sha256": context[2].sha256,
+                "dataset_fingerprint": "2" * 64,
+                "conditions": list(ALL_CONDITIONS),
+                "policy_seeds": [0],
+                "cases": cases,
+            }
+        ),
+        encoding="utf-8",
+    )
+    for condition in ALL_CONDITIONS:
+        path = (
+            trace_root
+            / "traces"
+            / "seed_0"
+            / condition
+            / "normal_n2_000.jsonl"
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+
+    received = {}
+
+    def fake_thresholds(*, condition_tokens, teacher_tokens_by_seed, quantile):
+        received["condition_tokens"] = condition_tokens
+        received["teacher"] = teacher_tokens_by_seed
+        received["quantile"] = quantile
+        return {
+            f"seed_0/{condition}": {"goal_residual": 0.5}
+            for condition in ALL_CONDITIONS
+        }
+
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.training_error_thresholds",
+        fake_thresholds,
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.load_trace_episode",
+        lambda path: [
+            {
+                "policy_seed": 0,
+                "condition": path.parent.name,
+                "case_id": "normal_n2_000",
+                "environment_seed": 17,
+                "layout": "normal",
+                "object_count": 2,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.episode_error_exposure",
+        lambda records, *, thresholds: {
+            "policy_seed": 0,
+            "condition": records[0]["condition"],
+            "case_id": "normal_n2_000",
+        },
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.build_failure_analysis_report",
+        lambda episodes, **kwargs: {
+            "passed": True,
+            "schema_version": "graph_failure_association_v1",
+            "episodes": len(episodes),
+            "policy_seeds": [0],
+            "conditions": list(ALL_CONDITIONS),
+        },
+    )
+
+    result = failure_analysis_from_config(
+        tmp_path / "config.yaml", traces=trace_root
+    )
+
+    assert result["passed"] is True
+    assert result["episodes"] == len(ALL_CONDITIONS)
+    assert result["report_path"].is_file()
+    assert result["exposures_path"].is_file()
+    assert received["quantile"] == 0.75
+    assert set(received["condition_tokens"]) == {
+        (0, condition) for condition in ALL_CONDITIONS
+    }
