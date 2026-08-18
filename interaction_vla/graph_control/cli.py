@@ -13,6 +13,7 @@ from .pipeline import (
     diagnose_from_config,
     evaluate_from_config,
     inspect_from_config,
+    sensitivity_from_config,
     smoke_from_config,
 )
 
@@ -50,6 +51,15 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("train", "validation", "test"),
         default=None,
     )
+    sensitivity = commands.add_parser(
+        "sensitivity", help="probe frozen ACT sensitivity to Graph token groups"
+    )
+    sensitivity.add_argument("--config", required=True, type=Path)
+    sensitivity.add_argument(
+        "--partition",
+        choices=("train", "validation", "test"),
+        default=None,
+    )
     return parser
 
 
@@ -70,6 +80,8 @@ def _jsonable(value: Any) -> Any:
 def _dispatch(args: argparse.Namespace) -> Any:
     if args.command == "diagnose":
         return diagnose_from_config(args.config, partition=args.partition)
+    if args.command == "sensitivity":
+        return sensitivity_from_config(args.config, partition=args.partition)
     functions = {
         "inspect": inspect_from_config,
         "cache": cache_from_config,

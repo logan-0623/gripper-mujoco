@@ -12,7 +12,15 @@ from interaction_vla.graph_control.schema import ALL_CONDITIONS, ORACLE_CONDITIO
 
 def test_cli_exposes_complete_graph_control_workflow() -> None:
     parser = build_parser()
-    for command in ("inspect", "cache", "smoke", "compare", "evaluate", "diagnose"):
+    for command in (
+        "inspect",
+        "cache",
+        "smoke",
+        "compare",
+        "evaluate",
+        "diagnose",
+        "sensitivity",
+    ):
         parsed = parser.parse_args([command, "--config", "config.yaml"])
         assert parsed.command == command
         assert parsed.config == Path("config.yaml")
@@ -21,6 +29,11 @@ def test_cli_exposes_complete_graph_control_workflow() -> None:
         ["diagnose", "--config", "config.yaml", "--partition", "validation"]
     )
     assert parsed.partition == "validation"
+
+    parsed = parser.parse_args(
+        ["sensitivity", "--config", "config.yaml", "--partition", "test"]
+    )
+    assert parsed.partition == "test"
 
 
 @pytest.mark.parametrize(
@@ -104,6 +117,31 @@ def test_cli_dispatches_diagnostics_partition(monkeypatch, capsys) -> None:
     main(
         [
             "diagnose",
+            "--config",
+            "config.yaml",
+            "--partition",
+            "validation",
+        ]
+    )
+
+    assert received == [(Path("config.yaml"), "validation")]
+    assert json.loads(capsys.readouterr().out) == {
+        "passed": True,
+        "partition": "validation",
+    }
+
+
+def test_cli_dispatches_sensitivity_partition(monkeypatch, capsys) -> None:
+    received = []
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.cli.sensitivity_from_config",
+        lambda config, *, partition: received.append((config, partition))
+        or {"passed": True, "partition": partition or "test"},
+    )
+
+    main(
+        [
+            "sensitivity",
             "--config",
             "config.yaml",
             "--partition",

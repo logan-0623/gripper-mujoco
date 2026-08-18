@@ -13,6 +13,7 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 
 from interaction_vla.device import resolve_device
 from interaction_vla.graph_finetune.data import fit_normalization, graph_v2_targets
@@ -25,6 +26,7 @@ from interaction_vla.lerobot_bridge.act_smoke import (
 )
 from interaction_vla.lerobot_bridge.config import BridgeConfig, load_bridge_config
 from interaction_vla.lerobot_bridge.provenance import (
+    fingerprint_tree,
     sha256_file,
     standard_dataset_fingerprint,
 )
@@ -60,6 +62,20 @@ from .schema import (
     ORACLE_CONDITIONS,
     TOKEN_DIM,
     TOKEN_SCHEMA_VERSION,
+    TOKEN_SLICES,
+)
+from .sensitivity import (
+    CATEGORICAL_GROUPS,
+    SENSITIVITY_SCHEMA_VERSION,
+    action_change_metrics,
+    build_sensitivity_report,
+    finite_difference_interventions,
+    make_sensitivity_records,
+    mask_token_group,
+    predict_first_actions,
+    select_episode_balanced_positions,
+    standardized_perturbation_magnitude,
+    training_feature_statistics,
 )
 from .training import (
     ControlSplit,
@@ -68,6 +84,7 @@ from .training import (
     graph_checkpoint_bindings,
     load_control_split,
     load_graph_act_checkpoint,
+    load_graph_act_checkpoint_for_analysis,
     train_paired_seed,
 )
 
@@ -505,6 +522,323 @@ def diagnose_from_config(
     return _publish_diagnostics(
         destination,
         episode_records=episode_records,
+        report=final_report,
+    )
+
+
+def _analysis_policy_runtime(
+    config: GraphControlConfig,
+    bridge: BridgeConfig,
+    split: ControlSplit,
+    *,
+    seed: int,
+    condition: str,
+    cache: TokenCache,
+    recovery_report_sha256: str,
+    oracle_report_sha256: str | None,
+) -> tuple[Any, Any, Any, dict[str, object], Path, str]:
+    bindings = graph_checkpoint_bindings(
+        condition,
+        seed,
+        cache,
+        recovery_report_sha256=recovery_report_sha256,
+        oracle_report_sha256=oracle_report_sha256,
+    )
+    checkpoint = (
+        config.training.output_dir / f"seed_{seed}" / condition / "checkpoint"
+    )
+    device = resolve_device(bridge.act.device)
+    from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
+
+    base_metadata = LeRobotDatasetMetadata(
+        bridge.dataset.repo_id, root=bridge.dataset.root
+    )
+    expected_metadata = expected_graph_checkpoint_metadata(
+        dataset_root=bridge.dataset.root,
+        features=GraphDatasetMetadata(base_metadata).features,
+        act_config=_act_config(
+            device=device,
+            architecture="configured",
+            bridge_config=bridge,
+        ),
+        device=device,
+        bindings=bindings,
+    )
+    policy, preprocessor, postprocessor, _, audit = (
+        load_graph_act_checkpoint_for_analysis(
+            checkpoint,
+            device=device,
+            expected_metadata=expected_metadata,
+        )
+    )
+    return (
+        policy,
+        preprocessor,
+        postprocessor,
+        audit,
+        checkpoint,
+        fingerprint_tree(checkpoint),
+    )
+
+
+def _sensitivity_source_batches(
+    source: Any, *, rows: tuple[int, ...], batch_size: int
+) -> list[dict[str, Any]]:
+    from torch.utils.data import default_collate
+
+    if not rows or batch_size < 1:
+        raise ValueError("sensitivity source rows and batch size must be positive")
+    batches: list[dict[str, Any]] = []
+    for start in range(0, len(rows), batch_size):
+        samples = [dict(source[row]) for row in rows[start : start + batch_size]]
+        if any("observation.environment_state" in sample for sample in samples):
+            raise ValueError("base sensitivity sample already contains Graph tokens")
+        batch = default_collate(samples)
+        if not isinstance(batch, dict):
+            raise ValueError("collated sensitivity source batch must be a mapping")
+        batches.append(batch)
+    return batches
+
+
+def _publish_sensitivity(
+    destination: Path,
+    *,
+    records: list[dict[str, object]],
+    report: Mapping[str, object],
+) -> dict[str, object]:
+    report_path = destination / "report.json"
+    records_path = destination / "records.jsonl"
+    final = {**report, "report_path": report_path, "records_path": records_path}
+    with _atomic_output_directory(destination) as staging:
+        with (staging / "records.jsonl").open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(_jsonable(record), sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        _write_json_atomic(staging / "report.json", final)
+    return {
+        "passed": bool(final["passed"]),
+        "schema_version": final["schema_version"],
+        "partition": final["partition"],
+        "observations": int(final["observations"]),
+        "records": int(final["rows"]),
+        "policy_seeds": list(final["policy_seeds"]),
+        "conditions": list(final["conditions"]),
+        "report_path": report_path,
+        "records_path": records_path,
+    }
+
+
+def sensitivity_from_config(
+    path: str | Path, *, partition: str | None = None
+) -> dict[str, object]:
+    preliminary = load_graph_control_config(path)
+    controls = preliminary.diagnostics
+    if controls is None:
+        raise ValueError("graph control diagnostics config is required")
+    selected_partition = "test" if partition is None else str(partition)
+    if selected_partition not in {"train", "validation", "test"}:
+        raise ValueError("sensitivity partition must be train, validation, or test")
+    destination = controls.output_dir / selected_partition / "sensitivity"
+    if destination.exists() and (
+        not destination.is_dir() or any(destination.iterdir())
+    ):
+        raise FileExistsError("Graph sensitivity output already exists")
+
+    (
+        config,
+        bridge,
+        split,
+        source,
+        recovery_report_sha256,
+        oracle_report_sha256,
+    ) = _context(path)
+    if config.diagnostics is None:
+        raise ValueError("graph control diagnostics config is required")
+    controls = config.diagnostics
+    partition_rows = tuple(int(row) for row in split.rows[selected_partition])
+    episode_column = np.asarray(source.hf_dataset["episode_index"])
+    frame_column = np.asarray(source.hf_dataset["frame_index"])
+    if (
+        not partition_rows
+        or episode_column.ndim != 1
+        or frame_column.ndim != 1
+        or len(episode_column) != len(frame_column)
+        or max(partition_rows) >= len(episode_column)
+    ):
+        raise ValueError("sensitivity dataset episode/frame columns are incompatible")
+    layout = validate_episode_layout(
+        row_indices=np.asarray(partition_rows, dtype=np.int64),
+        episode_indices=episode_column[np.asarray(partition_rows, dtype=np.int64)],
+        frame_indices=frame_column[np.asarray(partition_rows, dtype=np.int64)],
+    )
+    selected_positions = select_episode_balanced_positions(
+        layout, rows_per_episode=controls.sensitivity_rows_per_episode
+    )
+    selected_rows = tuple(int(value) for value in layout.row_indices[selected_positions])
+    raw_batches = _sensitivity_source_batches(
+        source,
+        rows=selected_rows,
+        batch_size=controls.sensitivity_batch_size,
+    )
+
+    records: list[dict[str, object]] = []
+    cache_sha256: dict[str, str] = {}
+    checkpoint_sha256: dict[str, str] = {}
+    checkpoint_paths: dict[str, Path] = {}
+    compatibility: dict[str, dict[str, object]] = {}
+    dataset_fingerprints: set[str] = set()
+    progress = tqdm(
+        total=len(config.seeds) * len(config.conditions) * (1 + 3 * len(TOKEN_SLICES)),
+        desc="policy sensitivity",
+        unit="probe",
+        dynamic_ncols=True,
+        disable=None,
+    )
+    for seed in config.seeds:
+        caches = _load_cache_matrix(
+            config,
+            bridge,
+            split,
+            seed,
+            oracle_report_sha256=oracle_report_sha256,
+        )
+        for condition in config.conditions:
+            cache = caches[condition]
+            key = f"seed_{seed}/{condition}"
+            cache_sha256[key] = str(cache.sha256)
+            dataset_fingerprints.add(str(cache.provenance.dataset_fingerprint))
+            train_tokens = _select_diagnostic_cache_rows(
+                cache, tuple(int(row) for row in split.rows["train"])
+            )
+            source_tokens = _select_diagnostic_cache_rows(cache, selected_rows)
+            statistics = training_feature_statistics(train_tokens)
+            (
+                policy,
+                preprocessor,
+                postprocessor,
+                audit,
+                checkpoint,
+                checkpoint_digest,
+            ) = _analysis_policy_runtime(
+                config,
+                bridge,
+                split,
+                seed=seed,
+                condition=condition,
+                cache=cache,
+                recovery_report_sha256=recovery_report_sha256,
+                oracle_report_sha256=oracle_report_sha256,
+            )
+            compatibility[key] = audit
+            checkpoint_paths[key] = checkpoint
+            checkpoint_sha256[key] = checkpoint_digest
+            baseline_actions = predict_first_actions(
+                policy=policy,
+                preprocessor=preprocessor,
+                postprocessor=postprocessor,
+                raw_batches=raw_batches,
+                tokens=source_tokens,
+            )
+            progress.update(1)
+            for group in TOKEN_SLICES:
+                progress.set_postfix(seed=seed, condition=condition, group=group)
+                masked = mask_token_group(source_tokens, group)
+                minus, plus = finite_difference_interventions(
+                    source_tokens,
+                    group,
+                    statistics=statistics,
+                    scale=controls.sensitivity_scale,
+                )
+                names = (
+                    ("mask", masked),
+                    (
+                        "toward_uniform"
+                        if group in CATEGORICAL_GROUPS
+                        else "minus_std",
+                        minus,
+                    ),
+                    (
+                        "away_uniform"
+                        if group in CATEGORICAL_GROUPS
+                        else "plus_std",
+                        plus,
+                    ),
+                )
+                for intervention, changed_tokens in names:
+                    changed_actions = (
+                        baseline_actions.copy()
+                        if np.array_equal(changed_tokens, source_tokens)
+                        else predict_first_actions(
+                            policy=policy,
+                            preprocessor=preprocessor,
+                            postprocessor=postprocessor,
+                            raw_batches=raw_batches,
+                            tokens=changed_tokens,
+                        )
+                    )
+                    magnitude = standardized_perturbation_magnitude(
+                        source_tokens,
+                        changed_tokens,
+                        group,
+                        training_std=statistics["std"],
+                    )
+                    metrics = action_change_metrics(
+                        baseline_actions,
+                        changed_actions,
+                        perturbation_magnitude=magnitude,
+                    )
+                    records.extend(
+                        make_sensitivity_records(
+                            policy_seed=seed,
+                            condition=condition,
+                            group=group,
+                            intervention=intervention,
+                            row_indices=layout.row_indices[selected_positions],
+                            episode_indices=layout.episode_indices[selected_positions],
+                            frame_indices=layout.frame_indices[selected_positions],
+                            metrics=metrics,
+                        )
+                    )
+                    progress.update(1)
+            del policy, preprocessor, postprocessor
+            gc.collect()
+            _clear_accelerator_memory()
+    progress.close()
+    if len(dataset_fingerprints) != 1:
+        raise ValueError("sensitivity caches bind different datasets")
+    report = build_sensitivity_report(
+        records,
+        partition=selected_partition,
+        bootstrap_samples=controls.bootstrap_samples,
+        bootstrap_seed=controls.bootstrap_seed,
+    )
+    final_report = {
+        **report,
+        "schema_version": SENSITIVITY_SCHEMA_VERSION,
+        "observations": len(selected_rows),
+        "selected_rows": list(selected_rows),
+        "rows_per_episode": controls.sensitivity_rows_per_episode,
+        "batch_size": controls.sensitivity_batch_size,
+        "finite_difference_scale": controls.sensitivity_scale,
+        "config": config.config_path,
+        "split_manifest": split.path,
+        "split_manifest_sha256": split.sha256,
+        "dataset_fingerprint": next(iter(dataset_fingerprints)),
+        "token_schema_version": TOKEN_SCHEMA_VERSION,
+        "token_dim": TOKEN_DIM,
+        "cache_sha256": cache_sha256,
+        "checkpoint_paths": checkpoint_paths,
+        "checkpoint_sha256": checkpoint_sha256,
+        "checkpoint_compatibility": compatibility,
+        "recovery_report_sha256": recovery_report_sha256,
+        "oracle_report_sha256": oracle_report_sha256,
+    }
+    del source
+    gc.collect()
+    return _publish_sensitivity(
+        destination,
+        records=records,
         report=final_report,
     )
 

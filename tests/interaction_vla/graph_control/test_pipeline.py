@@ -21,6 +21,7 @@ from interaction_vla.graph_control.pipeline import (
     _validate_formal_epochs,
     diagnose_from_config,
     evaluate_from_config,
+    sensitivity_from_config,
 )
 from interaction_vla.graph_control.schema import ALL_CONDITIONS, TOKEN_DIM
 
@@ -252,6 +253,9 @@ def _diagnostic_fixture(tmp_path: Path):
         bootstrap_seed=17,
         max_lag=1,
         active_epsilon=1.0e-6,
+        sensitivity_rows_per_episode=1,
+        sensitivity_batch_size=2,
+        sensitivity_scale=0.25,
     )
     config = SimpleNamespace(
         config_path=tmp_path / "config.yaml",
@@ -408,3 +412,126 @@ def test_diagnostics_selects_partition_rows_and_publishes_jsonl(
     ]
     assert len(records) == 8
     assert {record["episode_id"] for record in records} == {0, 1}
+
+
+class _SensitivitySource:
+    def __init__(self) -> None:
+        self.hf_dataset = {
+            "episode_index": np.asarray([0, 0, 1, 1, 8, 8]),
+            "frame_index": np.asarray([0, 1, 0, 1, 0, 1]),
+        }
+
+    def __getitem__(self, row: int):
+        return {
+            "index": torch.tensor(row),
+            "episode_index": torch.tensor(int(self.hf_dataset["episode_index"][row])),
+            "frame_index": torch.tensor(int(self.hf_dataset["frame_index"][row])),
+            "observation.state": torch.full((10,), float(row)),
+        }
+
+
+class _SensitivityPolicy:
+    def reset(self) -> None:
+        return None
+
+    def eval(self) -> None:
+        return None
+
+    def predict_action_chunk(self, batch):
+        token = batch["observation.environment_state"]
+        result = torch.zeros((len(token), 8, 7), dtype=torch.float32)
+        result[:, 0, 0] = token.sum(dim=1)
+        return result
+
+
+def _sensitivity_fixture(tmp_path: Path):
+    config, _, _ = _diagnostic_fixture(tmp_path)
+    split = SimpleNamespace(
+        rows={"train": (4, 5), "validation": (3,), "test": (0, 1, 2, 3)},
+        episodes={"train": (8,), "validation": (1,), "test": (0, 1)},
+        sha256="1" * 64,
+        path=tmp_path / "split.json",
+    )
+    source = _SensitivitySource()
+    teacher = np.linspace(0.1, 0.9, 6 * TOKEN_DIM).reshape(6, TOKEN_DIM)
+    provenance = SimpleNamespace(dataset_fingerprint="2" * 64)
+    caches = {
+        condition: SimpleNamespace(
+            row_indices=np.arange(6),
+            tokens=(
+                np.zeros_like(teacher)
+                if condition == "flat"
+                else teacher * (1.0 if condition == "oracle_graph_v2" else 0.9)
+            ),
+            sha256=str(index + 3) * 64,
+            provenance=provenance,
+        )
+        for index, condition in enumerate(ALL_CONDITIONS)
+    }
+    context = (config, SimpleNamespace(), split, source, "7" * 64, "8" * 64)
+    return config, context, caches
+
+
+def _patch_sensitivity_context(monkeypatch, config, context, caches) -> None:
+    _patch_diagnostic_context(monkeypatch, config, context, caches)
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline._analysis_policy_runtime",
+        lambda *args, seed, condition, **kwargs: (
+            _SensitivityPolicy(),
+            lambda batch: batch,
+            lambda actions: actions,
+            {
+                "mode": "retrospective_analysis",
+                "graph_source_fingerprint_match": False,
+                "stored_graph_source_fingerprint": "a" * 64,
+                "current_graph_source_fingerprint": "b" * 64,
+            },
+            Path(f"checkpoint/{seed}/{condition}"),
+            "c" * 64,
+        ),
+    )
+
+
+def test_sensitivity_preflights_output_before_loading_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, _, _ = _sensitivity_fixture(tmp_path)
+    destination = config.diagnostics.output_dir / "test" / "sensitivity"
+    destination.mkdir(parents=True)
+    (destination / "report.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.load_graph_control_config",
+        lambda path: config,
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline._context",
+        lambda path: pytest.fail("context must not load for existing sensitivity"),
+    )
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        sensitivity_from_config(tmp_path / "config.yaml", partition="test")
+
+
+def test_sensitivity_uses_balanced_rows_and_publishes_audited_report(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, context, caches = _sensitivity_fixture(tmp_path)
+    _patch_sensitivity_context(monkeypatch, config, context, caches)
+
+    result = sensitivity_from_config(tmp_path / "config.yaml", partition="test")
+
+    assert result["passed"] is True
+    assert result["partition"] == "test"
+    assert result["observations"] == 2
+    assert result["policy_seeds"] == [0]
+    assert result["conditions"] == list(ALL_CONDITIONS)
+    assert result["report_path"].is_file()
+    assert result["records_path"].is_file()
+    report = json.loads(result["report_path"].read_text(encoding="utf-8"))
+    assert report["selected_rows"] == [0, 2]
+    assert report["checkpoint_sha256"]["seed_0/flat"] == "c" * 64
+    assert report["checkpoint_compatibility"]["seed_0/flat"][
+        "graph_source_fingerprint_match"
+    ] is False
+    records = result["records_path"].read_text(encoding="utf-8").splitlines()
+    assert len(records) == 2 * len(ALL_CONDITIONS) * 3 * 12
