@@ -5,6 +5,7 @@ import pytest
 
 from interaction_vla.graph_control.diagnostics import (
     categorical_sequence_metrics,
+    cluster_bootstrap_mean,
     covariance_effective_rank,
     feature_distribution,
     lagged_feature_correlation,
@@ -252,3 +253,33 @@ def test_lagged_correlation_rejects_invalid_lag(max_lag) -> None:
         lagged_feature_correlation(
             np.arange(5), np.arange(5), _layout(), max_lag=max_lag
         )
+
+
+def test_cluster_bootstrap_is_deterministic_over_episode_values() -> None:
+    values = {2: 0.0, 7: 1.0, 9: 2.0}
+
+    first = cluster_bootstrap_mean(values, samples=500, seed=17)
+    second = cluster_bootstrap_mean(values, samples=500, seed=17)
+
+    assert first == second
+    assert first["estimate"] == 1.0
+    assert first["episodes"] == 3
+    assert first["bootstrap_samples"] == 500
+    assert first["confidence"] == 0.95
+    assert first["ci_low"] <= first["estimate"] <= first["ci_high"]
+
+
+@pytest.mark.parametrize(
+    ("values", "samples", "seed", "message"),
+    [
+        ({}, 100, 0, "non-empty"),
+        ({0: np.nan}, 100, 0, "finite"),
+        ({0: 1.0}, 0, 0, "samples"),
+        ({0: 1.0}, 100, -1, "seed"),
+    ],
+)
+def test_cluster_bootstrap_rejects_invalid_inputs(
+    values, samples: int, seed: int, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        cluster_bootstrap_mean(values, samples=samples, seed=seed)

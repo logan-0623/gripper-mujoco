@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
@@ -407,4 +408,40 @@ def lagged_feature_correlation(
         "best_lag": None if best is None else int(best[0]),
         "best_pairs": 0 if best is None else int(best[1]),
         "best_correlation": None if best is None else float(best[2]),
+    }
+
+
+def cluster_bootstrap_mean(
+    episode_values: Mapping[int, float],
+    *,
+    samples: int,
+    seed: int,
+) -> dict[str, float | int]:
+    if not isinstance(episode_values, Mapping) or not episode_values:
+        raise ValueError("episode_values must be a non-empty mapping")
+    if isinstance(samples, bool) or int(samples) != samples or samples < 1:
+        raise ValueError("bootstrap samples must be a positive integer")
+    if isinstance(seed, bool) or int(seed) != seed or seed < 0:
+        raise ValueError("bootstrap seed must be a non-negative integer")
+    values = np.asarray(
+        [float(episode_values[key]) for key in sorted(episode_values)],
+        dtype=np.float64,
+    )
+    if not np.isfinite(values).all():
+        raise ValueError("episode_values must be finite")
+    generator = np.random.default_rng(int(seed))
+    sampled_indices = generator.integers(
+        0, len(values), size=(int(samples), len(values))
+    )
+    replicate_means = np.mean(values[sampled_indices], axis=1)
+    ci_low, ci_high = np.quantile(
+        replicate_means, (0.025, 0.975), method="linear"
+    )
+    return {
+        "estimate": float(np.mean(values)),
+        "episodes": int(len(values)),
+        "bootstrap_samples": int(samples),
+        "confidence": 0.95,
+        "ci_low": float(ci_low),
+        "ci_high": float(ci_high),
     }
