@@ -278,12 +278,11 @@ tail -f outputs/logs/control_alignment_ablation_cuda.log
 ## 测试
 
 ```bash
-PYTHONPYCACHEPREFIX=/tmp/gripper-mujoco-pycache \
-  .venv/bin/python -m pytest tests/interaction_vla -q
-
 HF_HOME=/tmp/gripper-mujoco-hf-cache \
 PYTHONPYCACHEPREFIX=/tmp/gripper-mujoco-lerobot-pycache \
   .venv-lerobot/bin/python -m pytest tests/interaction_vla -q
 ```
+
+完整套件必须使用 `.venv-lerobot`；基础 `.venv` 不安装 LeRobot，不能单独运行整个 `tests/interaction_vla`。
 
 项目目录：`interaction_vla/` 是实现，`configs/` 是固定实验配置，`tests/` 是验证，`outputs/` 是本机数据、checkpoint、cache、GIF 和报告。
