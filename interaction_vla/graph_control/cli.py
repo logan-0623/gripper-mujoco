@@ -15,6 +15,7 @@ from .pipeline import (
     inspect_from_config,
     sensitivity_from_config,
     smoke_from_config,
+    trace_from_config,
 )
 
 
@@ -39,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("smoke", "run one ACT update and reload per condition"),
         ("compare", "train the fixed-epoch paired ACT matrix"),
         ("evaluate", "run paired MuJoCo closed-loop evaluation"),
+        ("trace", "run resumable step-level closed-loop tracing"),
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--config", required=True, type=Path)
@@ -88,6 +90,7 @@ def _dispatch(args: argparse.Namespace) -> Any:
         "smoke": smoke_from_config,
         "compare": compare_from_config,
         "evaluate": evaluate_from_config,
+        "trace": trace_from_config,
     }
     return functions[args.command](args.config)
 

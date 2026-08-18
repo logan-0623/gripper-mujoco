@@ -20,6 +20,7 @@ def test_cli_exposes_complete_graph_control_workflow() -> None:
         "evaluate",
         "diagnose",
         "sensitivity",
+        "trace",
     ):
         parsed = parser.parse_args([command, "--config", "config.yaml"])
         assert parsed.command == command
@@ -44,6 +45,7 @@ def test_cli_exposes_complete_graph_control_workflow() -> None:
         ("smoke", "smoke_from_config"),
         ("compare", "compare_from_config"),
         ("evaluate", "evaluate_from_config"),
+        ("trace", "trace_from_config"),
     ],
 )
 def test_cli_dispatches_and_prints_json(

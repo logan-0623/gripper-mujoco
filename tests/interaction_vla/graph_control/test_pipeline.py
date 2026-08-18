@@ -22,6 +22,7 @@ from interaction_vla.graph_control.pipeline import (
     diagnose_from_config,
     evaluate_from_config,
     sensitivity_from_config,
+    trace_from_config,
 )
 from interaction_vla.graph_control.schema import ALL_CONDITIONS, TOKEN_DIM
 
@@ -535,3 +536,140 @@ def test_sensitivity_uses_balanced_rows_and_publishes_audited_report(
     ] is False
     records = result["records_path"].read_text(encoding="utf-8").splitlines()
     assert len(records) == 2 * len(ALL_CONDITIONS) * 3 * 12
+
+
+def _trace_fixture(tmp_path: Path):
+    config, context, caches = _sensitivity_fixture(tmp_path)
+    config.config_path.write_text("trace: test\n", encoding="utf-8")
+    config.trace = SimpleNamespace(
+        enabled=True,
+        output_dir=tmp_path / "traced_evaluation",
+        resume=True,
+    )
+    config.training = SimpleNamespace(output_dir=tmp_path / "runs")
+    config.evaluation = SimpleNamespace(
+        layouts=("normal",),
+        object_counts=(2,),
+        cases_per_cell=1,
+        master_seed=17,
+        max_steps=2,
+    )
+    bridge = SimpleNamespace(
+        dataset=SimpleNamespace(root=tmp_path / "dataset", repo_id="local/data"),
+        act=SimpleNamespace(device="cpu"),
+        teacher=SimpleNamespace(),
+    )
+    context = (config, bridge, context[2], context[3], "7" * 64, "8" * 64)
+    return config, context, caches
+
+
+def _patch_trace_context(monkeypatch, config, context, caches, rollout_calls) -> None:
+    _patch_diagnostic_context(monkeypatch, config, context, caches)
+    case = SimpleNamespace(
+        case_id="normal_n2_000", seed=17, layout="normal", object_count=2
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.paired_evaluation_cases",
+        lambda **kwargs: (case,),
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline._oracle_inputs",
+        lambda *args: (None, None, SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.fingerprint_tree",
+        lambda path: "9" * 64,
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline._runtime_for_condition",
+        lambda *args, seed, condition, **kwargs: SimpleNamespace(
+            condition=condition,
+            policy_seed=seed,
+            checkpoint=Path(f"checkpoint/{seed}/{condition}"),
+            checkpoint_compatibility={"mode": "retrospective_analysis"},
+        ),
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.OracleGraphV2TokenProvider",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.TCTIGTeacherExtractor",
+        lambda config: object(),
+    )
+
+    def fake_rollout(config, runtime, case, **kwargs):
+        rollout_calls.append((runtime.policy_seed, runtime.condition, case.case_id))
+        kwargs["trace_callback"](
+            {
+                "condition": runtime.condition,
+                "policy_seed": runtime.policy_seed,
+                "case_id": case.case_id,
+                "environment_seed": case.seed,
+                "layout": case.layout,
+                "object_count": case.object_count,
+            }
+        )
+
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.rollout_case", fake_rollout
+    )
+
+    def fake_write(path, records):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(records[0]) + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.write_trace_episode_atomic",
+        fake_write,
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.load_trace_episode",
+        lambda path: [json.loads(path.read_text(encoding="utf-8"))],
+    )
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.trace_episode_summary",
+        lambda records: {
+            **records[0],
+            "success": records[0]["condition"] != "flat",
+            "wrong_object_interaction": False,
+            "wrong_object_stable_grasp": False,
+            "target_drop": False,
+            "timeout": records[0]["condition"] == "flat",
+            "termination_reason": (
+                "timeout" if records[0]["condition"] == "flat" else "success"
+            ),
+            "steps": 1,
+            "mean_ik_projection_scale": 1.0,
+            "action_clipping_rate": 0.0,
+            "gripper_switch_count": 0,
+            "checkpoint": f"checkpoint/{records[0]['condition']}",
+        },
+    )
+
+
+def test_trace_pipeline_is_resumable_and_manifest_bound(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, context, caches = _trace_fixture(tmp_path)
+    rollout_calls = []
+    _patch_trace_context(monkeypatch, config, context, caches, rollout_calls)
+
+    result = trace_from_config(tmp_path / "config.yaml")
+
+    assert result["passed"] is True
+    assert result["episodes"] == len(ALL_CONDITIONS)
+    assert len(rollout_calls) == len(ALL_CONDITIONS)
+    manifest = json.loads(result["manifest_path"].read_text(encoding="utf-8"))
+    assert manifest["complete"] is True
+    assert manifest["completed_episodes"] == len(ALL_CONDITIONS)
+    assert result["report_path"].is_file()
+
+    rollout_calls.clear()
+    resumed = trace_from_config(tmp_path / "config.yaml")
+    assert resumed["resumed"] is True
+    assert rollout_calls == []
+
+    config.evaluation.max_steps = 3
+    with pytest.raises(ValueError, match="manifest.*max_steps"):
+        trace_from_config(tmp_path / "config.yaml")

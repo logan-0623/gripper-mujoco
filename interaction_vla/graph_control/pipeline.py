@@ -9,7 +9,7 @@ from pathlib import Path
 import shutil
 import tempfile
 from types import SimpleNamespace
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -86,6 +86,12 @@ from .training import (
     load_graph_act_checkpoint,
     load_graph_act_checkpoint_for_analysis,
     train_paired_seed,
+)
+from .tracing import (
+    TRACE_SCHEMA_VERSION,
+    load_trace_episode,
+    trace_episode_summary,
+    write_trace_episode_atomic,
 )
 
 
@@ -843,6 +849,299 @@ def sensitivity_from_config(
     )
 
 
+def _trace_source_fingerprint() -> str:
+    repository = Path(__file__).resolve().parents[2]
+    digest = hashlib.sha256()
+    for source in (
+        Path(__file__).with_name("rollout.py"),
+        Path(__file__).with_name("tracing.py"),
+    ):
+        relative = source.relative_to(repository).as_posix().encode("utf-8")
+        content = source.read_bytes()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(hashlib.sha256(content).digest())
+    return digest.hexdigest()
+
+
+def _write_jsonl_atomic(path: Path, records: Sequence[Mapping[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(_jsonable(record), sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _trace_episode_path(
+    root: Path, *, seed: int, condition: str, case_id: str
+) -> Path:
+    if not case_id or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in case_id):
+        raise ValueError("trace case_id contains unsafe path characters")
+    return root / "traces" / f"seed_{seed}" / condition / f"{case_id}.jsonl"
+
+
+def _read_json_mapping(path: Path, name: str) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"{name} is invalid: {path}") from error
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{name} must be a mapping")
+    return dict(value)
+
+
+def _trace_result(
+    *,
+    destination: Path,
+    report: Mapping[str, object],
+    resumed: bool,
+) -> dict[str, object]:
+    return {
+        "passed": bool(report["passed"]),
+        "episodes": int(report["records"]),
+        "policy_seeds": list(report["policy_seeds"]),
+        "conditions": list(report["conditions"]),
+        "resumed": bool(resumed),
+        "manifest_path": destination / "manifest.json",
+        "episodes_path": destination / "episodes.jsonl",
+        "report_path": destination / "report.json",
+    }
+
+
+def trace_from_config(path: str | Path) -> dict[str, object]:
+    preliminary = load_graph_control_config(path)
+    trace = preliminary.trace
+    if trace is None or not trace.enabled:
+        raise ValueError("enabled graph control trace config is required")
+    destination = trace.output_dir
+    manifest_path = destination / "manifest.json"
+    if destination.exists() and not destination.is_dir():
+        raise FileExistsError("Graph trace output path is not a directory")
+    if destination.exists() and not trace.resume:
+        raise FileExistsError("Graph trace output already exists and resume is disabled")
+    partials = list(destination.rglob("*.tmp")) if destination.exists() else []
+    if partials:
+        raise ValueError("Graph trace output contains partial episode files")
+
+    (
+        config,
+        bridge,
+        split,
+        source,
+        recovery_report_sha256,
+        oracle_report_sha256,
+    ) = _context(path)
+    if config.trace is None or not config.trace.enabled:
+        raise ValueError("enabled graph control trace config is required")
+    cases = paired_evaluation_cases(
+        layouts=config.evaluation.layouts,
+        object_counts=config.evaluation.object_counts,
+        cases_per_cell=config.evaluation.cases_per_cell,
+        master_seed=config.evaluation.master_seed,
+    )
+    cache_matrices: dict[int, dict[str, TokenCache]] = {}
+    cache_sha256: dict[str, str] = {}
+    dataset_fingerprints: set[str] = set()
+    checkpoint_sha256: dict[str, str] = {}
+    checkpoint_paths: dict[str, Path] = {}
+    for seed in config.seeds:
+        caches = _load_cache_matrix(
+            config,
+            bridge,
+            split,
+            seed,
+            oracle_report_sha256=oracle_report_sha256,
+        )
+        cache_matrices[seed] = caches
+        for condition in config.conditions:
+            key = f"seed_{seed}/{condition}"
+            cache_sha256[key] = str(caches[condition].sha256)
+            dataset_fingerprints.add(
+                str(caches[condition].provenance.dataset_fingerprint)
+            )
+            checkpoint = (
+                config.training.output_dir
+                / f"seed_{seed}"
+                / condition
+                / "checkpoint"
+            )
+            checkpoint_paths[key] = checkpoint
+            checkpoint_sha256[key] = fingerprint_tree(checkpoint)
+    if len(dataset_fingerprints) != 1:
+        raise ValueError("trace caches bind different datasets")
+    expected_manifest: dict[str, object] = {
+        "schema_version": "graph_control_trace_manifest_v1",
+        "trace_schema_version": TRACE_SCHEMA_VERSION,
+        "config": config.config_path,
+        "config_sha256": sha256_file(config.config_path),
+        "split_manifest": split.path,
+        "split_manifest_sha256": split.sha256,
+        "dataset_fingerprint": next(iter(dataset_fingerprints)),
+        "conditions": list(config.conditions),
+        "policy_seeds": list(config.seeds),
+        "cases": [
+            {
+                "case_id": case.case_id,
+                "environment_seed": case.seed,
+                "layout": case.layout,
+                "object_count": case.object_count,
+            }
+            for case in cases
+        ],
+        "max_steps": config.evaluation.max_steps,
+        "cache_sha256": cache_sha256,
+        "checkpoint_paths": checkpoint_paths,
+        "checkpoint_sha256": checkpoint_sha256,
+        "recovery_report_sha256": recovery_report_sha256,
+        "oracle_report_sha256": oracle_report_sha256,
+        "trace_source_fingerprint": _trace_source_fingerprint(),
+    }
+    resumed = destination.exists()
+    if resumed:
+        if not manifest_path.is_file():
+            raise ValueError("Graph trace manifest is missing")
+        actual_manifest = _read_json_mapping(manifest_path, "Graph trace manifest")
+        differing = sorted(
+            key
+            for key, value in _jsonable(expected_manifest).items()
+            if actual_manifest.get(key) != value
+        )
+        if differing:
+            raise ValueError(
+                "Graph trace manifest is incompatible: " + ", ".join(differing)
+            )
+        if actual_manifest.get("complete") is True:
+            report = _read_json_mapping(destination / "report.json", "Graph trace report")
+            return _trace_result(
+                destination=destination,
+                report=report,
+                resumed=True,
+            )
+    else:
+        destination.mkdir(parents=True, exist_ok=False)
+        actual_manifest = {
+            **expected_manifest,
+            "complete": False,
+            "completed_episodes": 0,
+            "total_episodes": len(config.seeds) * len(config.conditions) * len(cases),
+        }
+        _write_json_atomic(manifest_path, actual_manifest)
+
+    _, _, oracle_normalization = _oracle_inputs(bridge, source, split)
+    del source
+    gc.collect()
+    records: list[dict[str, object]] = []
+    compatibility: dict[str, object] = {}
+    total_episodes = len(config.seeds) * len(config.conditions) * len(cases)
+    completed = 0
+    progress = tqdm(
+        total=total_episodes,
+        desc="graph control trace",
+        unit="episode",
+        dynamic_ncols=True,
+        disable=None,
+    )
+    for seed in config.seeds:
+        caches = cache_matrices[seed]
+        for condition in config.conditions:
+            runtime = _runtime_for_condition(
+                config,
+                bridge,
+                split,
+                seed=seed,
+                condition=condition,
+                cache=caches[condition],
+                recovery_report_sha256=recovery_report_sha256,
+                oracle_report_sha256=oracle_report_sha256,
+                oracle_normalization=oracle_normalization,
+                retrospective_analysis=True,
+            )
+            compatibility[f"seed_{seed}/{condition}"] = (
+                runtime.checkpoint_compatibility
+            )
+            teacher_provider = OracleGraphV2TokenProvider(
+                teacher=TCTIGTeacherExtractor(bridge.teacher),
+                normalization=oracle_normalization,
+            )
+            for case in cases:
+                progress.set_postfix(
+                    seed=seed, condition=condition, case=case.case_id
+                )
+                trace_path = _trace_episode_path(
+                    destination,
+                    seed=seed,
+                    condition=condition,
+                    case_id=case.case_id,
+                )
+                if trace_path.is_file():
+                    trace_records = load_trace_episode(trace_path)
+                else:
+                    trace_records: list[dict[str, object]] = []
+                    rollout_case(
+                        bridge,
+                        runtime,
+                        case,
+                        max_steps=config.evaluation.max_steps,
+                        trace_callback=trace_records.append,
+                        teacher_token_provider=teacher_provider,
+                    )
+                    write_trace_episode_atomic(trace_path, trace_records)
+                records.append(trace_episode_summary(trace_records))
+                completed += 1
+                progress.update(1)
+                _write_json_atomic(
+                    manifest_path,
+                    {
+                        **expected_manifest,
+                        "complete": False,
+                        "completed_episodes": completed,
+                        "total_episodes": total_episodes,
+                    },
+                )
+            del runtime, teacher_provider
+            gc.collect()
+            _clear_accelerator_memory()
+    progress.close()
+    aggregate = aggregate_rollouts(records, conditions=config.conditions)
+    report = {
+        **aggregate,
+        "conditions": list(config.conditions),
+        "trace_schema_version": TRACE_SCHEMA_VERSION,
+        "trace_manifest": manifest_path,
+        "checkpoint_compatibility": compatibility,
+        "cache_sha256": cache_sha256,
+        "checkpoint_sha256": checkpoint_sha256,
+        "recovery_report_sha256": recovery_report_sha256,
+        "oracle_report_sha256": oracle_report_sha256,
+    }
+    _write_jsonl_atomic(destination / "episodes.jsonl", records)
+    _write_json_atomic(destination / "report.json", report)
+    _write_json_atomic(
+        manifest_path,
+        {
+            **expected_manifest,
+            "complete": True,
+            "completed_episodes": total_episodes,
+            "total_episodes": total_episodes,
+            "episodes_path": destination / "episodes.jsonl",
+            "report_path": destination / "report.json",
+        },
+    )
+    return _trace_result(
+        destination=destination,
+        report=report,
+        resumed=resumed,
+    )
+
+
 def inspect_from_config(path: str | Path) -> dict[str, object]:
     (
         config,
@@ -1252,6 +1551,7 @@ def _runtime_for_condition(
     recovery_report_sha256: str,
     oracle_report_sha256: str | None,
     oracle_normalization: GraphV2Normalization,
+    retrospective_analysis: bool = False,
 ) -> GraphPolicyRuntime:
     bindings = graph_checkpoint_bindings(
         condition,
@@ -1280,11 +1580,21 @@ def _runtime_for_condition(
         device=device,
         bindings=bindings,
     )
-    policy, preprocessor, postprocessor, _ = load_graph_act_checkpoint(
-        checkpoint,
-        device=device,
-        expected_metadata=expected_metadata,
-    )
+    if retrospective_analysis:
+        policy, preprocessor, postprocessor, _, compatibility = (
+            load_graph_act_checkpoint_for_analysis(
+                checkpoint,
+                device=device,
+                expected_metadata=expected_metadata,
+            )
+        )
+    else:
+        policy, preprocessor, postprocessor, _ = load_graph_act_checkpoint(
+            checkpoint,
+            device=device,
+            expected_metadata=expected_metadata,
+        )
+        compatibility = None
     graph_checkpoint = config.graph_checkpoint(condition, seed)
     if condition == "flat":
         provider: Any = FlatTokenProvider()
@@ -1305,6 +1615,7 @@ def _runtime_for_condition(
         preprocessor=preprocessor,
         postprocessor=postprocessor,
         token_provider=provider,
+        checkpoint_compatibility=compatibility,
     )
 
 

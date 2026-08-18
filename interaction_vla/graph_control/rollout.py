@@ -385,6 +385,7 @@ class GraphPolicyRuntime:
     preprocessor: Any
     postprocessor: Any
     token_provider: Any
+    checkpoint_compatibility: Mapping[str, object] | None = None
 
     def reset(self) -> None:
         if hasattr(self.policy, "reset"):
