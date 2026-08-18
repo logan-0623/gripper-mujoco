@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+import numpy as np
 import yaml
 
 from .schema import ALL_CONDITIONS, ORACLE_CONDITIONS
@@ -76,6 +77,27 @@ class EvaluationConfig:
 
 
 @dataclass(frozen=True)
+class DiagnosticsConfig:
+    output_dir: Path
+    bootstrap_samples: int = 2000
+    bootstrap_seed: int = 2057736129
+    max_lag: int = 3
+    active_epsilon: float = 1.0e-6
+
+    def __post_init__(self) -> None:
+        if self.bootstrap_samples < 1:
+            raise ValueError("diagnostics.bootstrap_samples must be positive")
+        if self.bootstrap_seed < 0:
+            raise ValueError("diagnostics.bootstrap_seed must be non-negative")
+        if self.max_lag < 0:
+            raise ValueError("diagnostics.max_lag must be non-negative")
+        if not np.isfinite(self.active_epsilon) or self.active_epsilon <= 0.0:
+            raise ValueError(
+                "diagnostics.active_epsilon must be finite and positive"
+            )
+
+
+@dataclass(frozen=True)
 class GraphControlConfig:
     config_path: Path
     bridge_config: Path
@@ -88,6 +110,7 @@ class GraphControlConfig:
     cache: CacheConfig
     training: TrainingConfig
     evaluation: EvaluationConfig
+    diagnostics: DiagnosticsConfig | None = None
 
     def __post_init__(self) -> None:
         if self.conditions not in {ORACLE_CONDITIONS, ALL_CONDITIONS}:
@@ -162,6 +185,7 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
             "cache",
             "training",
             "evaluation",
+            "diagnostics",
         },
         "graph control config",
     )
@@ -184,6 +208,11 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
     cache_raw = _mapping(raw["cache"], "cache")
     training_raw = _mapping(raw["training"], "training")
     evaluation_raw = _mapping(raw["evaluation"], "evaluation")
+    diagnostics_raw = (
+        None
+        if raw.get("diagnostics") is None
+        else _mapping(raw["diagnostics"], "diagnostics")
+    )
     _require_keys(cache_raw, {"directory", "batch_size"}, "cache")
     _require_keys(
         training_raw, {"output_dir", "smoke_steps", "formal_epochs"}, "training"
@@ -193,6 +222,20 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
         {"layouts", "object_counts", "cases_per_cell", "master_seed", "max_steps"},
         "evaluation",
     )
+    if diagnostics_raw is not None:
+        _require_keys(
+            diagnostics_raw,
+            {
+                "output_dir",
+                "bootstrap_samples",
+                "bootstrap_seed",
+                "max_lag",
+                "active_epsilon",
+            },
+            "diagnostics",
+        )
+        if "output_dir" not in diagnostics_raw:
+            raise ValueError("missing diagnostics fields: output_dir")
 
     return GraphControlConfig(
         config_path=config_path,
@@ -224,5 +267,22 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
             cases_per_cell=int(evaluation_raw["cases_per_cell"]),
             master_seed=int(evaluation_raw["master_seed"]),
             max_steps=int(evaluation_raw["max_steps"]),
+        ),
+        diagnostics=(
+            None
+            if diagnostics_raw is None
+            else DiagnosticsConfig(
+                output_dir=Path(diagnostics_raw["output_dir"]),
+                bootstrap_samples=int(
+                    diagnostics_raw.get("bootstrap_samples", 2000)
+                ),
+                bootstrap_seed=int(
+                    diagnostics_raw.get("bootstrap_seed", 2057736129)
+                ),
+                max_lag=int(diagnostics_raw.get("max_lag", 3)),
+                active_epsilon=float(
+                    diagnostics_raw.get("active_epsilon", 1.0e-6)
+                ),
+            )
         ),
     )
