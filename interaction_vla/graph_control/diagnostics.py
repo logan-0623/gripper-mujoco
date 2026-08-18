@@ -291,3 +291,120 @@ def covariance_effective_rank(
         return 0.0
     weights = eigenvalues[eigenvalues > threshold] / total
     return float(np.exp(-np.sum(weights * np.log(weights))))
+
+
+def teacher_distance_metrics(
+    predicted: object, teacher: object
+) -> dict[str, float | int | None]:
+    predicted_values = np.asarray(predicted, dtype=np.float64)
+    teacher_values = np.asarray(teacher, dtype=np.float64)
+    if (
+        predicted_values.ndim != 2
+        or not len(predicted_values)
+        or predicted_values.shape != teacher_values.shape
+    ):
+        raise ValueError("predicted and teacher values must share non-empty 2D shape")
+    if not (
+        np.isfinite(predicted_values).all()
+        and np.isfinite(teacher_values).all()
+    ):
+        raise ValueError("predicted and teacher values must be finite")
+    difference = predicted_values - teacher_values
+    l1 = np.sum(np.abs(difference), axis=1)
+    l2 = np.linalg.norm(difference, axis=1)
+    predicted_norm = np.linalg.norm(predicted_values, axis=1)
+    teacher_norm = np.linalg.norm(teacher_values, axis=1)
+    cosine_valid = (predicted_norm > 0.0) & (teacher_norm > 0.0)
+    cosine_count = int(cosine_valid.sum())
+    cosine_distance: np.ndarray | None = None
+    if cosine_count:
+        similarity = np.sum(
+            predicted_values[cosine_valid] * teacher_values[cosine_valid], axis=1
+        ) / (predicted_norm[cosine_valid] * teacher_norm[cosine_valid])
+        cosine_distance = 1.0 - np.clip(similarity, -1.0, 1.0)
+    return {
+        "frames": int(len(predicted_values)),
+        "mean_l1": float(np.mean(l1)),
+        "mean_l2": float(np.mean(l2)),
+        "cosine_frames": cosine_count,
+        "mean_cosine_distance": (
+            None if cosine_distance is None else float(np.mean(cosine_distance))
+        ),
+    }
+
+
+def _lagged_pairs(
+    predicted: np.ndarray,
+    teacher: np.ndarray,
+    layout: EpisodeLayout,
+    lag: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    predicted_parts: list[np.ndarray] = []
+    teacher_parts: list[np.ndarray] = []
+    for bounds in layout.episode_slices:
+        predicted_episode = predicted[bounds]
+        teacher_episode = teacher[bounds]
+        if abs(lag) >= len(predicted_episode):
+            continue
+        if lag > 0:
+            predicted_parts.append(predicted_episode[lag:])
+            teacher_parts.append(teacher_episode[:-lag])
+        elif lag < 0:
+            predicted_parts.append(predicted_episode[:lag])
+            teacher_parts.append(teacher_episode[-lag:])
+        else:
+            predicted_parts.append(predicted_episode)
+            teacher_parts.append(teacher_episode)
+    if not predicted_parts:
+        empty = np.empty(0, dtype=np.float64)
+        return empty, empty.copy()
+    return np.concatenate(predicted_parts), np.concatenate(teacher_parts)
+
+
+def _pearson(first: np.ndarray, second: np.ndarray) -> float | None:
+    if len(first) < 2 or np.std(first) == 0.0 or np.std(second) == 0.0:
+        return None
+    correlation = float(np.corrcoef(first, second)[0, 1])
+    return correlation if np.isfinite(correlation) else None
+
+
+def lagged_feature_correlation(
+    predicted: object,
+    teacher: object,
+    layout: EpisodeLayout,
+    *,
+    max_lag: int,
+) -> dict[str, float | int | None]:
+    if isinstance(max_lag, bool) or int(max_lag) != max_lag or max_lag < 0:
+        raise ValueError("max_lag must be a non-negative integer")
+    predicted_values = np.asarray(predicted, dtype=np.float64)
+    teacher_values = np.asarray(teacher, dtype=np.float64)
+    expected_shape = (len(layout.row_indices),)
+    if predicted_values.shape != expected_shape or teacher_values.shape != expected_shape:
+        raise ValueError("lagged feature values must match episode layout rows")
+    if not (
+        np.isfinite(predicted_values).all()
+        and np.isfinite(teacher_values).all()
+    ):
+        raise ValueError("lagged feature values must be finite")
+
+    values: list[tuple[int, int, float | None]] = []
+    for lag in range(-int(max_lag), int(max_lag) + 1):
+        predicted_pairs, teacher_pairs = _lagged_pairs(
+            predicted_values, teacher_values, layout, lag
+        )
+        values.append((lag, len(predicted_pairs), _pearson(predicted_pairs, teacher_pairs)))
+    lag_zero = next(value for value in values if value[0] == 0)
+    defined = [value for value in values if value[2] is not None]
+    best = (
+        None
+        if not defined
+        else max(defined, key=lambda value: (float(value[2]), -abs(value[0]), -value[0]))
+    )
+    return {
+        "lag_zero_pairs": int(lag_zero[1]),
+        "lag_zero_correlation": lag_zero[2],
+        "best_lag": None if best is None else int(best[0]),
+        "best_pairs": 0 if best is None else int(best[1]),
+        "best_correlation": None if best is None else float(best[2]),
+    }

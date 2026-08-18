@@ -7,7 +7,9 @@ from interaction_vla.graph_control.diagnostics import (
     categorical_sequence_metrics,
     covariance_effective_rank,
     feature_distribution,
+    lagged_feature_correlation,
     temporal_feature_metrics,
+    teacher_distance_metrics,
     validate_episode_layout,
     validate_tokens,
 )
@@ -192,3 +194,61 @@ def test_covariance_effective_rank_rejects_nonfinite_or_invalid_shapes() -> None
         covariance_effective_rank(np.ones(3))
     with pytest.raises(ValueError, match="finite"):
         covariance_effective_rank(np.array([[np.nan]]))
+
+
+def test_teacher_distance_skips_cosine_for_zero_vectors() -> None:
+    predicted = np.array([[1.0, 0.0], [0.0, 0.0], [0.0, 2.0]])
+    teacher = np.array([[0.0, 1.0], [0.0, 0.0], [0.0, 1.0]])
+
+    metrics = teacher_distance_metrics(predicted, teacher)
+
+    assert metrics["frames"] == 3
+    assert metrics["mean_l1"] == 1.0
+    assert metrics["mean_l2"] == pytest.approx((np.sqrt(2.0) + 1.0) / 3.0)
+    assert metrics["cosine_frames"] == 2
+    assert metrics["mean_cosine_distance"] == 0.5
+
+
+def test_teacher_distance_rejects_shape_and_nonfinite_mismatch() -> None:
+    with pytest.raises(ValueError, match="shape"):
+        teacher_distance_metrics(np.ones((2, 2)), np.ones((2, 3)))
+    with pytest.raises(ValueError, match="finite"):
+        teacher_distance_metrics(np.array([[np.nan]]), np.ones((1, 1)))
+
+
+def test_lagged_correlation_finds_predicted_one_step_delay_without_boundary_pairs() -> None:
+    layout = validate_episode_layout(
+        row_indices=np.arange(8),
+        episode_indices=np.array([0, 0, 0, 0, 1, 1, 1, 1]),
+        frame_indices=np.array([0, 1, 2, 3, 0, 1, 2, 3]),
+    )
+    teacher = np.array([0.0, 1.0, 2.0, 3.0, 100.0, 101.0, 102.0, 103.0])
+    predicted = np.array([999.0, 0.0, 1.0, 2.0, -999.0, 100.0, 101.0, 102.0])
+
+    metrics = lagged_feature_correlation(
+        predicted, teacher, layout, max_lag=2
+    )
+
+    assert metrics["lag_zero_pairs"] == 8
+    assert metrics["best_lag"] == 1
+    assert metrics["best_pairs"] == 6
+    assert metrics["best_correlation"] == pytest.approx(1.0)
+
+
+def test_lagged_correlation_reports_constant_features_as_undefined() -> None:
+    metrics = lagged_feature_correlation(
+        np.ones(5), np.ones(5), _layout(), max_lag=3
+    )
+
+    assert metrics["lag_zero_correlation"] is None
+    assert metrics["best_lag"] is None
+    assert metrics["best_pairs"] == 0
+    assert metrics["best_correlation"] is None
+
+
+@pytest.mark.parametrize("max_lag", [-1, 1.5])
+def test_lagged_correlation_rejects_invalid_lag(max_lag) -> None:
+    with pytest.raises(ValueError, match="max_lag"):
+        lagged_feature_correlation(
+            np.arange(5), np.arange(5), _layout(), max_lag=max_lag
+        )
