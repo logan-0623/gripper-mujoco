@@ -36,6 +36,10 @@ evaluation:
   cases_per_cell: 20
   master_seed: 2057736129
   max_steps: 180
+trace:
+  enabled: true
+  output_dir: outputs/graph_control/graph_v2_oracle/traced_evaluation
+  resume: true
 diagnostics:
   output_dir: outputs/graph_control/graph_v2_oracle/diagnostics
   bootstrap_samples: 2000
@@ -78,6 +82,12 @@ def test_oracle_config_locks_two_conditions_and_recovery_prerequisite(
     assert config.diagnostics.sensitivity_rows_per_episode == 4
     assert config.diagnostics.sensitivity_batch_size == 4
     assert config.diagnostics.sensitivity_scale == 0.25
+    assert config.trace is not None
+    assert config.trace.enabled is True
+    assert config.trace.output_dir == Path(
+        "outputs/graph_control/graph_v2_oracle/traced_evaluation"
+    )
+    assert config.trace.resume is True
 
 
 def test_full_matrix_requires_graph_runs_root(tmp_path: Path) -> None:
@@ -200,3 +210,15 @@ def test_config_without_diagnostics_remains_compatible(tmp_path: Path) -> None:
     config = load_graph_control_config(path)
 
     assert config.diagnostics is None
+
+
+def test_config_rejects_unknown_trace_field(tmp_path: Path) -> None:
+    path = tmp_path / "graph_control.yaml"
+    _write_config(path)
+    path.write_text(
+        path.read_text().replace("  resume: true", "  resume: true\n  unexpected: 1"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unknown trace fields: unexpected"):
+        load_graph_control_config(path)

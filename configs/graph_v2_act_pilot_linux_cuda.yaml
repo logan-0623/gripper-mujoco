@@ -22,6 +22,10 @@ evaluation:
   cases_per_cell: 5
   master_seed: 2057736129
   max_steps: 180
+trace:
+  enabled: true
+  output_dir: outputs/graph_control/graph_v2_pilot_cuda/traced_evaluation
+  resume: true
 diagnostics:
   output_dir: outputs/graph_control/graph_v2_pilot_cuda/diagnostics
   bootstrap_samples: 2000

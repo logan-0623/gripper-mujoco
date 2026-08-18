@@ -114,6 +114,19 @@ class DiagnosticsConfig:
 
 
 @dataclass(frozen=True)
+class TraceConfig:
+    enabled: bool
+    output_dir: Path
+    resume: bool = True
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise ValueError("trace.enabled must be boolean")
+        if not isinstance(self.resume, bool):
+            raise ValueError("trace.resume must be boolean")
+
+
+@dataclass(frozen=True)
 class GraphControlConfig:
     config_path: Path
     bridge_config: Path
@@ -127,6 +140,7 @@ class GraphControlConfig:
     training: TrainingConfig
     evaluation: EvaluationConfig
     diagnostics: DiagnosticsConfig | None = None
+    trace: TraceConfig | None = None
 
     def __post_init__(self) -> None:
         if self.conditions not in {ORACLE_CONDITIONS, ALL_CONDITIONS}:
@@ -202,6 +216,7 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
             "training",
             "evaluation",
             "diagnostics",
+            "trace",
         },
         "graph control config",
     )
@@ -229,6 +244,9 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
         if raw.get("diagnostics") is None
         else _mapping(raw["diagnostics"], "diagnostics")
     )
+    trace_raw = (
+        None if raw.get("trace") is None else _mapping(raw["trace"], "trace")
+    )
     _require_keys(cache_raw, {"directory", "batch_size"}, "cache")
     _require_keys(
         training_raw, {"output_dir", "smoke_steps", "formal_epochs"}, "training"
@@ -255,6 +273,13 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
         )
         if "output_dir" not in diagnostics_raw:
             raise ValueError("missing diagnostics fields: output_dir")
+    if trace_raw is not None:
+        _require_keys(trace_raw, {"enabled", "output_dir", "resume"}, "trace")
+        missing_trace = {"enabled", "output_dir"} - set(trace_raw)
+        if missing_trace:
+            raise ValueError(
+                "missing trace fields: " + ", ".join(sorted(missing_trace))
+            )
 
     return GraphControlConfig(
         config_path=config_path,
@@ -311,6 +336,15 @@ def load_graph_control_config(path: str | Path) -> GraphControlConfig:
                 sensitivity_scale=float(
                     diagnostics_raw.get("sensitivity_scale", 0.25)
                 ),
+            )
+        ),
+        trace=(
+            None
+            if trace_raw is None
+            else TraceConfig(
+                enabled=trace_raw["enabled"],
+                output_dir=Path(trace_raw["output_dir"]),
+                resume=trace_raw.get("resume", True),
             )
         ),
     )
