@@ -307,7 +307,17 @@ def _publish_diagnostics(
             handle.flush()
             os.fsync(handle.fileno())
         _write_json_atomic(staging / "report.json", final)
-    return final
+    return {
+        "passed": bool(final["passed"]),
+        "schema_version": final["schema_version"],
+        "partition": final["partition"],
+        "rows": int(final["rows"]),
+        "episodes": int(final["episodes"]),
+        "conditions": list(final["conditions"]),
+        "estimator_seeds": list(final["estimator_seeds"]),
+        "report_path": report_path,
+        "per_episode_path": per_episode_path,
+    }
 
 
 def _load_source(bridge: BridgeConfig):

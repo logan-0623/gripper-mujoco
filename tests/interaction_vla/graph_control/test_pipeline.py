@@ -395,6 +395,9 @@ def test_diagnostics_selects_partition_rows_and_publishes_jsonl(
     assert result["partition"] == "test"
     assert result["rows"] == 4
     assert result["episodes"] == 2
+    assert "by_seed_condition" not in result
+    assert result["conditions"] == list(ALL_CONDITIONS)
+    assert result["estimator_seeds"] == [0]
     assert result["report_path"].is_file()
     assert result["per_episode_path"].is_file()
     report = json.loads(result["report_path"].read_text(encoding="utf-8"))
