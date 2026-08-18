@@ -12,6 +12,8 @@ from interaction_vla.graph_control.rollout import (
     OracleGraphV2TokenProvider,
     PredictedTokenProvider,
     _next_queued_action,
+    _policy_step,
+    _step_trace_record,
     aggregate_rollouts,
     augment_policy_observation,
     paired_evaluation_cases,
@@ -24,6 +26,10 @@ from interaction_vla.graph_control.schema import (
     TOKEN_SLICES,
 )
 from interaction_vla.lerobot_bridge.teacher_schema import TeacherFrame
+from interaction_vla.env import TerminationReason
+from interaction_vla.graph.schema import EntityState, SceneSnapshot
+from interaction_vla.contact_physics import GraspState, InteractionSubstepEvent
+from interaction_vla.graph_control.tracing import TRACE_SCHEMA_VERSION
 
 
 def _camera() -> SimpleNamespace:
@@ -269,6 +275,139 @@ def test_graph_observation_is_rebuilt_at_receding_horizon_queue_index_zero(monke
         _next_queued_action(queue, object(), observation_factory)
 
     assert len(calls) == 9
+
+
+def test_policy_step_returns_the_exact_single_token_used_for_action(monkeypatch) -> None:
+    camera = _camera()
+    state = np.zeros(10, dtype=np.float32)
+    token = np.linspace(0.0, 1.0, TOKEN_DIM, dtype=np.float32)
+
+    class Provider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def token(self, **kwargs):
+            self.calls += 1
+            return token.copy()
+
+    provider = Provider()
+    runtime = SimpleNamespace(token_provider=provider)
+    expected_chunk = np.arange(56, dtype=np.float32).reshape(8, 7)
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.rollout._predict_chunk",
+        lambda active_runtime, observation: expected_chunk.copy(),
+    )
+
+    used_token, selected = _policy_step(
+        queue=ActionChunkQueue(chunk_size=8, n_action_steps=1),
+        runtime=runtime,
+        snapshot=object(),
+        camera_frame=camera,
+        state=state,
+        task="place",
+    )
+
+    assert provider.calls == 1
+    np.testing.assert_array_equal(used_token, token)
+    np.testing.assert_array_equal(selected.action, expected_chunk[0])
+
+
+def test_step_trace_record_connects_observation_action_and_post_step_events() -> None:
+    def entity(name: str, position, *, target: bool = False):
+        return EntityState(
+            name=name,
+            entity_type="object",
+            position=np.asarray(position),
+            orientation=np.asarray([1.0, 0.0, 0.0, 0.0]),
+            linear_velocity=np.zeros(3),
+            angular_velocity=np.zeros(3),
+            size=np.full(3, 0.04),
+            target=target,
+        )
+
+    gripper = EntityState(
+        name="gripper",
+        entity_type="gripper",
+        position=np.asarray([0.4, 0.0, 0.4]),
+        orientation=np.asarray([1.0, 0.0, 0.0, 0.0]),
+        linear_velocity=np.zeros(3),
+        angular_velocity=np.zeros(3),
+        size=np.asarray([0.08, 0.08, 0.1]),
+    )
+    target = entity("object_0", [0.5, 0.0, 0.25], target=True)
+    distractor = entity("object_1", [0.6, 0.0, 0.25])
+    receptacle = EntityState(
+        name="receptacle",
+        entity_type="receptacle",
+        position=np.asarray([0.7, 0.0, 0.25]),
+        orientation=np.asarray([1.0, 0.0, 0.0, 0.0]),
+        linear_velocity=np.zeros(3),
+        angular_velocity=np.zeros(3),
+        size=np.asarray([0.13, 0.13, 0.056]),
+    )
+    support = EntityState(
+        name="table",
+        entity_type="support",
+        position=np.asarray([0.5, 0.0, 0.2]),
+        orientation=np.asarray([1.0, 0.0, 0.0, 0.0]),
+        linear_velocity=np.zeros(3),
+        angular_velocity=np.zeros(3),
+        size=np.asarray([0.6, 0.48, 0.04]),
+    )
+    snapshot = SceneSnapshot(
+        gripper=gripper,
+        objects=(target, distractor),
+        receptacle=receptacle,
+        support=support,
+    )
+    teacher_token = np.zeros(TOKEN_DIM, dtype=np.float32)
+    teacher_token[TOKEN_SLICES["phase"].start] = 1.0
+    event = InteractionSubstepEvent(
+        substep=3,
+        bilateral_objects=("object_0",),
+        stable_objects=("object_0",),
+    )
+    grasp = GraspState(
+        bilateral_object="object_0",
+        stable_object="object_0",
+        stable_frames=3,
+        ever_stable_target=True,
+        dropped_target=False,
+    )
+
+    record = _step_trace_record(
+        runtime=SimpleNamespace(
+            condition="predicted_random_v2",
+            policy_seed=0,
+            checkpoint=SimpleNamespace(as_posix=lambda: "checkpoint"),
+        ),
+        case=SimpleNamespace(
+            case_id="normal_n2_000", seed=17, layout="normal", object_count=2
+        ),
+        step=0,
+        snapshot=snapshot,
+        target_name="object_0",
+        policy_token=teacher_token,
+        teacher_token=teacher_token,
+        raw_action=np.zeros(7),
+        clipped_action=np.zeros(7),
+        executed_world_action=np.zeros(7),
+        action_was_clipped=False,
+        projection_scale=1.0,
+        gripper_command=1.0,
+        gripper_switch_count=0,
+        events=(event,),
+        grasp=grasp,
+        done=True,
+        reason=TerminationReason.SUCCESS,
+    )
+
+    assert record["trace_schema_version"] == TRACE_SCHEMA_VERSION
+    assert record["phase"] == "approach"
+    assert record["target_contact"] is True
+    assert record["stable_target_grasp"] is True
+    assert record["success"] is True
+    assert record["events"][0]["stable_objects"] == ["object_0"]
 
 
 def test_oracle_gate_requires_ten_point_gain_without_more_wrong_grasps() -> None:

@@ -17,6 +17,7 @@ from interaction_vla.lerobot_bridge.codecs import (
     validate_finger_joint_ranges,
 )
 from interaction_vla.lerobot_bridge.config import BridgeConfig
+from interaction_vla.lerobot_bridge.interaction_phase import PHASE_NAMES
 from interaction_vla.lerobot_bridge.rollout import (
     ActionChunkQueue,
     BinaryGripperHysteresis,
@@ -31,9 +32,11 @@ from .schema import (
     ALL_CONDITIONS,
     ORACLE_CONDITIONS,
     TOKEN_DIM,
+    TOKEN_SLICES,
     empty_token,
     validate_token,
 )
+from .tracing import TRACE_SCHEMA_VERSION, graph_group_errors, validate_trace_record
 
 
 @dataclass(frozen=True)
@@ -424,17 +427,191 @@ def _next_queued_action(
     return queue.next(lambda: _predict_chunk(runtime, observation_factory()))
 
 
+def _policy_step(
+    *,
+    queue: ActionChunkQueue,
+    runtime: GraphPolicyRuntime | Any,
+    snapshot: Any,
+    camera_frame: Any,
+    state: np.ndarray,
+    task: str,
+) -> tuple[np.ndarray, Any]:
+    token = validate_token(
+        runtime.token_provider.token(
+            snapshot=snapshot,
+            camera_frame=camera_frame,
+            state=state,
+            task=task,
+        )
+    )
+    observation = augment_policy_observation(
+        agent_rgb=camera_frame.views["agent"].rgb,
+        wrist_rgb=camera_frame.views["wrist"].rgb,
+        state=state,
+        token=token,
+    )
+    selected = _next_queued_action(queue, runtime, lambda: observation)
+    return token, selected
+
+
+def _entity_radius(entity: Any) -> float:
+    size = np.asarray(entity.size, dtype=np.float64)
+    if size.shape != (3,) or not np.isfinite(size).all():
+        raise ValueError("trace entity size must be finite with shape (3,)")
+    return 0.5 * float(np.linalg.norm(size))
+
+
+def _minimum_distractor_clearance(snapshot: Any) -> float:
+    target = snapshot.target_object
+    distractors = [entity for entity in snapshot.objects if entity.name != target.name]
+    if not distractors:
+        raise ValueError("trace snapshot must contain a distractor")
+    values: list[float] = []
+    for distractor in distractors:
+        distractor_radius = _entity_radius(distractor)
+        for source in (snapshot.gripper, target):
+            center_distance = float(
+                np.linalg.norm(
+                    np.asarray(distractor.position, dtype=np.float64)
+                    - np.asarray(source.position, dtype=np.float64)
+                )
+            )
+            values.append(
+                center_distance - distractor_radius - _entity_radius(source)
+            )
+    result = float(min(values))
+    if not np.isfinite(result):
+        raise ValueError("minimum distractor clearance must be finite")
+    return result
+
+
+def _step_trace_record(
+    *,
+    runtime: GraphPolicyRuntime | Any,
+    case: EvaluationCase | Any,
+    step: int,
+    snapshot: Any,
+    target_name: str,
+    policy_token: object,
+    teacher_token: object,
+    raw_action: object,
+    clipped_action: object,
+    executed_world_action: object,
+    action_was_clipped: bool,
+    projection_scale: float,
+    gripper_command: float,
+    gripper_switch_count: int,
+    events: Sequence[Any],
+    grasp: Any,
+    done: bool,
+    reason: TerminationReason,
+) -> dict[str, object]:
+    policy_values = validate_token(policy_token)
+    teacher_values = validate_token(teacher_token)
+    phase_values = teacher_values[TOKEN_SLICES["phase"]]
+    if float(np.sum(np.clip(phase_values, 0.0, None))) <= 1.0e-12:
+        raise ValueError("Teacher trace token has no interaction phase")
+    phase = PHASE_NAMES[int(np.argmax(phase_values))]
+    event_records = [
+        {
+            "substep": int(event.substep),
+            "bilateral_objects": list(event.bilateral_objects),
+            "stable_objects": list(event.stable_objects),
+            "dropped_target": bool(event.dropped_target),
+        }
+        for event in events
+    ]
+    bilateral = {
+        name for event in events for name in tuple(event.bilateral_objects)
+    }
+    stable = {name for event in events for name in tuple(event.stable_objects)}
+    bilateral_object = getattr(grasp, "bilateral_object", None)
+    stable_object = getattr(grasp, "stable_object", None)
+    target = snapshot.target_object
+    record = {
+        "trace_schema_version": TRACE_SCHEMA_VERSION,
+        "episode_id": (
+            f"seed_{int(runtime.policy_seed)}/{runtime.condition}/{case.case_id}"
+        ),
+        "case_id": str(case.case_id),
+        "environment_seed": int(case.seed),
+        "condition": str(runtime.condition),
+        "policy_seed": int(runtime.policy_seed),
+        "layout": str(case.layout),
+        "object_count": int(case.object_count),
+        "training_distribution": "id" if case.layout == "normal" else "ood",
+        "step": int(step),
+        "phase": phase,
+        "policy_token": policy_values.tolist(),
+        "teacher_token": teacher_values.tolist(),
+        "graph_error_by_group": graph_group_errors(
+            policy_values,
+            teacher_values,
+            condition=str(runtime.condition),
+        ),
+        "raw_action": np.asarray(raw_action, dtype=np.float64).tolist(),
+        "clipped_action": np.asarray(clipped_action, dtype=np.float64).tolist(),
+        "executed_world_action": np.asarray(
+            executed_world_action, dtype=np.float64
+        ).tolist(),
+        "action_was_clipped": bool(action_was_clipped),
+        "ik_projection_scale": float(projection_scale),
+        "gripper_command": float(gripper_command),
+        "end_effector_position": snapshot.gripper.position.tolist(),
+        "end_effector_orientation": snapshot.gripper.orientation.tolist(),
+        "target_relative_position": (
+            target.position - snapshot.gripper.position
+        ).tolist(),
+        "receptacle_relative_position": (
+            snapshot.receptacle.position - target.position
+        ).tolist(),
+        "minimum_distractor_clearance": _minimum_distractor_clearance(snapshot),
+        "target_contact": bool(
+            bilateral_object == target_name or target_name in bilateral
+        ),
+        "stable_target_grasp": bool(
+            stable_object == target_name or target_name in stable
+        ),
+        "wrong_object_contact": bool(
+            (bilateral_object is not None and bilateral_object != target_name)
+            or any(name != target_name for name in bilateral)
+        ),
+        "stable_wrong_object_grasp": bool(
+            (stable_object is not None and stable_object != target_name)
+            or any(name != target_name for name in stable)
+        ),
+        "events": event_records,
+        "done": bool(done),
+        "termination_reason": reason.value,
+        "success": reason is TerminationReason.SUCCESS,
+        "target_drop": bool(
+            getattr(grasp, "dropped_target", False)
+            or any(event.dropped_target for event in events)
+        ),
+        "timeout": reason is TerminationReason.TIMEOUT,
+        "gripper_switch_count": int(gripper_switch_count),
+        "checkpoint": runtime.checkpoint.as_posix(),
+    }
+    return validate_trace_record(record)
+
+
 def rollout_case(
     config: BridgeConfig,
     runtime: GraphPolicyRuntime,
     case: EvaluationCase,
     *,
     max_steps: int,
+    trace_callback: Callable[[dict[str, object]], None] | None = None,
+    teacher_token_provider: Any | None = None,
 ) -> dict[str, object]:
     if runtime.condition not in ALL_CONDITIONS:
         raise ValueError("Graph policy runtime condition is invalid")
     if max_steps < 1:
         raise ValueError("rollout max_steps must be positive")
+    if (trace_callback is None) != (teacher_token_provider is None):
+        raise ValueError(
+            "trace callback and independent Teacher provider must be supplied together"
+        )
     env = _make_env(config, max_steps=max_steps)
     validate_finger_joint_ranges(env.model)
     snapshot = env.reset(
@@ -450,6 +627,10 @@ def rollout_case(
     runtime.reset()
     if hasattr(runtime.token_provider, "bind_model"):
         runtime.token_provider.bind_model(env.model)
+    if teacher_token_provider is not None:
+        teacher_token_provider.reset()
+        if hasattr(teacher_token_provider, "bind_model"):
+            teacher_token_provider.bind_model(env.model)
     queue = ActionChunkQueue(
         chunk_size=config.act.chunk_size,
         n_action_steps=config.act.n_action_steps,
@@ -464,27 +645,32 @@ def rollout_case(
     clipped_steps = 0
     reason = TerminationReason.RUNNING
     try:
-        for _ in range(max_steps):
+        for step in range(max_steps):
             camera_frame = capture.capture(env, include_teacher=True)
             state = EndEffectorStateCodec.encode_snapshot(
                 snapshot, env.proprioception()
             )
 
-            def observation_factory() -> dict[str, torch.Tensor]:
-                token = runtime.token_provider.token(
-                    snapshot=snapshot,
-                    camera_frame=camera_frame,
-                    state=state,
-                    task=config.dataset.task,
+            policy_token, selected = _policy_step(
+                queue=queue,
+                runtime=runtime,
+                snapshot=snapshot,
+                camera_frame=camera_frame,
+                state=state,
+                task=config.dataset.task,
+            )
+            teacher_token = (
+                None
+                if teacher_token_provider is None
+                else validate_token(
+                    teacher_token_provider.token(
+                        snapshot=snapshot,
+                        camera_frame=camera_frame,
+                        state=state,
+                        task=config.dataset.task,
+                    )
                 )
-                return augment_policy_observation(
-                    agent_rgb=camera_frame.views["agent"].rgb,
-                    wrist_rgb=camera_frame.views["wrist"].rgb,
-                    state=state,
-                    token=token,
-                )
-
-            selected = _next_queued_action(queue, runtime, observation_factory)
+            )
             if selected.queue_index != 0:
                 raise ValueError(
                     "Graph-conditioned ACT requires receding-horizon queue index 0"
@@ -492,7 +678,8 @@ def rollout_case(
             raw = selected.action.copy()
             action = raw.copy()
             action[:6] = np.clip(action[:6], -1.0, 1.0)
-            clipped_steps += int(np.any(action[:6] != raw[:6]))
+            action_was_clipped = bool(np.any(action[:6] != raw[:6]))
+            clipped_steps += int(action_was_clipped)
             action[6] = gripper.resolve(float(raw[6]))
             rotation = EndEffectorStateCodec.quaternion_to_matrix(
                 snapshot.gripper.orientation
@@ -502,12 +689,37 @@ def rollout_case(
             projection_scales.append(float(projection.scale))
             transition = env.step(projection.action)
             reason = transition.reason
+            events = env.grasp_tracker.interaction_events_since(
+                interactions.last_observed_substep
+            )
             interactions.observe(
                 env.grasp_state,
-                events=env.grasp_tracker.interaction_events_since(
-                    interactions.last_observed_substep
-                ),
+                events=events,
             )
+            if trace_callback is not None:
+                assert teacher_token is not None
+                trace_callback(
+                    _step_trace_record(
+                        runtime=runtime,
+                        case=case,
+                        step=step,
+                        snapshot=snapshot,
+                        target_name=env.target_name,
+                        policy_token=policy_token,
+                        teacher_token=teacher_token,
+                        raw_action=raw,
+                        clipped_action=action,
+                        executed_world_action=projection.action,
+                        action_was_clipped=action_was_clipped,
+                        projection_scale=float(projection.scale),
+                        gripper_command=float(action[6]),
+                        gripper_switch_count=gripper.switch_count,
+                        events=events,
+                        grasp=env.grasp_state,
+                        done=transition.done,
+                        reason=reason,
+                    )
+                )
             snapshot = transition.snapshot
             if transition.done:
                 break
