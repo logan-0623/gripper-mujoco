@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from interaction_vla.graph_control.diagnostics import (
+    build_representation_diagnostics,
     categorical_sequence_metrics,
     cluster_bootstrap_mean,
     covariance_effective_rank,
@@ -14,7 +15,12 @@ from interaction_vla.graph_control.diagnostics import (
     validate_episode_layout,
     validate_tokens,
 )
-from interaction_vla.graph_control.schema import TOKEN_DIM
+from interaction_vla.graph_control.schema import (
+    ALL_CONDITIONS,
+    TOKEN_DIM,
+    TOKEN_FEATURE_NAMES,
+    TOKEN_SLICES,
+)
 
 
 def _layout():
@@ -283,3 +289,122 @@ def test_cluster_bootstrap_rejects_invalid_inputs(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         cluster_bootstrap_mean(values, samples=samples, seed=seed)
+
+
+def _diagnostic_token_matrix() -> np.ndarray:
+    values = np.linspace(0.1, 0.9, TOKEN_DIM, dtype=np.float64)
+    tokens = np.stack([values + frame * 0.01 for frame in range(5)])
+    for name in ("phase", "next_relation", "relation_operator", "predicate"):
+        bounds = TOKEN_SLICES[name]
+        tokens[:, bounds] = 0.0
+        width = bounds.stop - bounds.start
+        for frame in range(len(tokens)):
+            tokens[frame, bounds.start + frame % width] = 1.0
+    return tokens
+
+
+def _condition_matrix() -> tuple[dict[tuple[int, str], np.ndarray], np.ndarray]:
+    teacher = _diagnostic_token_matrix()
+    return (
+        {
+            (0, "flat"): np.zeros_like(teacher),
+            (0, "oracle_graph_v2"): teacher.copy(),
+            (0, "predicted_random_v2"): teacher * 0.9,
+            (0, "predicted_reflect_v2"): teacher * 1.1,
+        },
+        teacher,
+    )
+
+
+def test_complete_diagnostics_report_covers_features_groups_and_episodes() -> None:
+    condition_tokens, teacher = _condition_matrix()
+
+    report, episode_records = build_representation_diagnostics(
+        condition_tokens=condition_tokens,
+        teacher_tokens=teacher,
+        layout=_layout(),
+        partition="test",
+        bootstrap_samples=100,
+        bootstrap_seed=17,
+        max_lag=2,
+        active_epsilon=1.0e-6,
+    )
+
+    assert report["schema_version"] == "graph_representation_diagnostics_v1"
+    assert report["partition"] == "test"
+    assert report["rows"] == 5
+    assert report["episodes"] == 2
+    assert report["conditions"] == list(ALL_CONDITIONS)
+    assert report["estimator_seeds"] == [0]
+    assert report["teacher_deduplicated"] is True
+    assert set(report["by_seed_condition"]) == {
+        "shared/flat",
+        "shared/oracle_graph_v2",
+        "seed_0/predicted_random_v2",
+        "seed_0/predicted_reflect_v2",
+    }
+
+    predicted = report["by_seed_condition"]["seed_0/predicted_random_v2"]
+    teacher_report = report["by_seed_condition"]["shared/oracle_graph_v2"]
+    flat_report = report["by_seed_condition"]["shared/flat"]
+    assert list(predicted["features"]) == list(TOKEN_FEATURE_NAMES)
+    assert list(predicted["groups"]) == list(TOKEN_SLICES)
+    assert "categorical" in predicted["groups"]["phase"]
+    assert "hard_state" in predicted["groups"]["entity_presence"]
+    assert "teacher_distance" in predicted["groups"]["phase"]
+    assert "teacher_distance" not in teacher_report["groups"]["phase"]
+    assert "teacher_distance" not in flat_report["groups"]["phase"]
+    assert "teacher_lag" in predicted["features"][TOKEN_FEATURE_NAMES[0]]
+    assert "teacher_lag" not in teacher_report["features"][TOKEN_FEATURE_NAMES[0]]
+    assert "teacher_lag" not in flat_report["features"][TOKEN_FEATURE_NAMES[0]]
+    assert "episode_clustered" in predicted["features"][TOKEN_FEATURE_NAMES[0]]
+    assert "episode_clustered" in predicted["groups"]["phase"]
+
+    assert len(episode_records) == 8
+    assert {
+        (record["condition"], record["estimator_seed"], record["episode_id"])
+        for record in episode_records
+    } == {
+        (condition, seed, episode)
+        for condition, seed in (
+            ("flat", None),
+            ("oracle_graph_v2", None),
+            ("predicted_random_v2", 0),
+            ("predicted_reflect_v2", 0),
+        )
+        for episode in (2, 7)
+    }
+    for record in episode_records:
+        assert record["frames"] in {2, 3}
+        assert list(record["features"]) == list(TOKEN_FEATURE_NAMES)
+        assert list(record["groups"]) == list(TOKEN_SLICES)
+
+
+def test_complete_diagnostics_requires_full_matrix_and_exact_teacher_cache() -> None:
+    condition_tokens, teacher = _condition_matrix()
+    del condition_tokens[(0, "predicted_reflect_v2")]
+    with pytest.raises(ValueError, match="condition matrix"):
+        build_representation_diagnostics(
+            condition_tokens=condition_tokens,
+            teacher_tokens=teacher,
+            layout=_layout(),
+            partition="test",
+            bootstrap_samples=10,
+            bootstrap_seed=0,
+            max_lag=1,
+            active_epsilon=1.0e-6,
+        )
+
+    condition_tokens, teacher = _condition_matrix()
+    condition_tokens[(0, "oracle_graph_v2")][0, 0] += 1.0
+    with pytest.raises(ValueError, match="Teacher"):
+        build_representation_diagnostics(
+            condition_tokens=condition_tokens,
+            teacher_tokens=teacher,
+            layout=_layout(),
+            partition="test",
+            bootstrap_samples=10,
+            bootstrap_seed=0,
+            max_lag=1,
+            active_epsilon=1.0e-6,
+        )

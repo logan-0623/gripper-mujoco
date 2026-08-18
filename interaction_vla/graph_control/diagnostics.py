@@ -2,14 +2,31 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import hashlib
 from typing import Final
 
 import numpy as np
 
-from .schema import TOKEN_DIM
+from .schema import (
+    ALL_CONDITIONS,
+    ORACLE_CONDITIONS,
+    TOKEN_DIM,
+    TOKEN_FEATURE_NAMES,
+    TOKEN_SLICES,
+)
 
 
 DIAGNOSTICS_SCHEMA_VERSION: Final[str] = "graph_representation_diagnostics_v1"
+CATEGORICAL_GROUPS: Final[tuple[str, ...]] = (
+    "phase",
+    "next_relation",
+    "relation_operator",
+    "predicate",
+)
+HARD_BINARY_GROUPS: Final[tuple[str, ...]] = (
+    "entity_presence",
+    "relation_presence",
+)
 
 
 def _integer_vector(value: object, name: str) -> np.ndarray:
@@ -445,3 +462,362 @@ def cluster_bootstrap_mean(
         "ci_low": float(ci_low),
         "ci_high": float(ci_high),
     }
+
+
+def _hard_state_sequence_metrics(
+    values: np.ndarray, layout: EpisodeLayout
+) -> dict[str, float | int | None]:
+    if values.ndim != 2 or values.shape[0] != len(layout.row_indices):
+        raise ValueError("hard-state values must have shape [rows, features]")
+    states = values >= 0.5
+    flips = 0
+    transitions = 0
+    for bounds in layout.episode_slices:
+        episode = states[bounds]
+        if len(episode) < 2:
+            continue
+        changed = episode[1:] != episode[:-1]
+        flips += int(changed.sum())
+        transitions += int(changed.size)
+    return {
+        "flip_numerator": flips,
+        "flip_denominator": transitions,
+        "flip_rate": None if not transitions else float(flips / transitions),
+    }
+
+
+def _feature_metrics(
+    values: np.ndarray,
+    layout: EpisodeLayout,
+    *,
+    active_epsilon: float,
+    teacher: np.ndarray | None,
+    max_lag: int,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "distribution": feature_distribution(
+            values, active_epsilon=active_epsilon
+        ),
+        "temporal": temporal_feature_metrics(values, layout),
+    }
+    if teacher is not None:
+        result["teacher_lag"] = lagged_feature_correlation(
+            values, teacher, layout, max_lag=max_lag
+        )
+    return result
+
+
+def _group_metrics(
+    name: str,
+    values: np.ndarray,
+    layout: EpisodeLayout,
+    *,
+    teacher: np.ndarray | None,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "width": int(values.shape[1]),
+        "effective_rank": covariance_effective_rank(values),
+    }
+    if name in CATEGORICAL_GROUPS:
+        result["categorical"] = categorical_sequence_metrics(
+            values,
+            layout,
+            teacher_probabilities=teacher,
+        )
+    if name in HARD_BINARY_GROUPS:
+        result["hard_state"] = _hard_state_sequence_metrics(values, layout)
+    if teacher is not None:
+        result["teacher_distance"] = teacher_distance_metrics(values, teacher)
+    return result
+
+
+def _entry_metrics(
+    tokens: np.ndarray,
+    layout: EpisodeLayout,
+    *,
+    teacher: np.ndarray | None,
+    active_epsilon: float,
+    max_lag: int,
+) -> dict[str, object]:
+    features = {
+        feature_name: _feature_metrics(
+            tokens[:, feature_index],
+            layout,
+            active_epsilon=active_epsilon,
+            teacher=(
+                None if teacher is None else teacher[:, feature_index]
+            ),
+            max_lag=max_lag,
+        )
+        for feature_index, feature_name in enumerate(TOKEN_FEATURE_NAMES)
+    }
+    groups = {
+        group_name: _group_metrics(
+            group_name,
+            tokens[:, bounds],
+            layout,
+            teacher=None if teacher is None else teacher[:, bounds],
+        )
+        for group_name, bounds in TOKEN_SLICES.items()
+    }
+    return {"features": features, "groups": groups}
+
+
+def _numeric_leaves(
+    value: Mapping[str, object],
+    *,
+    prefix: str = "",
+    skip: frozenset[str] = frozenset({"episode_clustered"}),
+) -> dict[str, float]:
+    result: dict[str, float] = {}
+    for name, item in value.items():
+        if name in skip:
+            continue
+        path = f"{prefix}.{name}" if prefix else name
+        if isinstance(item, Mapping):
+            result.update(_numeric_leaves(item, prefix=path, skip=skip))
+        elif (
+            isinstance(item, (int, float, np.integer, np.floating))
+            and not isinstance(item, (bool, np.bool_))
+            and np.isfinite(float(item))
+        ):
+            result[path] = float(item)
+    return result
+
+
+def _derived_seed(base_seed: int, *parts: object) -> int:
+    digest = hashlib.sha256()
+    digest.update(str(int(base_seed)).encode("utf-8"))
+    for part in parts:
+        encoded = str(part).encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    return int.from_bytes(digest.digest()[:8], "big") % (2**32)
+
+
+def _attach_episode_intervals(
+    aggregate: dict[str, object],
+    episode_metrics: Mapping[int, Mapping[str, object]],
+    *,
+    bootstrap_samples: int,
+    bootstrap_seed: int,
+    metric_path: str,
+) -> None:
+    leaves_by_episode = {
+        episode: _numeric_leaves(metrics)
+        for episode, metrics in episode_metrics.items()
+    }
+    leaf_paths = sorted(
+        {path for leaves in leaves_by_episode.values() for path in leaves}
+    )
+    intervals: dict[str, object] = {}
+    for leaf_path in leaf_paths:
+        values = {
+            episode: leaves[leaf_path]
+            for episode, leaves in leaves_by_episode.items()
+            if leaf_path in leaves
+        }
+        intervals[leaf_path] = cluster_bootstrap_mean(
+            values,
+            samples=bootstrap_samples,
+            seed=_derived_seed(bootstrap_seed, metric_path, leaf_path),
+        )
+    aggregate["episode_clustered"] = intervals
+
+
+def _sub_layout(layout: EpisodeLayout, bounds: slice) -> EpisodeLayout:
+    return validate_episode_layout(
+        row_indices=layout.row_indices[bounds],
+        episode_indices=layout.episode_indices[bounds],
+        frame_indices=layout.frame_indices[bounds],
+    )
+
+
+def _condition_seed_summary(entries: list[Mapping[str, object]]) -> dict[str, object]:
+    leaves = [_numeric_leaves(entry["groups"]) for entry in entries]
+    paths = sorted({path for item in leaves for path in item})
+    summary: dict[str, object] = {}
+    for path in paths:
+        values = np.asarray(
+            [item[path] for item in leaves if path in item], dtype=np.float64
+        )
+        summary[path] = {
+            "mean": float(np.mean(values)),
+            "sample_std": (
+                0.0 if len(values) == 1 else float(np.std(values, ddof=1))
+            ),
+            "seeds": int(len(values)),
+        }
+    return summary
+
+
+def build_representation_diagnostics(
+    *,
+    condition_tokens: Mapping[tuple[int, str], np.ndarray],
+    teacher_tokens: np.ndarray,
+    layout: EpisodeLayout,
+    partition: str,
+    bootstrap_samples: int,
+    bootstrap_seed: int,
+    max_lag: int,
+    active_epsilon: float,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    if partition not in {"train", "validation", "test"}:
+        raise ValueError("diagnostics partition must be train, validation, or test")
+    if not condition_tokens:
+        raise ValueError("diagnostics condition matrix must be non-empty")
+    keys = tuple(condition_tokens)
+    if any(
+        not isinstance(key, tuple)
+        or len(key) != 2
+        or int(key[0]) < 0
+        for key in keys
+    ):
+        raise ValueError("diagnostics condition matrix keys are invalid")
+    seeds = sorted({int(seed) for seed, _ in keys})
+    conditions_by_seed = {
+        seed: {str(condition) for actual_seed, condition in keys if int(actual_seed) == seed}
+        for seed in seeds
+    }
+    first_conditions = tuple(
+        condition
+        for condition in ALL_CONDITIONS
+        if condition in conditions_by_seed[seeds[0]]
+    )
+    if first_conditions not in {ORACLE_CONDITIONS, ALL_CONDITIONS} or any(
+        conditions_by_seed[seed] != set(first_conditions) for seed in seeds
+    ):
+        raise ValueError("diagnostics condition matrix must be complete for every seed")
+
+    rows = len(layout.row_indices)
+    teacher = validate_tokens(teacher_tokens, rows=rows)
+    validated = {
+        (int(seed), str(condition)): validate_tokens(tokens, rows=rows)
+        for (seed, condition), tokens in condition_tokens.items()
+    }
+    for seed in seeds:
+        if not np.array_equal(validated[(seed, "oracle_graph_v2")], teacher):
+            raise ValueError("Privileged Teacher cache differs from teacher tokens")
+        if np.any(validated[(seed, "flat")] != 0.0):
+            raise ValueError("flat diagnostic cache must contain only zeros")
+
+    entries: list[tuple[str, str, int | None, np.ndarray, bool]] = [
+        ("shared/flat", "flat", None, validated[(seeds[0], "flat")], False),
+        ("shared/oracle_graph_v2", "oracle_graph_v2", None, teacher, False),
+    ]
+    for seed in seeds:
+        for condition in first_conditions:
+            if condition in ORACLE_CONDITIONS:
+                continue
+            entries.append(
+                (
+                    f"seed_{seed}/{condition}",
+                    condition,
+                    seed,
+                    validated[(seed, condition)],
+                    True,
+                )
+            )
+
+    aggregate_entries: dict[str, dict[str, object]] = {}
+    episode_records: list[dict[str, object]] = []
+    for entry_key, condition, estimator_seed, tokens, compare_teacher in entries:
+        aggregate = _entry_metrics(
+            tokens,
+            layout,
+            teacher=teacher if compare_teacher else None,
+            active_epsilon=active_epsilon,
+            max_lag=max_lag,
+        )
+        aggregate.update(
+            {
+                "condition": condition,
+                "estimator_seed": estimator_seed,
+                "rows": rows,
+                "episodes": len(layout.episode_ids),
+            }
+        )
+        per_episode: dict[int, dict[str, object]] = {}
+        for episode_id, bounds in zip(layout.episode_ids, layout.episode_slices):
+            episode_layout = _sub_layout(layout, bounds)
+            episode_metrics = _entry_metrics(
+                tokens[bounds],
+                episode_layout,
+                teacher=teacher[bounds] if compare_teacher else None,
+                active_epsilon=active_epsilon,
+                max_lag=max_lag,
+            )
+            per_episode[episode_id] = episode_metrics
+            episode_records.append(
+                {
+                    "condition": condition,
+                    "estimator_seed": estimator_seed,
+                    "episode_id": episode_id,
+                    "frames": int(bounds.stop - bounds.start),
+                    **episode_metrics,
+                }
+            )
+        for feature_name in TOKEN_FEATURE_NAMES:
+            _attach_episode_intervals(
+                aggregate["features"][feature_name],
+                {
+                    episode: metrics["features"][feature_name]
+                    for episode, metrics in per_episode.items()
+                },
+                bootstrap_samples=bootstrap_samples,
+                bootstrap_seed=bootstrap_seed,
+                metric_path=f"{entry_key}.features.{feature_name}",
+            )
+        for group_name in TOKEN_SLICES:
+            _attach_episode_intervals(
+                aggregate["groups"][group_name],
+                {
+                    episode: metrics["groups"][group_name]
+                    for episode, metrics in per_episode.items()
+                },
+                bootstrap_samples=bootstrap_samples,
+                bootstrap_seed=bootstrap_seed,
+                metric_path=f"{entry_key}.groups.{group_name}",
+            )
+        aggregate_entries[entry_key] = aggregate
+
+    by_condition: dict[str, object] = {}
+    for condition in first_conditions:
+        matching = [
+            entry
+            for entry in aggregate_entries.values()
+            if entry["condition"] == condition
+        ]
+        by_condition[condition] = {
+            "estimator_seeds": [
+                int(entry["estimator_seed"])
+                for entry in matching
+                if entry["estimator_seed"] is not None
+            ],
+            "group_metric_seed_summary": _condition_seed_summary(matching),
+        }
+
+    report: dict[str, object] = {
+        "passed": True,
+        "schema_version": DIAGNOSTICS_SCHEMA_VERSION,
+        "partition": partition,
+        "rows": rows,
+        "episodes": len(layout.episode_ids),
+        "conditions": list(first_conditions),
+        "estimator_seeds": seeds,
+        "teacher_deduplicated": True,
+        "bootstrap_samples": int(bootstrap_samples),
+        "bootstrap_seed": int(bootstrap_seed),
+        "max_lag": int(max_lag),
+        "active_epsilon": float(active_epsilon),
+        "by_seed_condition": aggregate_entries,
+        "by_condition": by_condition,
+    }
+    episode_records.sort(
+        key=lambda record: (
+            str(record["condition"]),
+            -1 if record["estimator_seed"] is None else int(record["estimator_seed"]),
+            int(record["episode_id"]),
+        )
+    )
+    return report, episode_records
