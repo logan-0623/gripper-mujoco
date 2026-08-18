@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from copy import deepcopy
 
 import numpy as np
 import pytest
@@ -25,6 +26,7 @@ from interaction_vla.graph_control.training import (
     graph_checkpoint_bindings,
     load_control_split,
     load_graph_act_checkpoint,
+    load_graph_act_checkpoint_for_analysis,
     train_paired_seed,
 )
 from interaction_vla.lerobot_bridge.act_smoke import (
@@ -227,6 +229,46 @@ def test_one_update_per_condition_is_paired_and_reloadable(
     )
     assert loaded_metadata["device"] == "cuda"
     metadata_path.write_text(json.dumps(original), encoding="utf-8")
+
+    retrospective = deepcopy(expected)
+    retrospective["graph_control"]["source_fingerprint"] = "e" * 64
+    with pytest.raises(ValueError, match="graph_control.source_fingerprint"):
+        load_graph_act_checkpoint(
+            checkpoint,
+            device=torch.device("cpu"),
+            expected_metadata=retrospective,
+        )
+    _, _, _, _, audit = load_graph_act_checkpoint_for_analysis(
+        checkpoint,
+        device=torch.device("cpu"),
+        expected_metadata=retrospective,
+    )
+    assert audit == {
+        "mode": "retrospective_analysis",
+        "graph_source_fingerprint_match": False,
+        "stored_graph_source_fingerprint": original["graph_control"][
+            "source_fingerprint"
+        ],
+        "current_graph_source_fingerprint": "e" * 64,
+    }
+
+    wrong_cache = deepcopy(retrospective)
+    wrong_cache["graph_control"]["cache_sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="graph_control.cache_sha256"):
+        load_graph_act_checkpoint_for_analysis(
+            checkpoint,
+            device=torch.device("cpu"),
+            expected_metadata=wrong_cache,
+        )
+
+    wrong_bridge_source = deepcopy(retrospective)
+    wrong_bridge_source["source_fingerprint"] = "f" * 64
+    with pytest.raises(ValueError, match="source_fingerprint"):
+        load_graph_act_checkpoint_for_analysis(
+            checkpoint,
+            device=torch.device("cpu"),
+            expected_metadata=wrong_bridge_source,
+        )
 
     mutations = {
         "dataset_fingerprint": lambda value: "f" * 64,

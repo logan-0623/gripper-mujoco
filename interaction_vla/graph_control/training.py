@@ -283,6 +283,45 @@ def load_graph_act_checkpoint(
     device: torch.device,
     expected_metadata: Mapping[str, object],
 ):
+    policy, preprocessor, postprocessor, metadata, _ = _load_graph_act_checkpoint(
+        checkpoint,
+        device=device,
+        expected_metadata=expected_metadata,
+        retrospective_analysis=False,
+    )
+    return policy, preprocessor, postprocessor, metadata
+
+
+def load_graph_act_checkpoint_for_analysis(
+    checkpoint: str | Path,
+    *,
+    device: torch.device,
+    expected_metadata: Mapping[str, object],
+):
+    """Load a frozen policy while auditing one legacy Graph-source mismatch.
+
+    Historical Graph ACT checkpoints used one source hash for the whole
+    ``interaction_vla`` package. Adding offline analysis modules therefore changes
+    that hash even though the checkpoint, data, ACT runtime, token cache, and Graph
+    schema are unchanged. This loader keeps every other metadata field strict and
+    exposes the one tolerated mismatch in its returned audit record.
+    """
+
+    return _load_graph_act_checkpoint(
+        checkpoint,
+        device=device,
+        expected_metadata=expected_metadata,
+        retrospective_analysis=True,
+    )
+
+
+def _load_graph_act_checkpoint(
+    checkpoint: str | Path,
+    *,
+    device: torch.device,
+    expected_metadata: Mapping[str, object],
+    retrospective_analysis: bool,
+):
     source = Path(checkpoint)
     metadata_path = source / "bridge_checkpoint.json"
     if not metadata_path.is_file():
@@ -309,18 +348,49 @@ def load_graph_act_checkpoint(
         raise ValueError("expected Graph-conditioned ACT config metadata is invalid")
     expected["device"] = training_device
     expected["act_config"] = {**expected_act_config, "device": training_device}
+    actual_graph = metadata["graph_control"]
+    expected_graph = expected.get("graph_control")
+    if not isinstance(expected_graph, Mapping):
+        raise ValueError("expected Graph-conditioned ACT binding is invalid")
+    graph_differing = sorted(
+        name
+        for name in set(actual_graph) | set(expected_graph)
+        if actual_graph.get(name) != expected_graph.get(name)
+    )
+    tolerated = {"source_fingerprint"} if retrospective_analysis else set()
     differing = sorted(
         name
         for name in set(metadata) | set(expected)
+        if name != "graph_control"
         if metadata.get(name) != expected.get(name)
+    )
+    differing.extend(
+        f"graph_control.{name}"
+        for name in graph_differing
+        if name not in tolerated
     )
     if differing:
         raise ValueError(
             "Graph-conditioned ACT checkpoint metadata mismatch: "
-            + ", ".join(differing)
+            + ", ".join(sorted(differing))
         )
     policy, preprocessor, postprocessor = load_act_runtime(source, device=device)
-    return policy, preprocessor, postprocessor, metadata
+    audit = {
+        "mode": (
+            "retrospective_analysis" if retrospective_analysis else "strict"
+        ),
+        "graph_source_fingerprint_match": (
+            actual_graph.get("source_fingerprint")
+            == expected_graph.get("source_fingerprint")
+        ),
+        "stored_graph_source_fingerprint": actual_graph.get(
+            "source_fingerprint"
+        ),
+        "current_graph_source_fingerprint": expected_graph.get(
+            "source_fingerprint"
+        ),
+    }
+    return policy, preprocessor, postprocessor, metadata, audit
 
 
 def _save_condition(
