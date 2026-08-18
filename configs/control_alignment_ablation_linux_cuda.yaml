@@ -1,0 +1,16 @@
+base_graph_control_config: configs/graph_v2_act_pilot_linux_cuda.yaml
+conditions:
+  - flat
+  - entity_geometry
+  - interaction_state
+  - full_graph
+  - shuffled_graph
+seeds: [0, 1, 2]
+shuffle_seed: 2057736129
+cache:
+  directory: outputs/graph_control/control_alignment_ablation_cuda/cache
+training:
+  output_dir: outputs/graph_control/control_alignment_ablation_cuda/runs
+  smoke_steps: 1
+  formal_epochs: 10
+
