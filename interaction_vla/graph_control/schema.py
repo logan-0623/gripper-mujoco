@@ -20,6 +20,16 @@ ALL_CONDITIONS: Final[tuple[str, ...]] = (
     "predicted_random_v2",
     "predicted_reflect_v2",
 )
+ABLATION_CONDITIONS: Final[tuple[str, ...]] = (
+    "flat",
+    "entity_geometry",
+    "interaction_state",
+    "full_graph",
+    "shuffled_graph",
+)
+CONTROL_CONDITIONS: Final[tuple[str, ...]] = tuple(
+    dict.fromkeys((*ALL_CONDITIONS, *ABLATION_CONDITIONS))
+)
 CONDITIONS: Final[tuple[str, ...]] = ALL_CONDITIONS
 
 

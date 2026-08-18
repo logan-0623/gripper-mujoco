@@ -4,7 +4,9 @@ import numpy as np
 import pytest
 
 from interaction_vla.graph_control.schema import (
+    ABLATION_CONDITIONS,
     ALL_CONDITIONS,
+    CONTROL_CONDITIONS,
     CONDITIONS,
     ORACLE_CONDITIONS,
     TOKEN_DIM,
@@ -24,6 +26,16 @@ def test_control_uses_the_central_graph_v2_contract() -> None:
         "predicted_reflect_v2",
     )
     assert CONDITIONS == ALL_CONDITIONS
+    assert ABLATION_CONDITIONS == (
+        "flat",
+        "entity_geometry",
+        "interaction_state",
+        "full_graph",
+        "shuffled_graph",
+    )
+    assert set(CONTROL_CONDITIONS) == set(ALL_CONDITIONS) | set(
+        ABLATION_CONDITIONS
+    )
     cursor = 0
     for value in TOKEN_SLICES.values():
         assert value.start == cursor
