@@ -1,82 +1,164 @@
-# Interaction-Structured VLA
+# Control-Aligned Interaction Representations
 
-本项目研究：**什么样的 interaction graph 对机器人连续控制策略真正有价值？**
+本项目研究一个具体问题：**什么样的 structured interaction representation 真正能被连续机器人控制策略利用？**
 
-策略输入为 agent RGB、wrist RGB、10D 末端状态（位置、6D 旋转、夹爪）和任务语言，
-输出为 7D 连续笛卡尔动作。Graph 不复制完整 MuJoCo state，只编码任务相关实体、当前
-交互关系、关系的时间变化，以及下一步应改变的关系。
+策略输入是 agent RGB、wrist RGB、10D 末端状态（位置、6D 旋转、夹爪）和任务语言，输出是 7D 连续笛卡尔动作。当前控制器固定为 ACT。Interaction Graph 不复制完整 MuJoCo state，只回答：目标是谁、夹爪与目标的关系、目标与容器的关系、干扰物风险、交互阶段与下一步关系变化。
 
-当前已实现：
+当前实现包括：
 
-- Franka MuJoCo 接触物理与 Graph vs Flat；
-- 标准 `LeRobotDataset`、双 RGB、language metadata 和 ACT；
-- ReflectVLM Graph pretraining；
+- Franka MuJoCo 接触物理、扰动恢复和闭环评估；
+- 标准 `LeRobotDataset`、agent/wrist RGB、language metadata；
+- ReflectVLM Graph pretraining 和 MuJoCo Graph fine-tuning；
 - 89D causal Interaction Graph v2；
-- `ReflectVLM pretraining -> MuJoCo Graph fine-tuning -> ACT control`。
+- ACT 的 Flat、Privileged Teacher、Predicted Random、Predicted Reflect 对比；
+- representation diagnostics、policy sensitivity、step trace、failure analysis；
+- Flat → Entity+Geometry → Interaction-State → Full → Shuffled 渐进消融。
 
-π0、SmolVLA 和多语言泛化尚未实现。当前数据只有一个任务指令，不能宣称语言泛化。
+π0、SmolVLA、多任务语言泛化和真实机器人尚未实现。当前数据只有一个任务指令，不能宣称语言泛化。
 
-## 先确认从哪里开始
+## 当前证据
 
-`outputs/` 中的数据、checkpoint、cache 和报告都是本机产物，普通 `git push` 不会上传。
-在当前机器上应保留已有产物并从最早缺失的一项继续；新机器必须从“从零运行”开始。
+已完成的四条件实验每个条件包含 3 个 policy seeds、共 60 个闭环 rollout：
 
-检查关键产物：
+| Representation | Success | Target drop | Action clipping |
+|---|---:|---:|---:|
+| Flat | 30.0% | 6.7% | 0.117 |
+| Privileged Teacher Graph | 35.0% | 0.0% | 0.096 |
+| Predicted Random | 40.0% | 10.0% | 0.114 |
+| Predicted Reflect | 41.7% | 0.0% | 0.092 |
+
+这些结果支持的稳健表述是：Interaction Graph 具有一定 inductive bias，但 aggregate Graph accuracy 不等于 control utility。Privileged Teacher Graph 不是 policy-performance upper bound；代码中的 `oracle_graph_v2` 是历史条件名。Reflect 初始化没有稳定提高成功率，只留下较少 drop 和 clipping 的次级信号，尚不足以宣称改善安全性。
+
+当前论文问题是：
+
+> When and why do structured interaction representations help continuous visuomotor control?
+
+## 现在从哪里继续
+
+先检查本机产物；`READY` 就跳过，命令默认拒绝覆盖已完成输出：
 
 ```bash
-for path in \
-  outputs/lerobot/franka_lerobot_act_pilot/meta/info.json \
-  outputs/graph_control/act_recovery/evaluation/recovery_report.json \
-  outputs/graph_pretrain/reflectvlm/checkpoint.pt \
-  outputs/graph_finetune/mujoco_graph_v2/split_manifest.json \
-  outputs/graph_control/graph_v2_oracle/cache/seed_0/flat.npz \
-  outputs/graph_control/graph_v2_oracle/runs/comparison.json \
-  outputs/graph_control/graph_v2_oracle/runs/evaluation/report.json
+for artifact in \
+  outputs/graph_control/graph_v2_pilot/diagnostics/test/report.json \
+  outputs/graph_control/graph_v2_pilot/diagnostics/test/sensitivity/report.json \
+  outputs/graph_control/graph_v2_pilot/traced_evaluation/report.json \
+  outputs/graph_control/graph_v2_pilot/traced_evaluation/failure_analysis/report.json \
+  outputs/graph_control/control_alignment_ablation/cache/report.json \
+  outputs/graph_control/control_alignment_ablation/smoke/comparison.json \
+  outputs/graph_control/control_alignment_ablation/runs/comparison.json \
+  outputs/graph_control/control_alignment_ablation/runs/evaluation/report.json
 do
-  test -e "$path" && echo "READY   $path" || echo "MISSING $path"
+  test -e "$artifact" && echo "READY   $artifact" || echo "MISSING $artifact"
 done
 ```
 
-如果前五项为 `READY`、只有正式 Oracle 结果缺失，直接运行“Oracle Graph v2 vs Flat”。
-如果是 fresh clone，则按下面顺序完整运行，不要跳过 gate。
+当前 Mac workspace 已完成 token diagnostics 和 ablation cache。下一条应运行 sensitivity；若只关心最关键的新增训练，也可以先运行 ablation smoke。
 
-## macOS 环境
-
-已验证环境：Apple Silicon、Python 3.12、MuJoCo 3.3.4、LeRobot 0.6.1、
-PyTorch 2.10、TorchCodec 0.10。项目使用两个独立虚拟环境。
+### 1. Representation diagnostics
 
 ```bash
-# 物理实验环境
+.venv-lerobot/bin/python -m interaction_vla.graph_control diagnose \
+  --config configs/graph_v2_act_pilot_macos.yaml \
+  --partition test
+```
+
+输出：`outputs/graph_control/graph_v2_pilot/diagnostics/test/report.json`。报告比较 correctness、temporal smoothness、second-order jitter、relation flips、entropy、effective range 和 Teacher–Predicted 距离。
+
+### 2. Frozen-policy sensitivity
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.graph_control sensitivity \
+  --config configs/graph_v2_act_pilot_macos.yaml \
+  --partition test
+```
+
+输出：`outputs/graph_control/graph_v2_pilot/diagnostics/test/sensitivity/report.json`。该命令不训练，只对冻结 ACT 做 group masking 和有限扰动，回答 ACT 实际使用哪些 token。它需要逐个加载 12 个 checkpoint；Mac 可能运行数小时，4090 更合适，但当前命令不支持中断续跑。
+
+### 3. Resumable step trace
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.graph_control trace \
+  --config configs/graph_v2_act_pilot_macos.yaml
+```
+
+输出：`outputs/graph_control/graph_v2_pilot/traced_evaluation/`。它记录 Graph error → action → contact/grasp/release → outcome 的逐步链路。共 240 个 episode，带进度条和 episode-level resume；中断后直接重跑同一命令。
+
+### 4. Failure-conditioned analysis
+
+trace 完成后运行：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.graph_control failure-analysis \
+  --config configs/graph_v2_act_pilot_macos.yaml \
+  --traces outputs/graph_control/graph_v2_pilot/traced_evaluation
+```
+
+输出：`outputs/graph_control/graph_v2_pilot/traced_evaluation/failure_analysis/report.json`。阈值只用 train split 拟合，结果称为 descriptive Failure Association Score，不作因果表述。
+
+### 5. Progressive representation ablation
+
+五个条件保持相同 89D 输入宽度、ACT 容量、初始化、row order、split 和 10 epochs；所有非 Flat 条件来自同一个 `predicted_random_v2` estimator。Shuffled Graph 保留序列和近似边缘分布，但破坏 observation–token correspondence。
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-inspect \
+  --config configs/control_alignment_ablation_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-cache \
+  --config configs/control_alignment_ablation_macos.yaml
+
+# 只跑 seed 0、每个条件一个 optimizer step；先验证完整链路。
+.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-smoke \
+  --config configs/control_alignment_ablation_macos.yaml
+
+# 正式训练：3 seeds × 5 conditions × 10 epochs，耗时很长且不能续训。
+.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-compare \
+  --config configs/control_alignment_ablation_macos.yaml
+
+# 正式闭环：3 seeds × 5 conditions × 20 paired cases。
+.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-evaluate \
+  --config configs/control_alignment_ablation_macos.yaml
+```
+
+主要输出：
+
+```text
+outputs/graph_control/control_alignment_ablation/
+├── cache/
+├── smoke/
+└── runs/
+    ├── comparison.json
+    └── evaluation/report.json
+```
+
+正式对比预注册为 `Entity+Geometry−Flat`、`Interaction−Entity+Geometry`、`Full−Interaction`、`Full−Flat` 和 `Full−Shuffled`。没有把单个 seed 当作结论，也没有自动 scientific pass/fail gate。
+
+## 环境
+
+### macOS / Apple Silicon
+
+```bash
 uv venv --python 3.12
 uv pip install --python .venv/bin/python -r requirements-macos.txt
 .venv/bin/python -m interaction_vla.macos_mjpython
 
-# LeRobot、ACT 和 Graph 环境；lock 文件用于固定当前已验证版本
 python3.12 -m venv .venv-lerobot
 .venv-lerobot/bin/python -m pip install --upgrade pip
 .venv-lerobot/bin/python -m pip install -r requirements-lerobot-macos.lock.txt
 
-# Hugging Face 数据缓存。首次运行 ReflectVLM 需要联网。
 export HF_HOME=/tmp/gripper-mujoco-hf-cache
 ```
 
-快速检查：
+检查：
 
 ```bash
-.venv/bin/python -c 'import mujoco, torch; print(mujoco.__version__, torch.__version__)'
 .venv-lerobot/bin/python -c 'import lerobot, torch, torchcodec; print(lerobot.__version__, torch.__version__, torch.backends.mps.is_available())'
 ```
 
-最后一个值表示 MPS 是否可用；`False` 时项目会回退 CPU，并不表示环境安装失败。
+`av`、`cv2`、SDL 和 Homebrew FFmpeg 可能打印重复 Objective-C class 警告。以退出码和最终 JSON 的 `passed` 为准。
 
-macOS 中 `av`、`cv2` 和 Homebrew FFmpeg 可能打印重复 Objective-C class 警告。这不是
-本项目 gate 的失败原因；以命令退出码和最终 JSON 的 `passed` 字段为准。
+### Linux / NVIDIA CUDA
 
-## Linux + NVIDIA CUDA（RTX 4090）
-
-Linux CUDA 配置保持与 macOS 相同的 dataset、seed、split、epoch 和 batch size，只更换
-训练设备并使用独立的 `*_cuda` 输出目录。当前固定环境是 Python 3.12、PyTorch 2.10、
-CUDA 12.8 和 LeRobot 0.6.1。
+固定环境为 Python 3.12、PyTorch 2.10 + CUDA 12.8、LeRobot 0.6.1：
 
 ```bash
 sudo apt-get update
@@ -84,138 +166,30 @@ sudo apt-get install -y ffmpeg libgl1 libegl1
 
 python3.12 -m venv .venv-lerobot
 .venv-lerobot/bin/python -m pip install --upgrade pip
-.venv-lerobot/bin/python -m pip install \
-  -r requirements-lerobot-linux-cuda.txt
+.venv-lerobot/bin/python -m pip install -r requirements-lerobot-linux-cuda.txt
 
-nvidia-smi
-.venv-lerobot/bin/python -c 'import torch; assert torch.cuda.is_available(); print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))'
-
-# 无桌面的 Linux 服务器使用 EGL 渲染 MuJoCo 相机。
 export MUJOCO_GL=egl
 export HF_HOME=/tmp/gripper-mujoco-hf-cache
+
+.venv-lerobot/bin/python -c 'import torch; assert torch.cuda.is_available(); print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))'
 ```
 
-`device: auto` 的优先级是 CUDA、MPS、CPU；Linux 配置显式使用 `device: cuda`，CUDA
-不可用时会立即报错，不会静默回退 CPU。
+CUDA 配置和输出完全隔离：
 
-可以直接复制并复用以下设备无关产物，减少 4090 机器上的前置工作。复制已有的
-Reflect checkpoint 后，将它放到 CUDA 配置使用的独立目录：
+| macOS config | Linux/CUDA config |
+|---|---|
+| `graph_v2_act_pilot_macos.yaml` | `graph_v2_act_pilot_linux_cuda.yaml` |
+| `control_alignment_ablation_macos.yaml` | `control_alignment_ablation_linux_cuda.yaml` |
+| `mujoco_graph_v2_finetune_macos.yaml` | `mujoco_graph_v2_finetune_linux_cuda.yaml` |
+| `reflectvlm_graph_pretrain_macos.yaml` | `reflectvlm_graph_pretrain_linux_cuda.yaml` |
 
-```bash
-mkdir -p outputs/graph_pretrain/reflectvlm_cuda
-cp /path/to/copied/reflectvlm/checkpoint.pt \
-  outputs/graph_pretrain/reflectvlm_cuda/checkpoint.pt
-```
+在上述新增实验命令中把 config 替换成 CUDA 版本即可。CUDA 输出使用 `*_cuda` 根目录，不覆盖 Mac 结果。ACT/Graph 训练会明显加速；MuJoCo 数据采集和闭环 rollout 仍主要受 CPU 限制。
 
-LeRobotDataset 保持原路径 `outputs/lerobot/franka_lerobot_act_pilot/`。CUDA 训练结果使用
-独立的 `*_cuda` 目录，不会覆盖 macOS checkpoint。
+## Fresh clone 的前置实验
 
-如果没有复制 LeRobotDataset，先在 Linux 生成 expert gate 和数据：
+`outputs/` 是本机产物，不会随普通 `git push` 上传。新机器必须按顺序建立以下工件；已有机器从最早的 `MISSING` 项继续。
 
-```bash
-.venv-lerobot/bin/python -m interaction_vla.validate_physics_expert \
-  --config configs/physics_pilot_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge collect \
-  --config configs/lerobot_act_recovery_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge validate \
-  --config configs/lerobot_act_recovery_linux_cuda.yaml
-```
-
-`physics_pilot_macos.yaml` 的文件名是历史遗留；其 MuJoCo 物理参数不依赖 macOS，CUDA
-bridge 复用它是为了保持 expert gate 和数据合同一致。
-
-采集期间 FFmpeg 的 `moving the moov atom` 是正常的 MP4 finalize 信息。MuJoCo 如果产生
-非有限 contact force，environment 会将该 rollout 分类为
-`physics_failure=non_finite_contact_force`；collector 清空当前未提交帧，并继续使用下一个
-确定性 seed。旧版本留下的 `INCOMPLETE` dataset 不能安全续采：先将整个目录移动到备份
-路径，再从新的 dataset root 重新采集。
-
-先在 CUDA 上重新建立 ACT recovery gate：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-check \
-  --config configs/lerobot_act_recovery_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-train \
-  --config configs/lerobot_act_recovery_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-diagnose \
-  --config configs/lerobot_act_recovery_linux_cuda.yaml \
-  --checkpoint outputs/graph_control/act_recovery_cuda/train/checkpoint
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-recovery \
-  --config configs/lerobot_act_recovery_linux_cuda.yaml \
-  --checkpoint outputs/graph_control/act_recovery_cuda/train/checkpoint
-```
-
-如果没有复制 Reflect checkpoint，使用 CUDA 预训练：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_pretrain inspect \
-  --config configs/reflectvlm_graph_pretrain_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_pretrain train \
-  --config configs/reflectvlm_graph_pretrain_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_pretrain evaluate \
-  --config configs/reflectvlm_graph_pretrain_linux_cuda.yaml \
-  --checkpoint outputs/graph_pretrain/reflectvlm_cuda/checkpoint.pt \
-  --partition test
-```
-
-运行 CUDA Oracle Graph v2：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_finetune inspect \
-  --config configs/mujoco_graph_v2_finetune_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_finetune split \
-  --config configs/mujoco_graph_v2_finetune_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
-  --config configs/graph_v2_act_oracle_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control cache \
-  --config configs/graph_v2_act_oracle_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control compare \
-  --config configs/graph_v2_act_oracle_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control evaluate \
-  --config configs/graph_v2_act_oracle_linux_cuda.yaml
-```
-
-Oracle gate 通过后运行 predicted Graph 和四条件主实验：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_finetune compare \
-  --config configs/mujoco_graph_v2_finetune_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
-  --config configs/graph_v2_act_pilot_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control cache \
-  --config configs/graph_v2_act_pilot_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control compare \
-  --config configs/graph_v2_act_pilot_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control evaluate \
-  --config configs/graph_v2_act_pilot_linux_cuda.yaml
-```
-
-Linux 服务器使用 `tmux` 或 `nohup` 保持长任务；`caffeinate` 只适用于 macOS。MuJoCo
-采集和闭环 rollout 仍主要受 CPU 限制，4090 的主要收益来自 ACT、Graph pretraining 和
-Graph fine-tuning。
-
-## 从零运行
-
-### 1. 生成 expert gate 和 LeRobotDataset
-
-先验证 MuJoCo expert，再采集 50 个 episode。这里直接使用 recovery 配置采集，不依赖
-另一个本地 smoke report。
+### 1. 数据与 ACT recovery gate
 
 ```bash
 .venv/bin/python -m interaction_vla.validate_physics_expert \
@@ -226,17 +200,7 @@ Graph fine-tuning。
 
 .venv-lerobot/bin/python -m interaction_vla.lerobot_bridge validate \
   --config configs/lerobot_act_recovery_macos.yaml
-```
 
-输出数据位于 `outputs/lerobot/franka_lerobot_act_pilot/`，包含标准 LeRobot 数据和独立
-teacher sidecar。目标目录已存在时命令会拒绝覆盖；保留旧实验，或在新配置中使用新的
-输出目录。
-
-### 2. 建立可用的 ACT 闭环基线
-
-Graph 实验只有在 ACT recovery gate 通过后才有意义。
-
-```bash
 .venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-check \
   --config configs/lerobot_act_recovery_macos.yaml
 
@@ -252,156 +216,66 @@ Graph 实验只有在 ACT recovery gate 通过后才有意义。
   --checkpoint outputs/graph_control/act_recovery/train/checkpoint
 ```
 
-必须生成且通过：
-
-```text
-outputs/graph_control/act_recovery/evaluation/recovery_report.json
-```
-
-固定 gate 是 train-seen success `>= 0.80` 且 held-out success `>= 0.30`。未通过时不要
-继续 Graph 主实验。
-
-### 3. ReflectVLM Graph pretraining
+### 2. Reflect pretraining 与 MuJoCo split
 
 ```bash
 .venv-lerobot/bin/python -m interaction_vla.graph_pretrain inspect \
   --config configs/reflectvlm_graph_pretrain_macos.yaml
-
 .venv-lerobot/bin/python -m interaction_vla.graph_pretrain train \
   --config configs/reflectvlm_graph_pretrain_macos.yaml
-
 .venv-lerobot/bin/python -m interaction_vla.graph_pretrain evaluate \
   --config configs/reflectvlm_graph_pretrain_macos.yaml \
   --checkpoint outputs/graph_pretrain/reflectvlm/checkpoint.pt \
   --partition test
-```
 
-首次 `inspect/train` 会从 `yunhaif/ReflectVLM-data-expert` 下载数据。SSL 失败时重新运行
-同一命令即可复用已下载的 Hugging Face cache；不要在 fresh clone 上设置
-`HF_HUB_OFFLINE=1`。
-
-### 4. 固定 Graph v2 split 并生成 Oracle cache
-
-```bash
 .venv-lerobot/bin/python -m interaction_vla.graph_finetune inspect \
   --config configs/mujoco_graph_v2_finetune_macos.yaml
-
 .venv-lerobot/bin/python -m interaction_vla.graph_finetune split \
   --config configs/mujoco_graph_v2_finetune_macos.yaml
+```
 
+### 3. Teacher prerequisite、Graph estimator 与四条件 ACT
+
+```bash
 .venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
   --config configs/graph_v2_act_oracle_macos.yaml
-
 .venv-lerobot/bin/python -m interaction_vla.graph_control cache \
   --config configs/graph_v2_act_oracle_macos.yaml
-```
-
-这一步冻结 40/5/5 episode split，并生成相同 6722-row 的 Flat 与 Oracle Graph v2 token
-cache。cache 已存在时不要重复执行。
-
-## Oracle Graph v2 vs Flat
-
-这是 predicted Graph fine-tuning 之前的必要实验：先证明“正确 Graph”本身能提高 ACT，
-再研究视觉预测 Graph 能恢复多少 oracle gap。
-
-```bash
 .venv-lerobot/bin/python -m interaction_vla.graph_control compare \
   --config configs/graph_v2_act_oracle_macos.yaml
-
 .venv-lerobot/bin/python -m interaction_vla.graph_control evaluate \
   --config configs/graph_v2_act_oracle_macos.yaml
-```
 
-正式报告位于：
-
-```text
-outputs/graph_control/graph_v2_oracle/runs/evaluation/report.json
-```
-
-只有同时满足以下条件才继续：
-
-- `oracle_graph_v2 - flat` 成功率至少提高 `0.10`；
-- wrong-object stable grasp 不增加；
-- `oracle_gate.passed` 为 `true`。
-
-查看 gate：
-
-```bash
-.venv-lerobot/bin/python -c 'import json; p=json.load(open("outputs/graph_control/graph_v2_oracle/runs/evaluation/report.json")); print(json.dumps(p["oracle_gate"], indent=2))'
-```
-
-## Oracle gate 通过之后
-
-### 1. MuJoCo Graph v2 fine-tuning
-
-训练 random-init 与 ReflectVLM-init 的配对视觉 Graph estimator：
-
-```bash
 .venv-lerobot/bin/python -m interaction_vla.graph_finetune compare \
   --config configs/mujoco_graph_v2_finetune_macos.yaml
-```
 
-输出位于 `outputs/graph_finetune/mujoco_graph_v2/`。该 checkpoint 是 Graph estimator，
-不是可以直接 rollout 的控制策略。
-
-### 2. 四条件 ACT 连续控制主实验
-
-```bash
 .venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
   --config configs/graph_v2_act_pilot_macos.yaml
-
 .venv-lerobot/bin/python -m interaction_vla.graph_control cache \
   --config configs/graph_v2_act_pilot_macos.yaml
-
 .venv-lerobot/bin/python -m interaction_vla.graph_control compare \
   --config configs/graph_v2_act_pilot_macos.yaml
-
 .venv-lerobot/bin/python -m interaction_vla.graph_control evaluate \
   --config configs/graph_v2_act_pilot_macos.yaml
 ```
 
-最终比较 Flat、Oracle Graph v2、Predicted Random v2 和 Predicted Reflect v2，并报告
-paired contrasts、wrong-object interaction、`oracle_gap_recovered` 以及 ID/OOD 指标。
+Linux fresh clone 使用对应 `*_linux_cuda.yaml` 配置。若数据集或 Reflect checkpoint 已从 Mac 复制，可跳过其生成步骤，但路径和 provenance 必须与 CUDA config 一致。
 
-## 长训练与中断
+## 长任务
 
-当前 ACT/Graph 正式训练没有 `tqdm`，通常只在完成后输出最终 JSON，也不支持从 epoch
-checkpoint 续训。中断后需要从该条正式训练命令重新开始。M2 8 GB 上 Oracle 的 Flat +
-Oracle、各 10 epoch 训练通常需要数小时。
-
-建议长任务在后台运行。以 Oracle compare 为例：
+正式 ACT compare 没有 epoch-level resume；中断后需从该条命令重新开始。trace 支持 episode-level resume。服务器建议使用 `tmux`；Mac 可使用 `caffeinate`。
 
 ```bash
 mkdir -p outputs/logs
+nohup env HF_HOME=/tmp/gripper-mujoco-hf-cache \
+  .venv-lerobot/bin/python -m interaction_vla.graph_control ablation-compare \
+  --config configs/control_alignment_ablation_linux_cuda.yaml \
+  > outputs/logs/control_alignment_ablation_cuda.log 2>&1 &
 
-nohup caffeinate -dimsu \
-  env HF_HOME=/tmp/gripper-mujoco-hf-cache \
-  .venv-lerobot/bin/python -m interaction_vla.graph_control compare \
-  --config configs/graph_v2_act_oracle_macos.yaml \
-  > outputs/logs/graph_v2_oracle_compare.log 2>&1 &
-
-oracle_train_pid=$!
-echo "$oracle_train_pid"
-```
-
-查看进程和日志：
-
-```bash
-ps -p "$oracle_train_pid" -o pid,etime,%cpu,%mem,state,command
-tail -f outputs/logs/graph_v2_oracle_compare.log
-```
-
-日志长时间没有新增不代表训练停止。Oracle compare 的第一个 checkpoint 出现时，Flat
-已经完成，整体大约过半：
-
-```bash
-find outputs/graph_control/graph_v2_oracle \
-  -path '*/flat/checkpoint/training_summary.json'
+tail -f outputs/logs/control_alignment_ablation_cuda.log
 ```
 
 ## 测试
-
-不要在 M2 8 GB 正式训练期间同时运行完整测试。空闲时运行：
 
 ```bash
 PYTHONPYCACHEPREFIX=/tmp/gripper-mujoco-pycache \
@@ -412,11 +286,4 @@ PYTHONPYCACHEPREFIX=/tmp/gripper-mujoco-lerobot-pycache \
   .venv-lerobot/bin/python -m pytest tests/interaction_vla -q
 ```
 
-## 项目目录
-
-```text
-interaction_vla/    MuJoCo、Graph、ACT、训练、评估和 LeRobot bridge
-configs/            固定的 smoke/pilot 实验配置
-tests/              单元测试与端到端验证
-outputs/            本机数据、cache、checkpoint、GIF 和报告
-```
+项目目录：`interaction_vla/` 是实现，`configs/` 是固定实验配置，`tests/` 是验证，`outputs/` 是本机数据、checkpoint、cache、GIF 和报告。
