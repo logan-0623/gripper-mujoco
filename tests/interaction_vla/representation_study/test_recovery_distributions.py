@@ -42,7 +42,8 @@ def test_each_source_has_one_nominal_and_six_intervention_cases() -> None:
     assert sum(case.family == "nominal" for case in cases) == 1
     assert sum(case.family == "perturbation" for case in cases) == 3
     assert sum(case.family == "recovery" for case in cases) == 3
-    assert {case.severity for case in cases if case.family != "nominal"} == {0.75}
+    assert {case.severity for case in cases if case.family == "perturbation"} == {0.75}
+    assert {case.severity for case in cases if case.family == "recovery"} == {1.0}
     assert next(case for case in cases if case.family == "nominal").severity == 0.0
 
 

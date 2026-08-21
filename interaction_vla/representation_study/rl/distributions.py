@@ -197,7 +197,7 @@ def _source_cases(
                 layout=layout,
                 phase=phase,
                 intervention_kind=kind,
-                severity=severity,
+                severity=1.0,
             )
         )
     return tuple(records)
