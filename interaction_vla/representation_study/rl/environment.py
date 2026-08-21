@@ -28,6 +28,7 @@ from interaction_vla.graph.schema import SceneSnapshot
 from ..backends.lerobot import LeRobotPolicyBackend
 from .core import combine_residual_action
 from .distributions import RecoveryCase
+from .rewards import RewardTerms, recovery_reward
 
 
 RECOVERY_KIND_INDEX = {
@@ -48,6 +49,15 @@ class OracleStateEncoder(Protocol):
         env: FrankaContactEnv,
         prepared: "PreparedInteractionStart",
         case: RecoveryCase,
+    ) -> np.ndarray: ...
+
+    def encode_snapshot(
+        self,
+        env: FrankaContactEnv,
+        snapshot: SceneSnapshot,
+        case: RecoveryCase,
+        *,
+        progress: float,
     ) -> np.ndarray: ...
 
 
@@ -72,6 +82,8 @@ class InteractionReset:
 class ResidualTransition:
     observation: dict[str, object]
     latent: torch.Tensor
+    oracle_state: np.ndarray | None
+    next_oracle_state: np.ndarray | None
     residual: np.ndarray
     base_action: np.ndarray
     executed_local_action: np.ndarray
@@ -80,6 +92,9 @@ class ResidualTransition:
     episode_action_clipping_rate: float
     episode_mean_ik_projection_scale: float
     reward: float
+    reward_terminal: float
+    reward_progress: float
+    reward_residual: float
     done: bool
     reason: str
     episode_return: float
@@ -274,6 +289,9 @@ class ResidualMujocoRuntime:
         reward_mode: str,
         progress_reward_scale: float,
         oracle_codec: OracleStateEncoder | None = None,
+        recovery_gamma: float = 0.99,
+        recovery_progress_coefficient: float = 0.10,
+        recovery_residual_coefficient: float = 0.01,
     ) -> None:
         self.bridge = bridge
         self.backend = backend
@@ -287,6 +305,13 @@ class ResidualMujocoRuntime:
         self.reward_mode = reward_mode
         self.progress_reward_scale = float(progress_reward_scale)
         self.oracle_codec = oracle_codec
+        self.recovery_gamma = float(recovery_gamma)
+        self.recovery_progress_coefficient = float(
+            recovery_progress_coefficient
+        )
+        self.recovery_residual_coefficient = float(
+            recovery_residual_coefficient
+        )
         self.env = make_physics_env(bridge, max_steps=max_steps)
         self.expert = PhysicsScriptedExpert(self.env.physics)
         self.capture = DualViewCapture(
@@ -302,6 +327,9 @@ class ResidualMujocoRuntime:
         self.episode_return = 0.0
         self.episode_length = 0
         self.previous_potential = 0.0
+        self.intervention_start_potential = 0.0
+        self.active_case: RecoveryCase | None = None
+        self.current_oracle_state: np.ndarray | None = None
         self.clipped_steps = 0
         self.projection_scales: list[float] = []
         self.reset()
@@ -359,6 +387,8 @@ class ResidualMujocoRuntime:
             layout_mode=layout_mode,
         )
         self.expert.reset(seed=seed)
+        self.active_case = None
+        self.current_oracle_state = None
         self._finish_reset(snapshot)
         assert self.current_observation is not None
         return self.current_observation
@@ -368,12 +398,20 @@ class ResidualMujocoRuntime:
             raise RuntimeError("reset_case requires a Compact Oracle-State codec")
         prepared = prepare_interaction_start(self.env, self.expert, case=case)
         self._finish_reset(prepared.snapshot)
+        in_hand = self.env.grasp_state.stable_object == self.env.target_name
+        self.previous_potential = interaction_potential(
+            prepared.snapshot,
+            in_hand=in_hand,
+        )
+        self.intervention_start_potential = self.previous_potential
         oracle = np.asarray(
             self.oracle_codec.encode_runtime(self.env, prepared, case),
             dtype=np.float32,
         )
         if oracle.shape != (36,) or not np.isfinite(oracle).all():
             raise ValueError("reset_case Oracle-State must be finite with shape (36,)")
+        self.active_case = case
+        self.current_oracle_state = oracle.copy()
         assert self.current_observation is not None
         return InteractionReset(
             case_id=case.case_id,
@@ -423,9 +461,52 @@ class ResidualMujocoRuntime:
         reason = str(getattr(transition.reason, "value", transition.reason))
         in_hand = self.env.grasp_state.stable_object == self.env.target_name
         potential = interaction_potential(transition.snapshot, in_hand=in_hand)
-        reward = sparse_task_reward(reason)
-        if self.reward_mode == "progress":
-            reward += self.progress_reward_scale * (potential - self.previous_potential)
+        oracle_state = (
+            None
+            if self.current_oracle_state is None
+            else self.current_oracle_state.copy()
+        )
+        next_oracle_state: np.ndarray | None = None
+        if self.active_case is None:
+            progress = 0.0
+            if self.reward_mode == "progress":
+                progress = self.progress_reward_scale * (
+                    potential - self.previous_potential
+                )
+            reward_terms = RewardTerms(
+                terminal=sparse_task_reward(reason),
+                progress=progress,
+                residual=0.0,
+            )
+        else:
+            reward_terms = recovery_reward(
+                reason=reason,
+                previous_potential=self.previous_potential,
+                next_potential=potential,
+                residual=residual,
+                residual_scale=self.residual_scale,
+                gamma=self.recovery_gamma,
+                progress_coefficient=self.recovery_progress_coefficient,
+                residual_coefficient=self.recovery_residual_coefficient,
+            )
+            assert self.oracle_codec is not None
+            next_oracle_state = np.asarray(
+                self.oracle_codec.encode_snapshot(
+                    self.env,
+                    transition.snapshot,
+                    self.active_case,
+                    progress=potential - self.intervention_start_potential,
+                ),
+                dtype=np.float32,
+            )
+            if (
+                next_oracle_state.shape != (36,)
+                or not np.isfinite(next_oracle_state).all()
+            ):
+                raise ValueError(
+                    "next Compact Oracle-State must be finite with shape (36,)"
+                )
+        reward = reward_terms.total
         self.previous_potential = potential
         self.snapshot = transition.snapshot
         self.episode_return += reward
@@ -433,6 +514,8 @@ class ResidualMujocoRuntime:
         result = ResidualTransition(
             observation=self.current_observation,
             latent=latent.detach().cpu(),
+            oracle_state=oracle_state,
+            next_oracle_state=next_oracle_state,
             residual=np.asarray(residual, dtype=np.float32).copy(),
             base_action=np.asarray(base_action, dtype=np.float32).copy(),
             executed_local_action=local.copy(),
@@ -445,11 +528,15 @@ class ResidualMujocoRuntime:
                 np.mean(self.projection_scales)
             ),
             reward=float(reward),
+            reward_terminal=float(reward_terms.terminal),
+            reward_progress=float(reward_terms.progress),
+            reward_residual=float(reward_terms.residual),
             done=bool(transition.done),
             reason=reason,
             episode_return=float(self.episode_return),
             episode_length=int(self.episode_length),
         )
+        self.current_oracle_state = next_oracle_state
         self.current_observation = None if transition.done else self._observation()
         return result
 
