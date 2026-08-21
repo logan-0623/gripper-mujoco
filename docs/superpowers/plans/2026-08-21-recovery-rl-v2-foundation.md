@@ -1021,7 +1021,7 @@ def test_backend_selection_uses_variance_when_auc_is_tied() -> None:
 
 def test_calibration_selects_rate_nearest_band_center() -> None:
     selected = select_calibrated_severity(
-        {0.50: 0.62, 0.75: 0.47, 1.00: 0.34}, target=(0.30, 0.50)
+        {0.50: 0.62, 0.75: 0.47, 1.00: 0.32}, target=(0.30, 0.50)
     )
     assert selected.severity == 0.75
 ```
