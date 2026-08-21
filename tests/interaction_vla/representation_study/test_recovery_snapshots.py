@@ -25,6 +25,8 @@ def example_transition(index: int) -> dict[str, object]:
         "next_state": np.full(10, index + 1, dtype=np.float32),
         "oracle_state": np.full(36, index, dtype=np.float32),
         "next_oracle_state": np.full(36, index + 1, dtype=np.float32),
+        "actor_observation": np.full(16, index, dtype=np.float32),
+        "next_actor_observation": np.full(16, index + 1, dtype=np.float32),
         "residual": np.full(7, index / 100.0, dtype=np.float32),
         "reward": float(index),
         "done": bool(index % 5 == 0),
@@ -54,6 +56,8 @@ def test_replay_uses_uint8_images_and_float32_numeric_arrays(tmp_path: Path) -> 
     assert batch.wrist_rgb.dtype == np.uint8
     assert batch.state.dtype == np.float32
     assert batch.oracle_state.dtype == np.float32
+    assert batch.actor_observation.shape == (3, 16)
+    assert batch.next_actor_observation.shape == (3, 16)
 
 
 def test_replay_resume_rejects_modified_shard(tmp_path: Path) -> None:

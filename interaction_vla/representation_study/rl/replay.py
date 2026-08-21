@@ -32,6 +32,13 @@ def _vector(value: object, width: int, name: str) -> np.ndarray:
     return array
 
 
+def _finite_vector(value: object, name: str) -> np.ndarray:
+    array = np.asarray(value, dtype=np.float32)
+    if array.ndim != 1 or array.size == 0 or not np.isfinite(array).all():
+        raise ValueError(f"{name} must be a non-empty finite float32 vector")
+    return array
+
+
 def _normalize_transition(value: Mapping[str, object]) -> dict[str, object]:
     required = {
         "transition_id",
@@ -46,6 +53,8 @@ def _normalize_transition(value: Mapping[str, object]) -> dict[str, object]:
         "next_state",
         "oracle_state",
         "next_oracle_state",
+        "actor_observation",
+        "next_actor_observation",
         "residual",
         "reward",
         "done",
@@ -81,6 +90,14 @@ def _normalize_transition(value: Mapping[str, object]) -> dict[str, object]:
         agent.shape == wrist.shape == next_agent.shape == next_wrist.shape
     ):
         raise ValueError("replay RGB views must share shape")
+    actor_observation = _finite_vector(
+        value["actor_observation"], "actor_observation"
+    )
+    next_actor_observation = _finite_vector(
+        value["next_actor_observation"], "next_actor_observation"
+    )
+    if actor_observation.shape != next_actor_observation.shape:
+        raise ValueError("replay current/next actor observations must share shape")
     return {
         "transition_id": transition_id,
         "case_id": case_id,
@@ -96,6 +113,8 @@ def _normalize_transition(value: Mapping[str, object]) -> dict[str, object]:
         "next_oracle_state": _vector(
             value["next_oracle_state"], 36, "next_oracle_state"
         ),
+        "actor_observation": actor_observation,
+        "next_actor_observation": next_actor_observation,
         "residual": residual,
         "reward": np.float32(reward),
         "done": np.bool_(value["done"]),
@@ -116,6 +135,8 @@ class ReplayBatch:
     next_state: np.ndarray
     oracle_state: np.ndarray
     next_oracle_state: np.ndarray
+    actor_observation: np.ndarray
+    next_actor_observation: np.ndarray
     residual: np.ndarray
     reward: np.ndarray
     done: np.ndarray
@@ -242,6 +263,8 @@ class RecoveryReplay:
             next_state=np.stack([record["next_state"] for record in records]).astype(np.float32),
             oracle_state=np.stack([record["oracle_state"] for record in records]).astype(np.float32),
             next_oracle_state=np.stack([record["next_oracle_state"] for record in records]).astype(np.float32),
+            actor_observation=np.stack([record["actor_observation"] for record in records]).astype(np.float32),
+            next_actor_observation=np.stack([record["next_actor_observation"] for record in records]).astype(np.float32),
             residual=np.stack([record["residual"] for record in records]).astype(np.float32),
             reward=np.asarray([record["reward"] for record in records], dtype=np.float32),
             done=np.asarray([record["done"] for record in records], dtype=np.bool_),
