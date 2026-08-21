@@ -169,6 +169,7 @@ class RecoveryRLV2Config:
     residual_coefficient: float
     nominal_anchor_coefficient: float
     latent_anchor_coefficient: float
+    representation_learning_rate: float
     ppo: PPOV2Config
     sac: SACConfig
     seed: int
@@ -204,6 +205,10 @@ class RecoveryRLV2Config:
             "latent_anchor_coefficient",
         ):
             _finite_nonnegative(float(getattr(self, name)), name)
+        _finite_positive(
+            self.representation_learning_rate,
+            "representation_learning_rate",
+        )
 
     @classmethod
     def from_mapping(
@@ -233,6 +238,7 @@ class RecoveryRLV2Config:
                 "residual_coefficient",
                 "nominal_anchor_coefficient",
                 "latent_anchor_coefficient",
+                "representation_learning_rate",
                 "ppo",
                 "sac",
                 "seed",
@@ -320,6 +326,9 @@ class RecoveryRLV2Config:
             residual_coefficient=float(raw["residual_coefficient"]),
             nominal_anchor_coefficient=float(raw["nominal_anchor_coefficient"]),
             latent_anchor_coefficient=float(raw["latent_anchor_coefficient"]),
+            representation_learning_rate=float(
+                raw["representation_learning_rate"]
+            ),
             ppo=PPOV2Config(
                 rollout_steps=int(ppo["rollout_steps"]),
                 update_epochs=int(ppo["update_epochs"]),

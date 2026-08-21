@@ -24,6 +24,7 @@ progress_coefficient: 0.10
 residual_coefficient: 0.01
 nominal_anchor_coefficient: 1.0
 latent_anchor_coefficient: 0.10
+representation_learning_rate: 0.00001
 ppo:
   rollout_steps: 256
   update_epochs: 4

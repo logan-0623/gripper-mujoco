@@ -40,6 +40,7 @@ def minimal_v2_mapping(tmp_path: Path) -> dict[str, object]:
         "residual_coefficient": 0.01,
         "nominal_anchor_coefficient": 1.0,
         "latent_anchor_coefficient": 0.10,
+        "representation_learning_rate": 1.0e-5,
         "ppo": {
             "rollout_steps": 256,
             "update_epochs": 4,
@@ -82,6 +83,7 @@ def test_v2_config_fixes_distribution_and_snapshot_contract(tmp_path: Path) -> N
     assert config.oracle_state_dim == 36
     assert config.ppo.rollout_steps == 256
     assert config.sac.target_entropy == -7.0
+    assert config.representation_learning_rate == 1.0e-5
 
 
 def test_v2_config_rejects_unknown_nested_fields(tmp_path: Path) -> None:
