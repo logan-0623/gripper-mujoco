@@ -1,0 +1,118 @@
+schema_version: interaction_representation_study_v1
+study_id: icra_interaction_representation
+graph_role: measurement_ontology
+
+backends:
+  act:
+    role: controlled_mechanism_study
+    required: true
+    stages: &stages
+      - pretrained
+      - sft
+      - continued_sft
+      - rl_head
+      - rl_representation
+    inputs:
+      - agent_rgb
+      - wrist_rgb
+      - end_effector_state
+      - language
+    latent_taps:
+      - vision_backbone
+      - temporal_fused
+      - decoder_input
+      - pre_action
+  smolvla:
+    role: modern_vla_validation
+    required: true
+    stages: *stages
+    inputs:
+      - agent_rgb
+      - wrist_rgb
+      - end_effector_state
+      - language
+    latent_taps:
+      - vision_output
+      - multimodal_fusion
+      - action_expert_input
+      - pre_action
+  pi0:
+    role: optional_external_validity
+    required: false
+    stages: *stages
+    inputs:
+      - agent_rgb
+      - wrist_rgb
+      - end_effector_state
+      - language
+    latent_taps:
+      - vision_output
+      - multimodal_fusion
+      - action_expert_input
+      - pre_action
+
+ontology:
+  groups:
+    - entity
+    - geometry
+    - contact
+    - stable_grasp
+    - phase
+    - next_relation
+    - recovery_state
+
+state_bank:
+  schema_version: interaction_state_bank_v1
+  primary_strata:
+    - nominal
+    - perturbation
+    - recovery
+  descriptive_strata:
+    - terminal
+  split_unit: source_episode
+  report_domains_separately:
+    - expert_support
+    - policy_shift
+
+probes:
+  primary: linear
+  secondary: shallow_mlp
+  freeze_encoder: true
+
+sensitivity:
+  schema_version: graph_policy_sensitivity_v3
+  primary_metrics:
+    - action_l2
+    - action_rms
+    - translation_l2
+    - rotation_l2
+    - gripper_absolute_change
+  normalization: training_action_iqr
+  minimum_action_scale: 1.0e-3
+  prohibited_primary_metric: action_change_divided_by_token_perturbation
+  required_controls:
+    - zero
+    - temporally_matched_random
+
+plasticity:
+  primary_metric: normalized_learning_curve_auc
+  secondary_metrics:
+    - final_return_gain
+    - steps_to_fixed_threshold
+
+statistics:
+  primary_unit: episode
+  uncertainty: episode_bootstrap_with_policy_seed_clustering
+  confidence_level: 0.95
+  failure_hypothesis_limit: 5
+  multiple_testing: benjamini_hochberg
+
+gates:
+  measurement:
+    requires: sensitivity_v3_and_stage_contract_tests_pass
+  act:
+    requires: fixed_state_bank_and_probe_reliability_pass
+  smolvla:
+    requires: act_go_no_go_pass
+  pi0:
+    requires: smolvla_evidence_coherent_and_resources_available

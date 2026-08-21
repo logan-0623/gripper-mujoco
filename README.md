@@ -1,24 +1,23 @@
-# Control-Aligned Interaction Representations
+# From Imitation to Improvement
 
-本项目研究一个具体问题：**什么样的 structured interaction representation 真正能被连续机器人控制策略利用？**
+本项目面向 ICRA，研究：
 
-策略输入是 agent RGB、wrist RGB、10D 末端状态（位置、6D 旋转、夹爪）和任务语言，输出是 7D 连续笛卡尔动作。当前控制器固定为 ACT。Interaction Graph 不复制完整 MuJoCo state，只回答：目标是谁、夹爪与目标的关系、目标与容器的关系、干扰物风险、交互阶段与下一步关系变化。
+> **Does reinforcement learning induce action-relevant interaction structure that supervised imitation fails to capture?**
 
-当前实现包括：
+Interaction Graph 不再是所有策略必须使用的输入，而是统一的 measurement ontology、privileged label 和 intervention vocabulary。项目分别测量：
 
-- Franka MuJoCo 接触物理、扰动恢复和闭环评估；
-- 标准 `LeRobotDataset`、agent/wrist RGB、language metadata；
-- ReflectVLM Graph pretraining 和 MuJoCo Graph fine-tuning；
-- 89D causal Interaction Graph v2；
-- ACT 的 Flat、Privileged Teacher、Predicted Random、Predicted Reflect 对比；
-- representation diagnostics、policy sensitivity、step trace、failure analysis；
-- Flat → Entity+Geometry → Interaction-State → Full → Shuffled 渐进消融。
+- **Accessible / C**：冻结表征能否被 lightweight probe 读出；
+- **Used**：改变 latent 是否改变策略动作；
+- **Useful / U**：该策略在固定闭环 case 上是否成功；
+- **Plasticity / P**：固定 online budget 下的 RL learning-curve AUC。
 
-π0、SmolVLA、多任务语言泛化和真实机器人尚未实现。当前数据只有一个任务指令，不能宣称语言泛化。
+ACT 保留为 controlled mechanism study；SmolVLA 是主投稿的 modern VLA validation；π0 是可选 external validation。旧 Graph-vs-Flat 结果和 pipeline 均保留，不会被新实验覆盖。
 
-## 当前证据
+研究设计见 [ICRA experiment design](docs/superpowers/specs/2026-08-20-icra-interaction-representation-study-design.md)，项目状态见 [ccfa.yaml](ccfa.yaml)。
 
-已完成的四条件实验每个条件包含 3 个 policy seeds、共 60 个闭环 rollout：
+## 已有结论
+
+旧 ACT 主实验为 3 policy seeds、每个条件共 60 个 paired rollout：
 
 | Representation | Success | Target drop | Action clipping |
 |---|---:|---:|---:|
@@ -27,120 +26,13 @@
 | Predicted Random | 40.0% | 10.0% | 0.114 |
 | Predicted Reflect | 41.7% | 0.0% | 0.092 |
 
-这些结果支持的稳健表述是：Interaction Graph 具有一定 inductive bias，但 aggregate Graph accuracy 不等于 control utility。Privileged Teacher Graph 不是 policy-performance upper bound；代码中的 `oracle_graph_v2` 是历史条件名。Reflect 初始化没有稳定提高成功率，只留下较少 drop 和 clipping 的次级信号，尚不足以宣称改善安全性。
-
-当前论文问题是：
-
-> When and why do structured interaction representations help continuous visuomotor control?
-
-## 现在从哪里继续
-
-先检查本机产物；`READY` 就跳过，命令默认拒绝覆盖已完成输出：
-
-```bash
-for artifact in \
-  outputs/graph_control/graph_v2_pilot/diagnostics/test/report.json \
-  outputs/graph_control/graph_v2_pilot/diagnostics/test/sensitivity/report.json \
-  outputs/graph_control/graph_v2_pilot/traced_evaluation/report.json \
-  outputs/graph_control/graph_v2_pilot/traced_evaluation/failure_analysis/report.json \
-  outputs/graph_control/control_alignment_ablation/cache/report.json \
-  outputs/graph_control/control_alignment_ablation/smoke/comparison.json \
-  outputs/graph_control/control_alignment_ablation/runs/comparison.json \
-  outputs/graph_control/control_alignment_ablation/runs/evaluation/report.json
-do
-  test -e "$artifact" && echo "READY   $artifact" || echo "MISSING $artifact"
-done
-```
-
-当前 Mac workspace 已完成 token diagnostics 和 ablation cache。下一条应运行 sensitivity；若只关心最关键的新增训练，也可以先运行 ablation smoke。
-
-### 1. Representation diagnostics
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_control diagnose \
-  --config configs/graph_v2_act_pilot_macos.yaml \
-  --partition test
-```
-
-输出：`outputs/graph_control/graph_v2_pilot/diagnostics/test/report.json`。报告比较 correctness、temporal smoothness、second-order jitter、relation flips、entropy、effective range 和 Teacher–Predicted 距离。
-
-### 2. Frozen-policy sensitivity
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_control sensitivity \
-  --config configs/graph_v2_act_pilot_macos.yaml \
-  --partition test
-```
-
-输出：`outputs/graph_control/graph_v2_pilot/diagnostics/test/sensitivity/report.json`。该命令不训练，只对冻结 ACT 做 group masking 和有限扰动，回答 ACT 实际使用哪些 token。它需要逐个加载 12 个 checkpoint；Mac 可能运行数小时，4090 更合适，但当前命令不支持中断续跑。
-
-### 3. Resumable step trace
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_control trace \
-  --config configs/graph_v2_act_pilot_macos.yaml
-```
-
-输出：`outputs/graph_control/graph_v2_pilot/traced_evaluation/`。它记录 Graph error → action → contact/grasp/release → outcome 的逐步链路。共 240 个 episode，带进度条和 episode-level resume；中断后直接重跑同一命令。
-
-### 4. Failure-conditioned analysis
-
-trace 完成后运行：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_control failure-analysis \
-  --config configs/graph_v2_act_pilot_macos.yaml \
-  --traces outputs/graph_control/graph_v2_pilot/traced_evaluation
-```
-
-输出：`outputs/graph_control/graph_v2_pilot/traced_evaluation/failure_analysis/report.json`。阈值只用 train split 拟合，结果称为 descriptive Failure Association Score，不作因果表述。
-
-### 5. Progressive representation ablation
-
-五个条件保持相同 89D 输入宽度、ACT 容量、初始化、row order、split 和 10 epochs；所有非 Flat 条件来自同一个 `predicted_random_v2` estimator。Shuffled Graph 保留序列和近似边缘分布，但破坏 observation–token correspondence。
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-inspect \
-  --config configs/control_alignment_ablation_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-cache \
-  --config configs/control_alignment_ablation_macos.yaml
-
-# 只跑 seed 0、每个条件一个 optimizer step；先验证完整链路。
-.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-smoke \
-  --config configs/control_alignment_ablation_macos.yaml
-
-# 正式训练：3 seeds × 5 conditions × 10 epochs，耗时很长且不能续训。
-.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-compare \
-  --config configs/control_alignment_ablation_macos.yaml
-
-# 正式闭环：3 seeds × 5 conditions × 20 paired cases。
-.venv-lerobot/bin/python -m interaction_vla.graph_control ablation-evaluate \
-  --config configs/control_alignment_ablation_macos.yaml
-```
-
-主要输出：
-
-```text
-outputs/graph_control/control_alignment_ablation/
-├── cache/
-├── smoke/
-└── runs/
-    ├── comparison.json
-    └── evaluation/report.json
-```
-
-正式对比预注册为 `Entity+Geometry−Flat`、`Interaction−Entity+Geometry`、`Full−Interaction`、`Full−Flat` 和 `Full−Shuffled`。没有把单个 seed 当作结论，也没有自动 scientific pass/fail gate。
+目前只能稳健地说明：Graph prediction correctness 不等于 control utility；Teacher Graph 不是 policy-performance upper bound；Reflect 初始化没有稳定改善成功率。新的 stage-wise 实验用于检验 RL 是否选择性强化 contact、phase、next-relation 和 recovery 等 interaction-critical factors。
 
 ## 环境
 
 ### macOS / Apple Silicon
 
 ```bash
-uv venv --python 3.12
-uv pip install --python .venv/bin/python -r requirements-macos.txt
-.venv/bin/python -m interaction_vla.macos_mjpython
-
 python3.12 -m venv .venv-lerobot
 .venv-lerobot/bin/python -m pip install --upgrade pip
 .venv-lerobot/bin/python -m pip install -r requirements-lerobot-macos.lock.txt
@@ -148,17 +40,7 @@ python3.12 -m venv .venv-lerobot
 export HF_HOME=/tmp/gripper-mujoco-hf-cache
 ```
 
-检查：
-
-```bash
-.venv-lerobot/bin/python -c 'import lerobot, torch, torchcodec; print(lerobot.__version__, torch.__version__, torch.backends.mps.is_available())'
-```
-
-`av`、`cv2`、SDL 和 Homebrew FFmpeg 可能打印重复 Objective-C class 警告。以退出码和最终 JSON 的 `passed` 为准。
-
-### Linux / NVIDIA CUDA
-
-固定环境为 Python 3.12、PyTorch 2.10 + CUDA 12.8、LeRobot 0.6.1：
+### Linux / RTX 4090
 
 ```bash
 sudo apt-get update
@@ -171,108 +53,222 @@ python3.12 -m venv .venv-lerobot
 export MUJOCO_GL=egl
 export HF_HOME=/tmp/gripper-mujoco-hf-cache
 
-.venv-lerobot/bin/python -c 'import torch; assert torch.cuda.is_available(); print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))'
+.venv-lerobot/bin/python -c \
+  'import torch; assert torch.cuda.is_available(); print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))'
 ```
 
-CUDA 配置和输出完全隔离：
+macOS 的 `av`、`cv2`、SDL、FFmpeg duplicate-class 信息通常只是动态库警告；以退出码与最终 JSON 的 `passed` 为准。
 
-| macOS config | Linux/CUDA config |
-|---|---|
-| `graph_v2_act_pilot_macos.yaml` | `graph_v2_act_pilot_linux_cuda.yaml` |
-| `control_alignment_ablation_macos.yaml` | `control_alignment_ablation_linux_cuda.yaml` |
-| `mujoco_graph_v2_finetune_macos.yaml` | `mujoco_graph_v2_finetune_linux_cuda.yaml` |
-| `reflectvlm_graph_pretrain_macos.yaml` | `reflectvlm_graph_pretrain_linux_cuda.yaml` |
+## 前置工件
 
-在上述新增实验命令中把 config 替换成 CUDA 版本即可。CUDA 输出使用 `*_cuda` 根目录，不覆盖 Mac 结果。ACT/Graph 训练会明显加速；MuJoCo 数据采集和闭环 rollout 仍主要受 CPU 限制。
-
-## Fresh clone 的前置实验
-
-`outputs/` 是本机产物，不会随普通 `git push` 上传。新机器必须按顺序建立以下工件；已有机器从最早的 `MISSING` 项继续。
-
-### 1. 数据与 ACT recovery gate
+新实验复用现有 LeRobot 数据集、split 和 ACT checkpoint：
 
 ```bash
-.venv/bin/python -m interaction_vla.validate_physics_expert \
-  --config configs/physics_pilot_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge collect \
-  --config configs/lerobot_act_recovery_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge validate \
-  --config configs/lerobot_act_recovery_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-check \
-  --config configs/lerobot_act_recovery_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-train \
-  --config configs/lerobot_act_recovery_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-diagnose \
-  --config configs/lerobot_act_recovery_macos.yaml \
-  --checkpoint outputs/graph_control/act_recovery/train/checkpoint
-
-.venv-lerobot/bin/python -m interaction_vla.lerobot_bridge act-recovery \
-  --config configs/lerobot_act_recovery_macos.yaml \
-  --checkpoint outputs/graph_control/act_recovery/train/checkpoint
+for artifact in \
+  outputs/lerobot/franka_lerobot_act_pilot/meta/info.json \
+  outputs/graph_finetune/mujoco_graph_v2/split_manifest.json \
+  outputs/graph_control/graph_v2_pilot/runs/seed_0/flat/checkpoint/config.json
+do
+  test -e "$artifact" && echo "READY   $artifact" || echo "MISSING $artifact"
+done
 ```
 
-### 2. Reflect pretraining 与 MuJoCo split
+若缺失，请先按 `configs/lerobot_act_recovery_{macos,linux_cuda}.yaml` 完成数据采集/验证，再按旧 `graph_v2_act_pilot_*` 配置完成 ACT 训练。`outputs/` 默认不随 Git 上传。
+
+## 1. Fixed State Bank
+
+所有 checkpoint 必须在同一批 held-out states 上测量。当前 State Bank 包含 expert-support 与 policy-shift 两个 domain，split 以 source episode 为单位，禁止 episode/group leakage。
+
+先检查已有工件：
 
 ```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_pretrain inspect \
-  --config configs/reflectvlm_graph_pretrain_macos.yaml
-.venv-lerobot/bin/python -m interaction_vla.graph_pretrain train \
-  --config configs/reflectvlm_graph_pretrain_macos.yaml
-.venv-lerobot/bin/python -m interaction_vla.graph_pretrain evaluate \
-  --config configs/reflectvlm_graph_pretrain_macos.yaml \
-  --checkpoint outputs/graph_pretrain/reflectvlm/checkpoint.pt \
-  --partition test
-
-.venv-lerobot/bin/python -m interaction_vla.graph_finetune inspect \
-  --config configs/mujoco_graph_v2_finetune_macos.yaml
-.venv-lerobot/bin/python -m interaction_vla.graph_finetune split \
-  --config configs/mujoco_graph_v2_finetune_macos.yaml
+.venv-lerobot/bin/python -m interaction_vla.representation_study state-bank inspect \
+  --config configs/representation_study/icra_act_macos.yaml
 ```
 
-### 3. Teacher prerequisite、Graph estimator 与四条件 ACT
+仅在 State Bank 不存在时采集：
 
 ```bash
-.venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
-  --config configs/graph_v2_act_oracle_macos.yaml
-.venv-lerobot/bin/python -m interaction_vla.graph_control cache \
-  --config configs/graph_v2_act_oracle_macos.yaml
-.venv-lerobot/bin/python -m interaction_vla.graph_control compare \
-  --config configs/graph_v2_act_oracle_macos.yaml
-.venv-lerobot/bin/python -m interaction_vla.graph_control evaluate \
-  --config configs/graph_v2_act_oracle_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_finetune compare \
-  --config configs/mujoco_graph_v2_finetune_macos.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.graph_control inspect \
-  --config configs/graph_v2_act_pilot_macos.yaml
-.venv-lerobot/bin/python -m interaction_vla.graph_control cache \
-  --config configs/graph_v2_act_pilot_macos.yaml
-.venv-lerobot/bin/python -m interaction_vla.graph_control compare \
-  --config configs/graph_v2_act_pilot_macos.yaml
-.venv-lerobot/bin/python -m interaction_vla.graph_control evaluate \
-  --config configs/graph_v2_act_pilot_macos.yaml
+.venv-lerobot/bin/python -m interaction_vla.representation_study state-bank collect \
+  --config configs/representation_study/icra_act_macos.yaml
 ```
 
-Linux fresh clone 使用对应 `*_linux_cuda.yaml` 配置。若数据集或 Reflect checkpoint 已从 Mac 复制，可跳过其生成步骤，但路径和 provenance 必须与 CUDA config 一致。
+Linux 使用 `configs/representation_study/icra_act_linux_cuda.yaml`。两个配置共享同一 State Bank contract；不要分别采集两套科学样本。
 
-## 长任务
+## 2. ACT controlled mechanism study
 
-正式 ACT compare 没有 epoch-level resume；中断后需从该条命令重新开始。trace 支持 episode-level resume。服务器建议使用 `tmux`；Mac 可使用 `caffeinate`。
+现有 Flat ACT checkpoint 作为 `sft` 阶段。先生成该阶段的完整 C/U 证据：
 
 ```bash
-mkdir -p outputs/logs
-nohup env HF_HOME=/tmp/gripper-mujoco-hf-cache \
-  .venv-lerobot/bin/python -m interaction_vla.graph_control ablation-compare \
-  --config configs/control_alignment_ablation_linux_cuda.yaml \
-  > outputs/logs/control_alignment_ablation_cuda.log 2>&1 &
+.venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
+  --config configs/representation_study/icra_act_macos.yaml \
+  --backend act \
+  --stage sft \
+  --secondary-probe \
+  --closed-loop-intervention
+```
 
-tail -f outputs/logs/control_alignment_ablation_cuda.log
+训练 matched extra-imitation control，然后测量：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study sft train \
+  --config configs/representation_study/icra_act_macos.yaml \
+  --backend act \
+  --stage continued_sft
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
+  --config configs/representation_study/icra_act_macos.yaml \
+  --backend act \
+  --stage continued_sft \
+  --secondary-probe \
+  --closed-loop-intervention
+```
+
+两条 RL branch 都从同一个 `sft` policy 出发：`rl_head` 只训练 residual actor-critic；`rl_representation` 同时更新固定的 late-fusion 参数组。动作组合为 `clip(a_sft + alpha * delta)`，主要 plasticity 指标是相同 environment-step budget 下的 normalized learning-curve AUC。
+
+```bash
+for stage in rl_head rl_representation
+do
+  .venv-lerobot/bin/python -m interaction_vla.representation_study rl train \
+    --config configs/representation_study/icra_act_macos.yaml \
+    --backend act \
+    --stage "$stage"
+
+  .venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
+    --config configs/representation_study/icra_act_macos.yaml \
+    --backend act \
+    --stage "$stage" \
+    --secondary-probe \
+    --closed-loop-intervention
+done
+```
+
+SFT 和 RL 都会保存训练状态。中断后在原命令末尾加 `--resume`；配置或 parent checkpoint 改变时会拒绝错误续训。
+
+若 checkpoint 不变、只需用新版评估逻辑刷新已有 closed-loop utility（例如修正 residual action 的内部裁剪统计），无需重训：
+
+```bash
+for stage in rl_head rl_representation
+do
+  .venv-lerobot/bin/python -m interaction_vla.representation_study policy evaluate \
+    --config configs/representation_study/icra_act_macos.yaml \
+    --backend act --stage "$stage" --force
+done
+```
+
+## 3. SmolVLA modern VLA validation
+
+建议在 4090 上运行。输入绑定到当前标准 LeRobotDataset：agent RGB、wrist RGB、10D end-effector state、language 和 7D continuous action。官方 base checkpoint 的 feature schema 会在加载时重绑定到本数据集，同时保留 foundation weights。
+
+```bash
+export MUJOCO_GL=egl
+export HF_HOME=/tmp/gripper-mujoco-hf-cache
+CONFIG=configs/representation_study/icra_smolvla_linux_cuda.yaml
+
+# Foundation representation before robot SFT.
+.venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
+  --config "$CONFIG" --backend smolvla --stage pretrained \
+  --secondary-probe --closed-loop-intervention
+
+# Robot SFT and its matched continued-SFT control.
+for stage in sft continued_sft
+do
+  .venv-lerobot/bin/python -m interaction_vla.representation_study sft train \
+    --config "$CONFIG" --backend smolvla --stage "$stage"
+  .venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
+    --config "$CONFIG" --backend smolvla --stage "$stage" \
+    --secondary-probe --closed-loop-intervention
+done
+
+# Fixed-budget residual PPO branches, both initialized from SmolVLA SFT.
+for stage in rl_head rl_representation
+do
+  .venv-lerobot/bin/python -m interaction_vla.representation_study rl train \
+    --config "$CONFIG" --backend smolvla --stage "$stage"
+  .venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
+    --config "$CONFIG" --backend smolvla --stage "$stage" \
+    --secondary-probe --closed-loop-intervention
+done
+```
+
+论文主结论必须由 ACT controlled study 与 SmolVLA validation 共同支持；当前单一 language instruction 不能用于语言泛化 claim。
+
+## 4. π0 optional validation
+
+π0 不阻塞主实验，也不参与当前 residual-RL comparison。资源允许时运行：
+
+```bash
+CONFIG=configs/representation_study/icra_pi0_linux_cuda.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
+  --config "$CONFIG" --backend pi0 --stage pretrained --secondary-probe
+
+for stage in sft continued_sft
+do
+  .venv-lerobot/bin/python -m interaction_vla.representation_study sft train \
+    --config "$CONFIG" --backend pi0 --stage "$stage"
+  .venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
+    --config "$CONFIG" --backend pi0 --stage "$stage" --secondary-probe
+done
+```
+
+## 5. 汇总报告
+
+每个 backend 的配置只汇总该 backend 已声明的阶段，并保留旧 Graph-vs-Flat 结果。报告严格区分 accessible、used、useful、plasticity 和 closed-loop intervention：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study report build \
+  --config configs/representation_study/icra_act_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study report build \
+  --config configs/representation_study/icra_smolvla_linux_cuda.yaml
+```
+
+主要输出：
+
+```text
+outputs/representation_study/icra/
+├── state_bank/
+├── latents/<backend>/<stage>/
+├── probes/<backend>/<stage>/
+├── interventions/<backend>/<stage>/
+├── sft/<backend>/<stage>/
+├── rl/<backend>/<stage>/
+└── analysis/
+    ├── policy_evaluation/
+    └── reports/<backend>/
+        ├── result_rows.json
+        ├── relationship_rows.json
+        ├── study_report.json
+        └── study_report.md
+```
+
+`study_report.json` 即使实验未齐也会生成，`passed: true` 只表示报告构建成功；只有 `complete: true` 才表示该配置声明的 required artifacts 全部存在。
+
+## 单项命令
+
+调试时可拆开运行：
+
+```bash
+# Latent extraction is shard-resumable.
+.venv-lerobot/bin/python -m interaction_vla.representation_study latents extract \
+  --config configs/representation_study/icra_act_macos.yaml \
+  --backend act --stage sft --partition all
+
+# Frozen probes.
+.venv-lerobot/bin/python -m interaction_vla.representation_study probes train \
+  --config configs/representation_study/icra_act_macos.yaml \
+  --backend act --stage sft --model linear
+
+# Offline functional-use interventions.
+.venv-lerobot/bin/python -m interaction_vla.representation_study interventions run \
+  --config configs/representation_study/icra_act_macos.yaml \
+  --backend act --stage sft
+
+# Fixed paired closed-loop utility.
+.venv-lerobot/bin/python -m interaction_vla.representation_study policy evaluate \
+  --config configs/representation_study/icra_act_macos.yaml \
+  --backend act --stage sft
 ```
 
 ## 测试
@@ -283,6 +279,4 @@ PYTHONPYCACHEPREFIX=/tmp/gripper-mujoco-lerobot-pycache \
   .venv-lerobot/bin/python -m pytest tests/interaction_vla -q
 ```
 
-完整套件必须使用 `.venv-lerobot`；基础 `.venv` 不安装 LeRobot，不能单独运行整个 `tests/interaction_vla`。
-
-项目目录：`interaction_vla/` 是实现，`configs/` 是固定实验配置，`tests/` 是验证，`outputs/` 是本机数据、checkpoint、cache、GIF 和报告。
+代码位于 `interaction_vla/`，固定实验配置位于 `configs/`，测试位于 `tests/`，本机数据/checkpoint/report 位于 `outputs/`。

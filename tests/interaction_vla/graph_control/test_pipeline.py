@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 from types import SimpleNamespace
 import sys
 import types
@@ -421,6 +422,17 @@ class _SensitivitySource:
         self.hf_dataset = {
             "episode_index": np.asarray([0, 0, 1, 1, 8, 8]),
             "frame_index": np.asarray([0, 1, 0, 1, 0, 1]),
+            "action": np.asarray(
+                [
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    [0.2, 0.1, 0.0, 0.0, 0.0, 0.0, 1.0],
+                    [0.3, 0.1, 0.0, 0.0, 0.0, 0.0, 1.0],
+                    [0.4, 0.2, 0.0, 0.0, 0.0, 0.0, 1.0],
+                    [0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 1.0],
+                ],
+                dtype=np.float64,
+            ),
         }
 
     def __getitem__(self, row: int):
@@ -498,7 +510,7 @@ def test_sensitivity_preflights_output_before_loading_context(
     tmp_path: Path, monkeypatch
 ) -> None:
     config, _, _ = _sensitivity_fixture(tmp_path)
-    destination = config.diagnostics.output_dir / "test" / "sensitivity"
+    destination = config.diagnostics.output_dir / "test" / "sensitivity_v3"
     destination.mkdir(parents=True)
     (destination / "report.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(
@@ -530,13 +542,75 @@ def test_sensitivity_uses_balanced_rows_and_publishes_audited_report(
     assert result["report_path"].is_file()
     assert result["records_path"].is_file()
     report = json.loads(result["report_path"].read_text(encoding="utf-8"))
+    assert report["schema_version"] == "graph_policy_sensitivity_v3"
+    assert report["action_statistics"]["minimum_scale"] == pytest.approx(1.0e-3)
     assert report["selected_rows"] == [0, 2]
     assert report["checkpoint_sha256"]["seed_0/flat"] == "c" * 64
     assert report["checkpoint_compatibility"]["seed_0/flat"][
         "graph_source_fingerprint_match"
     ] is False
     records = result["records_path"].read_text(encoding="utf-8").splitlines()
-    assert len(records) == 2 * len(ALL_CONDITIONS) * 3 * 12
+    assert len(records) == 2 * len(ALL_CONDITIONS) * (3 * 12 + 2)
+    assert report["control_interventions"] == [
+        "zero",
+        "temporally_matched_random",
+    ]
+    assert report["control_provenance"]["seed_0"]["alignment"] == (
+        "normalized_episode_progress_nearest"
+    )
+    parsed_records = [json.loads(line) for line in records]
+    controls = [
+        record for record in parsed_records if record["group"] == "all_tokens"
+    ]
+    assert {record["intervention"] for record in controls} == {
+        "zero",
+        "temporally_matched_random",
+    }
+
+
+def test_sensitivity_v3_reuses_compatible_v2_group_records(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, context, caches = _sensitivity_fixture(tmp_path)
+    _patch_sensitivity_context(monkeypatch, config, context, caches)
+    first = sensitivity_from_config(tmp_path / "config.yaml", partition="test")
+    v3_report = json.loads(first["report_path"].read_text(encoding="utf-8"))
+    v3_records = [
+        json.loads(line)
+        for line in first["records_path"].read_text(encoding="utf-8").splitlines()
+    ]
+    v2_records = [
+        record for record in v3_records if record["group"] != "all_tokens"
+    ]
+    v2_dir = config.diagnostics.output_dir / "test" / "sensitivity_v2"
+    v2_dir.mkdir()
+    v2_report = {
+        **v3_report,
+        "schema_version": "graph_policy_sensitivity_v2",
+        "rows": len(v2_records),
+    }
+    (v2_dir / "report.json").write_text(
+        json.dumps(v2_report), encoding="utf-8"
+    )
+    (v2_dir / "records.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in v2_records),
+        encoding="utf-8",
+    )
+    shutil.rmtree(config.diagnostics.output_dir / "test" / "sensitivity_v3")
+    monkeypatch.setattr(
+        "interaction_vla.graph_control.pipeline.finite_difference_interventions",
+        lambda *args, **kwargs: pytest.fail(
+            "compatible v2 group interventions must be reused"
+        ),
+    )
+
+    result = sensitivity_from_config(tmp_path / "config.yaml", partition="test")
+    report = json.loads(result["report_path"].read_text(encoding="utf-8"))
+
+    assert report["reused_sensitivity_v2"]["records"] == len(v2_records)
+    assert len(result["records_path"].read_text(encoding="utf-8").splitlines()) == (
+        len(v2_records) + 2 * len(config.conditions) * 2
+    )
 
 
 def _trace_fixture(tmp_path: Path):

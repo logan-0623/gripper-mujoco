@@ -71,7 +71,9 @@ from .schema import (
     TOKEN_SLICES,
 )
 from .sensitivity import (
+    ALL_TOKENS_GROUP,
     CATEGORICAL_GROUPS,
+    PREVIOUS_SENSITIVITY_SCHEMA_VERSION,
     SENSITIVITY_SCHEMA_VERSION,
     action_change_metrics,
     build_sensitivity_report,
@@ -81,6 +83,8 @@ from .sensitivity import (
     predict_first_actions,
     select_episode_balanced_positions,
     standardized_perturbation_magnitude,
+    temporally_matched_random_tokens,
+    training_action_statistics,
     training_feature_statistics,
 )
 from .training import (
@@ -641,6 +645,68 @@ def _publish_sensitivity(
     }
 
 
+def _load_reusable_sensitivity_v2(
+    destination: Path,
+    *,
+    expected: Mapping[str, object],
+    expected_records: int,
+    bootstrap_seed: int,
+) -> tuple[list[dict[str, object]], Mapping[str, object]] | None:
+    report_path = destination / "report.json"
+    records_path = destination / "records.jsonl"
+    if not report_path.exists() and not records_path.exists():
+        return None
+    if not report_path.is_file() or not records_path.is_file():
+        raise ValueError("reusable sensitivity v2 requires report.json and records.jsonl")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("reusable sensitivity v2 report is invalid") from error
+    if not isinstance(report, Mapping):
+        raise ValueError("reusable sensitivity v2 report must be a mapping")
+    if report.get("passed") is not True or report.get(
+        "schema_version"
+    ) != PREVIOUS_SENSITIVITY_SCHEMA_VERSION:
+        raise ValueError("reusable sensitivity report is not a passing v2 artifact")
+    for key, value in expected.items():
+        if _jsonable(report.get(key)) != _jsonable(value):
+            raise ValueError(f"reusable sensitivity v2 differs at {key}")
+    try:
+        records = [
+            json.loads(line)
+            for line in records_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("reusable sensitivity v2 records are invalid") from error
+    if len(records) != expected_records or int(report.get("rows", -1)) != len(records):
+        raise ValueError("reusable sensitivity v2 record count is incompatible")
+    if any(
+        not isinstance(record, Mapping)
+        or record.get("group") == ALL_TOKENS_GROUP
+        for record in records
+    ):
+        raise ValueError("reusable sensitivity v2 contains incompatible controls")
+    build_sensitivity_report(
+        records,
+        partition=str(expected["partition"]),
+        bootstrap_samples=1,
+        bootstrap_seed=bootstrap_seed,
+    )
+    provenance: Mapping[str, object] = {
+        "schema_version": PREVIOUS_SENSITIVITY_SCHEMA_VERSION,
+        "report_path": report_path,
+        "report_sha256": sha256_file(report_path),
+        "records_path": records_path,
+        "records_sha256": sha256_file(records_path),
+        "records": len(records),
+        "cache_sha256": report.get("cache_sha256"),
+        "checkpoint_sha256": report.get("checkpoint_sha256"),
+        "dataset_fingerprint": report.get("dataset_fingerprint"),
+    }
+    return [dict(record) for record in records], provenance
+
+
 def sensitivity_from_config(
     path: str | Path, *, partition: str | None = None
 ) -> dict[str, object]:
@@ -651,7 +717,7 @@ def sensitivity_from_config(
     selected_partition = "test" if partition is None else str(partition)
     if selected_partition not in {"train", "validation", "test"}:
         raise ValueError("sensitivity partition must be train, validation, or test")
-    destination = controls.output_dir / selected_partition / "sensitivity"
+    destination = controls.output_dir / selected_partition / "sensitivity_v3"
     if destination.exists() and (
         not destination.is_dir() or any(destination.iterdir())
     ):
@@ -688,25 +754,68 @@ def sensitivity_from_config(
         layout, rows_per_episode=controls.sensitivity_rows_per_episode
     )
     selected_rows = tuple(int(value) for value in layout.row_indices[selected_positions])
+    action_column = np.asarray(source.hf_dataset["action"], dtype=np.float64)
+    if (
+        action_column.ndim != 2
+        or action_column.shape[1] != 7
+        or len(action_column) != len(episode_column)
+        or not np.isfinite(action_column).all()
+    ):
+        raise ValueError("sensitivity dataset action column must be finite [rows, 7]")
+    action_statistics = training_action_statistics(
+        action_column[np.asarray(split.rows["train"], dtype=np.int64)]
+    )
+    reusable = _load_reusable_sensitivity_v2(
+        controls.output_dir / selected_partition / "sensitivity_v2",
+        expected={
+            "partition": selected_partition,
+            "observations": len(selected_rows),
+            "selected_rows": list(selected_rows),
+            "rows_per_episode": controls.sensitivity_rows_per_episode,
+            "batch_size": controls.sensitivity_batch_size,
+            "finite_difference_scale": controls.sensitivity_scale,
+            "policy_seeds": list(config.seeds),
+            "conditions": list(config.conditions),
+            "split_manifest_sha256": split.sha256,
+            "token_schema_version": TOKEN_SCHEMA_VERSION,
+            "token_dim": TOKEN_DIM,
+            "action_statistics": action_statistics,
+            "recovery_report_sha256": recovery_report_sha256,
+            "oracle_report_sha256": oracle_report_sha256,
+        },
+        expected_records=(
+            len(selected_rows)
+            * len(config.seeds)
+            * len(config.conditions)
+            * 3
+            * len(TOKEN_SLICES)
+        ),
+        bootstrap_seed=controls.bootstrap_seed,
+    )
     raw_batches = _sensitivity_source_batches(
         source,
         rows=selected_rows,
         batch_size=controls.sensitivity_batch_size,
     )
 
-    records: list[dict[str, object]] = []
+    records: list[dict[str, object]] = [] if reusable is None else reusable[0]
+    reused_provenance = None if reusable is None else reusable[1]
     cache_sha256: dict[str, str] = {}
     checkpoint_sha256: dict[str, str] = {}
     checkpoint_paths: dict[str, Path] = {}
     compatibility: dict[str, dict[str, object]] = {}
     dataset_fingerprints: set[str] = set()
+    probes_per_condition = 3 + (0 if reusable is not None else 3 * len(TOKEN_SLICES))
     progress = tqdm(
-        total=len(config.seeds) * len(config.conditions) * (1 + 3 * len(TOKEN_SLICES)),
+        total=len(config.seeds)
+        * len(config.conditions)
+        * probes_per_condition,
         desc="policy sensitivity",
         unit="probe",
         dynamic_ncols=True,
         disable=None,
     )
+    control_provenance: dict[str, dict[str, object]] = {}
     for seed in config.seeds:
         caches = _load_cache_matrix(
             config,
@@ -719,11 +828,21 @@ def sensitivity_from_config(
             cache = caches[condition]
             key = f"seed_{seed}/{condition}"
             cache_sha256[key] = str(cache.sha256)
+            if reused_provenance is not None:
+                previous_cache = reused_provenance.get("cache_sha256")
+                if (
+                    not isinstance(previous_cache, Mapping)
+                    or previous_cache.get(key) != str(cache.sha256)
+                ):
+                    raise ValueError(
+                        f"reusable sensitivity v2 cache differs at {key}"
+                    )
             dataset_fingerprints.add(str(cache.provenance.dataset_fingerprint))
             train_tokens = _select_diagnostic_cache_rows(
                 cache, tuple(int(row) for row in split.rows["train"])
             )
-            source_tokens = _select_diagnostic_cache_rows(cache, selected_rows)
+            partition_tokens = _select_diagnostic_cache_rows(cache, partition_rows)
+            source_tokens = partition_tokens[selected_positions]
             statistics = training_feature_statistics(train_tokens)
             (
                 policy,
@@ -745,6 +864,15 @@ def sensitivity_from_config(
             compatibility[key] = audit
             checkpoint_paths[key] = checkpoint
             checkpoint_sha256[key] = checkpoint_digest
+            if reused_provenance is not None:
+                previous_checkpoint = reused_provenance.get("checkpoint_sha256")
+                if (
+                    not isinstance(previous_checkpoint, Mapping)
+                    or previous_checkpoint.get(key) != checkpoint_digest
+                ):
+                    raise ValueError(
+                        f"reusable sensitivity v2 checkpoint differs at {key}"
+                    )
             baseline_actions = predict_first_actions(
                 policy=policy,
                 preprocessor=preprocessor,
@@ -753,6 +881,65 @@ def sensitivity_from_config(
                 tokens=source_tokens,
             )
             progress.update(1)
+            matched_partition, matched_provenance = temporally_matched_random_tokens(
+                partition_tokens,
+                layout,
+                seed=controls.bootstrap_seed + seed,
+            )
+            matched_tokens = matched_partition[selected_positions]
+            provenance_key = f"seed_{seed}"
+            previous_provenance = control_provenance.setdefault(
+                provenance_key, matched_provenance
+            )
+            if previous_provenance != matched_provenance:
+                raise ValueError(
+                    "temporally matched control differs across representation conditions"
+                )
+            for intervention, changed_tokens in (
+                ("zero", mask_token_group(source_tokens, ALL_TOKENS_GROUP)),
+                ("temporally_matched_random", matched_tokens),
+            ):
+                changed_actions = (
+                    baseline_actions.copy()
+                    if np.array_equal(changed_tokens, source_tokens)
+                    else predict_first_actions(
+                        policy=policy,
+                        preprocessor=preprocessor,
+                        postprocessor=postprocessor,
+                        raw_batches=raw_batches,
+                        tokens=changed_tokens,
+                    )
+                )
+                magnitude = standardized_perturbation_magnitude(
+                    source_tokens,
+                    changed_tokens,
+                    ALL_TOKENS_GROUP,
+                    training_std=statistics["std"],
+                )
+                metrics = action_change_metrics(
+                    baseline_actions,
+                    changed_actions,
+                    perturbation_magnitude=magnitude,
+                    action_scale=action_statistics["effective_scale"],
+                )
+                records.extend(
+                    make_sensitivity_records(
+                        policy_seed=seed,
+                        condition=condition,
+                        group=ALL_TOKENS_GROUP,
+                        intervention=intervention,
+                        row_indices=layout.row_indices[selected_positions],
+                        episode_indices=layout.episode_indices[selected_positions],
+                        frame_indices=layout.frame_indices[selected_positions],
+                        metrics=metrics,
+                    )
+                )
+                progress.update(1)
+            if reusable is not None:
+                del policy, preprocessor, postprocessor
+                gc.collect()
+                _clear_accelerator_memory()
+                continue
             for group in TOKEN_SLICES:
                 progress.set_postfix(seed=seed, condition=condition, group=group)
                 masked = mask_token_group(source_tokens, group)
@@ -799,6 +986,7 @@ def sensitivity_from_config(
                         baseline_actions,
                         changed_actions,
                         perturbation_magnitude=magnitude,
+                        action_scale=action_statistics["effective_scale"],
                     )
                     records.extend(
                         make_sensitivity_records(
@@ -819,6 +1007,10 @@ def sensitivity_from_config(
     progress.close()
     if len(dataset_fingerprints) != 1:
         raise ValueError("sensitivity caches bind different datasets")
+    if reused_provenance is not None and reused_provenance.get(
+        "dataset_fingerprint"
+    ) != next(iter(dataset_fingerprints)):
+        raise ValueError("reusable sensitivity v2 dataset fingerprint differs")
     report = build_sensitivity_report(
         records,
         partition=selected_partition,
@@ -833,6 +1025,10 @@ def sensitivity_from_config(
         "rows_per_episode": controls.sensitivity_rows_per_episode,
         "batch_size": controls.sensitivity_batch_size,
         "finite_difference_scale": controls.sensitivity_scale,
+        "action_statistics": action_statistics,
+        "control_interventions": ["zero", "temporally_matched_random"],
+        "control_provenance": control_provenance,
+        "reused_sensitivity_v2": reused_provenance,
         "config": config.config_path,
         "split_manifest": split.path,
         "split_manifest_sha256": split.sha256,

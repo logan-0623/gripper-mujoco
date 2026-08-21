@@ -1,0 +1,85 @@
+schema_version: interaction_representation_runtime_v1
+study_id: icra_interaction_representation
+dataset:
+  repo_id: local/franka_lerobot_act_pilot
+  root: outputs/lerobot/franka_lerobot_act_pilot
+  split_manifest: outputs/graph_finetune/mujoco_graph_v2/split_manifest.json
+  bridge_config: configs/lerobot_act_recovery_macos.yaml
+trace:
+  root: outputs/graph_control/graph_v2_pilot/traced_evaluation
+  condition: predicted_reflect_v2
+state_bank:
+  output_dir: outputs/representation_study/icra/state_bank
+  selection_seed: 2057736129
+  split_ratios: [0.8, 0.1, 0.1]
+  expert_per_phase: 1
+  policy_per_stratum: 2
+  replay_position_tolerance: 1.0e-4
+stages:
+  pi0:
+    pretrained:
+      checkpoint: lerobot/pi0_base
+      trainable_groups: []
+    sft:
+      checkpoint: outputs/representation_study/icra/sft/pi0/sft/checkpoint
+      trainable_groups: [fusion, action_head]
+    continued_sft:
+      checkpoint: outputs/representation_study/icra/sft/pi0/continued_sft/checkpoint
+      trainable_groups: [fusion, action_head]
+extraction:
+  output_dir: outputs/representation_study/icra/latents
+  device: cuda
+  batch_size: 1
+probes:
+  output_dir: outputs/representation_study/icra/probes
+  epochs: 80
+  batch_size: 128
+  learning_rate: 0.001
+  weight_decays: [0.0, 0.0001, 0.001]
+  seed: 2057736129
+interventions:
+  output_dir: outputs/representation_study/icra/interventions
+  partition: test
+  batch_size: 2
+  max_states: 64
+  modes: [zero, mean, matched_random]
+sft:
+  output_dir: outputs/representation_study/icra/sft
+  steps: 10000
+  batch_size: 1
+  learning_rate: 1.0e-5
+  weight_decay: 1.0e-10
+  grad_clip_norm: 10.0
+  save_every: 1000
+  num_workers: 2
+  seed: 2057736129
+rl:
+  output_dir: outputs/representation_study/icra/rl
+  device: cuda
+  total_steps: 20480
+  rollout_steps: 256
+  update_epochs: 4
+  minibatch_size: 64
+  learning_rate: 3.0e-4
+  representation_learning_rate: 1.0e-5
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  max_grad_norm: 1.0
+  residual_scale: [0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.20]
+  reward_mode: sparse
+  progress_reward_scale: 0.0
+  max_episode_steps: 180
+  object_counts: [2, 3]
+  layouts: [normal, crowded]
+  eval_interval: 2048
+  eval_episodes: 20
+  success_threshold: 0.5
+  seed: 2057736129
+analysis:
+  output_dir: outputs/representation_study/icra/analysis
+  bootstrap_samples: 10000
+  confidence_level: 0.95
+  seed: 2057736129

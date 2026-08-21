@@ -77,6 +77,7 @@ class PreparedRecoveryStart:
     source_split: str
     variant_id: int
     kind: str
+    prefix_steps: int
     interaction_baseline: Mapping[str, int | bool | str | None]
 
 
@@ -285,6 +286,7 @@ def prepare_physics_recovery_start(
     )
     expert.reset(seed=spec.source_seed)
     target_name = snapshot.target_object.name
+    prefix_steps = 0
     while True:
         ready = recovery_trigger_ready(
             spec,
@@ -303,6 +305,7 @@ def prepare_physics_recovery_start(
                 source_split=str(source_split),
                 variant_id=int(spec.variant_id),
                 kind=spec.kind.value,
+                prefix_steps=prefix_steps,
                 interaction_baseline=_interaction_baseline(env),
             )
 
@@ -312,6 +315,7 @@ def prepare_physics_recovery_start(
             env.grasp_state,
         )
         transition = env.step(prefix_action)
+        prefix_steps += 1
         snapshot = transition.snapshot
         if transition.done:
             raise PhysicsRecoveryRejected(
