@@ -56,6 +56,26 @@ def v2_probe_targets(
         output_dim = max(minimum_classes, int(values.max()) + 1)
         return ProbeTarget(name, "categorical", values, output_dim)
 
+    next_relation = np.asarray(
+        [
+            (
+                value["next_relation"]["relation_id"],
+                value["next_relation"]["operator_id"],
+                value["next_relation"]["predicate_id"],
+            )
+            for value in labels
+        ],
+        dtype=np.int64,
+    )
+    if (
+        next_relation.shape != (len(labels), 3)
+        or np.any(next_relation < 0)
+        or np.any(next_relation[:, 0] >= 8)
+        or np.any(next_relation[:, 1] >= 5)
+        or np.any(next_relation[:, 2] >= 7)
+    ):
+        raise ValueError("formal next-relation targets are outside the registered ontology")
+
     return {
         "geometry": ProbeTarget(
             "geometry", "continuous", geometry, geometry.shape[1]
@@ -63,7 +83,9 @@ def v2_probe_targets(
         "phase": categorical("phase", 6),
         "recovery_state": categorical("recovery_state", 3),
         "recovery_type": categorical("recovery_type", 1),
-        "next_relation": categorical("next_relation", 6),
+        "next_relation": ProbeTarget(
+            "next_relation", "structured", next_relation, 8 + 5 + 7, (8, 5, 7)
+        ),
         "contact": ProbeTarget(
             "contact",
             "binary",

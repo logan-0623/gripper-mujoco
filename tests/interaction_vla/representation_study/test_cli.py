@@ -87,3 +87,37 @@ def test_recovery_training_commands_accept_resume() -> None:
             ["recovery-rl", command, "--config", "v2.yaml", "--resume"]
         )
         assert args.resume is True
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["state-bank", "train", "measure", "evaluate", "report"],
+)
+def test_formal_commands_parse(command: str) -> None:
+    arguments = ["recovery-rl", "formal", command, "--config", "v2.yaml"]
+    if command in {"train", "measure", "evaluate"}:
+        arguments.extend(("--condition", "rl_head", "--seed-index", "0"))
+    args = build_parser().parse_args(arguments)
+    assert args.family == "recovery-rl"
+    assert args.command == "formal"
+    assert args.formal_command == command
+
+
+def test_formal_train_accepts_only_training_conditions_and_resume() -> None:
+    args = build_parser().parse_args(
+        [
+            "recovery-rl",
+            "formal",
+            "train",
+            "--config",
+            "v2.yaml",
+            "--condition",
+            "rl_representation",
+            "--seed-index",
+            "2",
+            "--resume",
+        ]
+    )
+    assert args.condition == "rl_representation"
+    assert args.seed_index == 2
+    assert args.resume is True

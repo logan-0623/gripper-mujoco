@@ -28,6 +28,7 @@ from .foundation import (
     _action_proximal_tap,
     _oracle_anchor_cache,
     _packed_replay_observations,
+    replay_policy_seeds,
     _policy_seed,
     _reset_training_case,
     _rgb_state,
@@ -45,6 +46,7 @@ from .sac import SAC, SACBatch
 from .snapshots import SNAPSHOT_STEPS, SnapshotStore
 from .training import pack_observation, recompute_latents_with_policy_seeds
 from .v2_config import RecoveryRLV2Config
+from .oracle_state import load_oracle_normalization
 
 
 FORMAL_SCHEMA = "recovery_rl_formal_act_v2"
@@ -123,6 +125,17 @@ class FormalArtifacts:
 
 
 @dataclass(frozen=True)
+class BoundFoundationArtifacts:
+    binding: str
+    backend: str
+    anchoring: str
+    case_manifest_path: Path
+    case_manifest: RecoveryCaseManifest
+    oracle_normalization: Path
+    hashes: dict[str, str]
+
+
+@dataclass(frozen=True)
 class FormalRun:
     condition: str
     seed_index: int
@@ -136,7 +149,9 @@ class FormalRun:
     constant_control: bool
 
 
-def _load_formal_artifacts(config: RecoveryRLV2Config) -> FormalArtifacts:
+def validate_bound_foundation(
+    config: RecoveryRLV2Config,
+) -> BoundFoundationArtifacts:
     binding = foundation_binding(config)
     gates = config.output_dir / "gates"
     loaded = {
@@ -164,21 +179,12 @@ def _load_formal_artifacts(config: RecoveryRLV2Config) -> FormalArtifacts:
 
     case_manifest = config.output_dir / "manifests" / "cases.json"
     normalization = config.output_dir / "manifests" / "oracle_normalization.json"
-    state_bank_root = config.output_dir / "state_bank_v2"
-    state_bank_manifest = state_bank_root / "manifest.json"
     for label, path in (
         ("case manifest", case_manifest),
         ("Oracle normalization", normalization),
-        ("State Bank v2 manifest", state_bank_manifest),
     ):
         if not path.is_file():
             raise FileNotFoundError(f"required formal {label} not found: {path}")
-    bank = json.loads(state_bank_manifest.read_text(encoding="utf-8"))
-    if bank.get("schema_version") != "recovery_state_bank_v2":
-        raise ValueError("State Bank v2 manifest schema is incompatible")
-    artifact_hashes = bank.get("artifact_hashes")
-    if not isinstance(artifact_hashes, Mapping) or not artifact_hashes:
-        raise ValueError("State Bank v2 artifact hashes are missing")
     expected_case_hash = str(
         loaded["distribution"].get("inputs", {}).get(
             "case_manifest_sha256", ""
@@ -186,7 +192,19 @@ def _load_formal_artifacts(config: RecoveryRLV2Config) -> FormalArtifacts:
     )
     if len(expected_case_hash) != 64:
         raise ValueError("distribution gate has no bound case manifest")
-    for gate_name in ("backend", "anchoring"):
+    manifest = load_case_manifest(case_manifest)
+    if manifest.sha256 != expected_case_hash:
+        raise ValueError("case manifest semantic hash differs from distribution gate")
+    load_oracle_normalization(normalization)
+    normalization_hash = sha256_file(normalization)
+    distribution_inputs = loaded["distribution"].get("inputs")
+    if (
+        not isinstance(distribution_inputs, Mapping)
+        or distribution_inputs.get("oracle_normalization_sha256")
+        != normalization_hash
+    ):
+        raise ValueError("Oracle normalization hash differs from distribution gate")
+    for gate_name in ("backend", "oracle", "anchoring"):
         inputs = loaded[gate_name].get("inputs")
         if (
             not isinstance(inputs, Mapping)
@@ -195,12 +213,18 @@ def _load_formal_artifacts(config: RecoveryRLV2Config) -> FormalArtifacts:
             raise ValueError(
                 f"{gate_name} gate case manifest binding differs"
             )
-    if bank.get("source_case_manifest_sha256") != expected_case_hash:
-        raise ValueError("State Bank v2 and foundation case manifests differ")
-    for name, expected in artifact_hashes.items():
-        artifact = state_bank_root / str(name)
-        if not artifact.is_file() or sha256_file(artifact) != str(expected):
-            raise ValueError(f"State Bank v2 artifact hash differs: {name}")
+    if loaded["backend"]["inputs"].get("distribution_gate_sha256") != sha256_file(
+        gates / "distribution.json"
+    ):
+        raise ValueError("backend gate does not bind the distribution gate")
+    if loaded["oracle"]["inputs"].get("backend_gate_sha256") != sha256_file(
+        gates / "backend.json"
+    ):
+        raise ValueError("oracle gate does not bind the backend gate")
+    if loaded["anchoring"]["inputs"].get("oracle_gate_sha256") != sha256_file(
+        gates / "oracle.json"
+    ):
+        raise ValueError("anchoring gate does not bind the oracle gate")
     hashes = {
         **{
             f"gate/{name}": sha256_file(gates / f"{name}.json")
@@ -208,6 +232,40 @@ def _load_formal_artifacts(config: RecoveryRLV2Config) -> FormalArtifacts:
         },
         "case_manifest": sha256_file(case_manifest),
         "oracle_normalization": sha256_file(normalization),
+    }
+    return BoundFoundationArtifacts(
+        binding=binding,
+        backend=backend,
+        anchoring=anchoring,
+        case_manifest_path=case_manifest,
+        case_manifest=manifest,
+        oracle_normalization=normalization,
+        hashes=hashes,
+    )
+
+
+def _load_formal_artifacts(config: RecoveryRLV2Config) -> FormalArtifacts:
+    foundation = validate_bound_foundation(config)
+    state_bank_root = config.output_dir / "state_bank_v2"
+    state_bank_manifest = state_bank_root / "manifest.json"
+    if not state_bank_manifest.is_file():
+        raise FileNotFoundError(
+            f"required formal State Bank v2 manifest not found: {state_bank_manifest}"
+        )
+    bank = json.loads(state_bank_manifest.read_text(encoding="utf-8"))
+    if bank.get("schema_version") != "recovery_state_bank_v2":
+        raise ValueError("State Bank v2 manifest schema is incompatible")
+    artifact_hashes = bank.get("artifact_hashes")
+    if not isinstance(artifact_hashes, Mapping) or not artifact_hashes:
+        raise ValueError("State Bank v2 artifact hashes are missing")
+    if bank.get("source_case_manifest_sha256") != foundation.case_manifest.sha256:
+        raise ValueError("State Bank v2 and foundation case manifests differ")
+    for name, expected in artifact_hashes.items():
+        artifact = state_bank_root / str(name)
+        if not artifact.is_file() or sha256_file(artifact) != str(expected):
+            raise ValueError(f"State Bank v2 artifact hash differs: {name}")
+    hashes = {
+        **foundation.hashes,
         "state_bank_manifest": sha256_file(state_bank_manifest),
         "sft_checkpoint": _artifact_hash(config.sft_checkpoint),
         "continued_sft_checkpoint": _artifact_hash(
@@ -215,11 +273,11 @@ def _load_formal_artifacts(config: RecoveryRLV2Config) -> FormalArtifacts:
         ),
     }
     return FormalArtifacts(
-        foundation_binding=binding,
-        backend=backend,
-        anchoring=anchoring,
-        case_manifest=case_manifest,
-        oracle_normalization=normalization,
+        foundation_binding=foundation.binding,
+        backend=foundation.backend,
+        anchoring=foundation.anchoring,
+        case_manifest=foundation.case_manifest_path,
+        oracle_normalization=foundation.oracle_normalization,
         state_bank=state_bank_root,
         hashes=hashes,
     )
@@ -924,18 +982,30 @@ def _run_formal_sac(
                     )
                     if run.condition == "rl_representation":
                         observations = _packed_replay_observations(sampled)
-                        seeds = tuple(
-                            int.from_bytes(
-                                hashlib.sha256(identifier.encode("utf-8")).digest()[:4],
-                                "little",
-                            )
-                            for identifier in sampled.transition_ids
+                        next_observations = _packed_replay_observations(
+                            sampled, next_observation=True
+                        )
+                        seeds = replay_policy_seeds(
+                            sampled.transition_ids, next_observation=False
+                        )
+                        next_seeds = replay_policy_seeds(
+                            sampled.transition_ids, next_observation=True
                         )
                         current_actor = recompute_latents_with_policy_seeds(
                             runtime.backend,
                             observations,
                             seeds,
                             tap_id=_action_proximal_tap(),
+                        )
+                        next_actor_observation = recompute_latents_with_policy_seeds(
+                            runtime.backend,
+                            next_observations,
+                            next_seeds,
+                            tap_id=_action_proximal_tap(),
+                        ).detach()
+                    else:
+                        next_actor_observation = torch.as_tensor(
+                            sampled.next_actor_observation, device=device
                         )
                     nominal_current, nominal_target = _sample_nominal(
                         config,
@@ -948,9 +1018,7 @@ def _run_formal_sac(
                     update = algorithm.update(
                         SACBatch(
                             actor_observation=current_actor,
-                            next_actor_observation=torch.as_tensor(
-                                sampled.next_actor_observation, device=device
-                            ),
+                            next_actor_observation=next_actor_observation,
                             oracle_state=torch.as_tensor(sampled.oracle_state, device=device),
                             next_oracle_state=torch.as_tensor(
                                 sampled.next_oracle_state, device=device

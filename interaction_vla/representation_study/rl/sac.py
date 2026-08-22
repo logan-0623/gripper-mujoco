@@ -158,6 +158,12 @@ class SAC:
         self.representation_parameters = tuple(representation_parameters)
         actor_parameters = tuple(actor.parameters())
         critic_parameters = tuple(critics.parameters())
+        parameter_devices = {
+            parameter.device for parameter in (*actor_parameters, *critic_parameters)
+        }
+        if len(parameter_devices) != 1:
+            raise ValueError("SAC actor and critics must share one device")
+        policy_device = next(iter(parameter_devices))
         actor_ids = {id(value) for value in actor_parameters}
         representation_ids = {id(value) for value in self.representation_parameters}
         critic_ids = {id(value) for value in critic_parameters}
@@ -193,7 +199,11 @@ class SAC:
             lr=config.critic_learning_rate,
         )
         self.log_alpha = torch.nn.Parameter(
-            torch.tensor(math.log(initial_temperature), dtype=torch.float32)
+            torch.tensor(
+                math.log(initial_temperature),
+                dtype=torch.float32,
+                device=policy_device,
+            )
         )
         self.temperature_optimizer = torch.optim.Adam(
             (self.log_alpha,),

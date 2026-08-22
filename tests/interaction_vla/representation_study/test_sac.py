@@ -70,6 +70,28 @@ def test_one_sac_update_is_finite_and_q_path_is_isolated() -> None:
     assert report.critic_gradient_on_representation == 0.0
 
 
+def test_sac_temperature_is_created_on_the_policy_device() -> None:
+    actor = LatentResidualActor(latent_dim=16)
+    critics = OracleTwinQ(state_dim=36, action_dim=7)
+    backend = SAC(actor=actor, critics=critics, config=_config(), gamma=0.99)
+
+    assert backend.log_alpha.device == next(actor.parameters()).device
+    assert backend.log_alpha.device == next(critics.parameters()).device
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() and not torch.backends.mps.is_available(),
+    reason="accelerator is unavailable",
+)
+def test_sac_temperature_is_created_on_a_non_cpu_policy_device() -> None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+    actor = LatentResidualActor(latent_dim=16).to(device)
+    critics = OracleTwinQ(state_dim=36, action_dim=7).to(device)
+    backend = SAC(actor=actor, critics=critics, config=_config(), gamma=0.99)
+
+    assert backend.log_alpha.device == device
+
+
 def test_sac_actor_pass_can_update_declared_representation() -> None:
     torch.manual_seed(7)
     adapter = torch.nn.Linear(16, 16, bias=False)

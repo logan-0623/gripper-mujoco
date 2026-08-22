@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from pathlib import Path
+from typing import Any, Mapping
 
 import numpy as np
 
@@ -61,6 +62,36 @@ class OracleNormalization:
             "oracle_state_width": ORACLE_STATE_WIDTH,
             **asdict(self),
         }
+
+    @classmethod
+    def from_json(cls, value: Mapping[str, object]) -> "OracleNormalization":
+        expected = {
+            "schema_version",
+            "oracle_state_width",
+            *asdict(cls()).keys(),
+        }
+        if set(value) != expected:
+            raise ValueError("Compact Oracle normalization fields are incompatible")
+        if value.get("schema_version") != "compact_oracle_normalization_v1":
+            raise ValueError("Compact Oracle normalization schema is incompatible")
+        if int(value.get("oracle_state_width", -1)) != ORACLE_STATE_WIDTH:
+            raise ValueError("Compact Oracle normalization width is incompatible")
+        return cls(
+            **{
+                name: float(value[name])
+                for name in asdict(cls())
+            }
+        )
+
+
+def load_oracle_normalization(path: str | Path) -> OracleNormalization:
+    import json
+
+    source = Path(path)
+    raw = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping):
+        raise ValueError("Compact Oracle normalization must be a mapping")
+    return OracleNormalization.from_json(raw)
 
 
 def _position(value: object, name: str) -> np.ndarray:

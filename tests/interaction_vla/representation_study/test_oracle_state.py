@@ -93,6 +93,7 @@ def test_oracle_normalization_is_json_serializable() -> None:
     assert payload["schema_version"] == "compact_oracle_normalization_v1"
     assert payload["oracle_state_width"] == 36
     assert payload["gripper_target_translation_scale"] > 0.0
+    assert OracleNormalization.from_json(payload) == OracleNormalization()
 
 
 def test_oracle_codec_encodes_a_real_runtime_start() -> None:

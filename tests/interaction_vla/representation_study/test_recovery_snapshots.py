@@ -73,6 +73,24 @@ def test_replay_resume_rejects_modified_shard(tmp_path: Path) -> None:
         replay.load_state_dict(state)
 
 
+def test_replay_resume_skips_uncommitted_orphan_shards(tmp_path: Path) -> None:
+    root = tmp_path / "replay"
+    replay = RecoveryReplay(root=root, capacity=32, seed=5, shard_size=4)
+    for index in range(4):
+        replay.add(example_transition(index))
+    committed = replay.state_dict()
+    for index in range(4, 8):
+        replay.add(example_transition(index))
+    assert (root / "shards" / "shard_00000001.npz").is_file()
+
+    resumed = RecoveryReplay(root=root, capacity=32, seed=5, shard_size=4)
+    resumed.load_state_dict(committed)
+    for index in range(4, 8):
+        resumed.add(example_transition(index))
+    resumed.state_dict()
+    assert (root / "shards" / "shard_00000002.npz").is_file()
+
+
 def example_payload() -> dict[str, object]:
     return {
         "actor": {"weight": torch.ones(2)},
@@ -95,3 +113,12 @@ def test_snapshot_load_validates_binding(tmp_path: Path) -> None:
         store.load(step=4096, expected_binding="different")
     loaded = store.load(step=4096, expected_binding="abc")
     assert loaded["environment_steps"] == 4096
+
+
+def test_snapshot_inspection_rejects_corrupted_payload_without_loading(tmp_path: Path) -> None:
+    store = SnapshotStore(tmp_path)
+    snapshot = store.save(step=4096, payload=example_payload(), binding="abc")
+    (snapshot / "training_state.pt").write_bytes(b"corrupted")
+
+    with pytest.raises(ValueError, match="payload SHA-256"):
+        store.inspect(step=4096, expected_binding="abc")

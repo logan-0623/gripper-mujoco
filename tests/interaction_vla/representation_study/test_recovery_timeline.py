@@ -15,7 +15,9 @@ from interaction_vla.representation_study.rl.timeline import (
     SnapshotMeasurementContext,
     measurement_timeline,
     measure_snapshot,
+    validate_probe_report,
 )
+from interaction_vla.representation_study.rl.formal import FormalRun
 
 
 def test_timeline_registers_six_linear_and_two_mlp_measurements() -> None:
@@ -79,7 +81,11 @@ def test_v2_probe_targets_register_primary_and_secondary_roles() -> None:
                 "phase": index % 6,
                 "recovery_state": index % 3,
                 "recovery_type": index % 4,
-                "next_relation": index % 6,
+                "next_relation": {
+                    "relation_id": index % 8,
+                    "operator_id": index % 5,
+                    "predicate_id": index % 7,
+                },
                 "contact": index % 2,
                 "stable_grasp": (index + 1) % 2,
             }
@@ -91,3 +97,46 @@ def test_v2_probe_targets_register_primary_and_secondary_roles() -> None:
     assert set(FORMAL_SECONDARY_TARGETS) <= set(targets)
     assert targets["geometry"].values.shape == (12, 16)
     assert targets["recovery_state"].output_dim == 3
+    assert targets["next_relation"].kind == "structured"
+    assert targets["next_relation"].head_widths == (8, 5, 7)
+
+
+def test_probe_validation_rejects_truncated_tap_target_rows(tmp_path: Path) -> None:
+    run = FormalRun(
+        condition="rl_head",
+        seed_index=0,
+        seed=11,
+        backend="ppo",
+        anchoring="full_anchoring",
+        output_dir=tmp_path / "run",
+        binding="b" * 64,
+        parent_checkpoint="sft",
+        trainable_groups=(),
+        constant_control=False,
+    )
+    report = {
+        "passed": True,
+        "schema_version": "recovery_frozen_probe_v2",
+        "backend": "act",
+        "condition": "rl_head",
+        "seed_index": 0,
+        "environment_steps": 4096,
+        "model_kind": "linear",
+        "targets": list(FORMAL_PRIMARY_TARGETS),
+        "latent_sha256": "a" * 64,
+        "state_bank_manifest_sha256": "c" * 64,
+        "primary_split": "test",
+        "selection_split": "validation",
+        "rows": [],
+    }
+    with pytest.raises(ValueError, match="tap-target coverage"):
+        validate_probe_report(
+            report,
+            report_path=tmp_path / "probes" / "linear" / "report.json",
+            run=run,
+            environment_steps=4096,
+            model_kind="linear",
+            expected_targets=FORMAL_PRIMARY_TARGETS,
+            latent_sha256="a" * 64,
+            state_bank_manifest_sha256="c" * 64,
+        )

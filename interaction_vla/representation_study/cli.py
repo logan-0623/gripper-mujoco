@@ -115,6 +115,34 @@ def build_parser() -> argparse.ArgumentParser:
         command = recovery_commands.add_parser(name)
         command.add_argument("--config", type=Path, required=True)
         command.add_argument("--resume", action="store_true")
+    formal = recovery_commands.add_parser(
+        "formal", help="formal five-condition ACT recovery study"
+    )
+    formal_commands = formal.add_subparsers(dest="formal_command", required=True)
+    for name in ("state-bank", "train", "measure", "evaluate", "report"):
+        command = formal_commands.add_parser(name)
+        command.add_argument("--config", type=Path, required=True)
+        if name == "train":
+            command.add_argument(
+                "--condition",
+                choices=("oracle_state", "rl_head", "rl_representation"),
+                required=True,
+            )
+            command.add_argument("--seed-index", type=int, choices=range(3), required=True)
+            command.add_argument("--resume", action="store_true")
+        elif name in {"measure", "evaluate"}:
+            command.add_argument(
+                "--condition",
+                choices=(
+                    "sft",
+                    "continued_sft",
+                    "oracle_state",
+                    "rl_head",
+                    "rl_representation",
+                ),
+                required=True,
+            )
+            command.add_argument("--seed-index", type=int, choices=range(3), required=True)
     report = families.add_parser("report", help="aggregate C/U/P study evidence")
     report_commands = report.add_subparsers(dest="command", required=True)
     report_build = report_commands.add_parser("build")
@@ -126,15 +154,64 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     try:
         if args.family == "recovery-rl":
-            from .rl.protocol import run_recovery_command
             from .rl.v2_config import load_recovery_rl_v2_config
 
             recovery_config = load_recovery_rl_v2_config(args.config)
-            result = run_recovery_command(
-                recovery_config,
-                args.command,
-                resume=args.resume,
-            )
+            if args.command == "formal":
+                if args.formal_command == "state-bank":
+                    from .state_bank.v2_builder import collect_state_bank_v2
+
+                    result = collect_state_bank_v2(recovery_config)
+                elif args.formal_command == "train":
+                    from .rl.formal import run_formal_training
+
+                    result = run_formal_training(
+                        recovery_config,
+                        condition=args.condition,
+                        seed_index=args.seed_index,
+                        resume=args.resume,
+                    )
+                elif args.formal_command == "measure":
+                    from .rl.timeline import measure_formal_timeline
+
+                    if (
+                        args.condition in {"sft", "continued_sft"}
+                        and args.seed_index != 0
+                    ):
+                        raise ValueError(
+                            "constant-control representation measurement uses --seed-index 0"
+                        )
+                    result = measure_formal_timeline(
+                        recovery_config,
+                        condition=args.condition,
+                        seed_index=args.seed_index,
+                    )
+                elif args.formal_command == "evaluate":
+                    from .rl.formal_evaluation import evaluate_formal_run
+
+                    result = evaluate_formal_run(
+                        recovery_config,
+                        condition=args.condition,
+                        seed_index=args.seed_index,
+                    )
+                elif args.formal_command == "report":
+                    from .rl.formal import prepare_formal_run
+                    from .rl.formal_report import build_formal_report
+
+                    prepare_formal_run(
+                        recovery_config, condition="sft", seed_index=0
+                    )
+                    result = build_formal_report(recovery_config)
+                else:  # pragma: no cover - guarded by argparse
+                    raise RuntimeError("unreachable formal recovery command")
+            else:
+                from .rl.protocol import run_recovery_command
+
+                result = run_recovery_command(
+                    recovery_config,
+                    args.command,
+                    resume=args.resume,
+                )
             print(json.dumps(result, indent=2, sort_keys=True))
             return
         config = load_study_config(args.config)

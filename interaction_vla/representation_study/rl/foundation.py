@@ -48,7 +48,11 @@ from .gates import (
     select_backend,
     select_calibrated_severity,
 )
-from .oracle_state import CompactOracleStateCodec, OracleNormalization
+from .oracle_state import (
+    CompactOracleStateCodec,
+    OracleNormalization,
+    load_oracle_normalization,
+)
 from .ppo_v2 import OnPolicyBatch, PPOV2
 from .protocol import GATE_SCHEMA, write_gate_atomic
 from .replay import RecoveryReplay
@@ -149,6 +153,12 @@ def _runtime(
         repo_id=bridge.dataset.repo_id,
         dataset_root=bridge.dataset.root,
     )
+    normalization_path = config.output_dir / "manifests" / "oracle_normalization.json"
+    normalization = (
+        load_oracle_normalization(normalization_path)
+        if normalization_path.is_file()
+        else OracleNormalization()
+    )
     environment = ResidualMujocoRuntime(
         bridge=bridge,
         backend=backend,
@@ -160,7 +170,7 @@ def _runtime(
         seed=seed,
         reward_mode="recovery_v2",
         progress_reward_scale=0.0,
-        oracle_codec=CompactOracleStateCodec(),
+        oracle_codec=CompactOracleStateCodec(normalization=normalization),
         recovery_gamma=config.gamma,
         recovery_progress_coefficient=config.progress_coefficient,
         recovery_residual_coefficient=(
@@ -392,10 +402,10 @@ def calibrate_distribution(config: RecoveryRLV2Config) -> dict[str, object]:
         )
         save_case_manifest(manifest_path, selected_manifest)
         manifest_hash = selected_manifest.sha256
-        _immutable_json(
-            config.output_dir / "manifests" / "oracle_normalization.json",
-            OracleNormalization().to_json(),
+        normalization_path = (
+            config.output_dir / "manifests" / "oracle_normalization.json"
         )
+        _immutable_json(normalization_path, OracleNormalization().to_json())
     gate = {
         "schema_version": GATE_SCHEMA,
         "gate": "distribution",
@@ -419,6 +429,9 @@ def calibrate_distribution(config: RecoveryRLV2Config) -> dict[str, object]:
                 for severity, path in sorted(reports.items())
             },
             "case_manifest_sha256": manifest_hash,
+            "oracle_normalization_sha256": (
+                sha256_file(normalization_path) if selection.passed else None
+            ),
         },
     }
     write_gate_atomic(gate_path, gate)
@@ -1456,6 +1469,9 @@ def run_algorithm_screen(
         **decision.inputs,
         "binding": foundation_binding(config),
         "case_manifest_sha256": manifest.sha256,
+        "distribution_gate_sha256": sha256_file(
+            config.output_dir / "gates" / "distribution.json"
+        ),
         "report_hashes": {
             key: sha256_file(path) for key, path in sorted(report_paths.items())
         },
@@ -1509,6 +1525,9 @@ def build_oracle_gate(config: RecoveryRLV2Config) -> dict[str, object]:
     decision.inputs["backend_gate_sha256"] = sha256_file(
         config.output_dir / "gates" / "backend.json"
     )
+    decision.inputs["case_manifest_sha256"] = load_case_manifest(
+        config.output_dir / "manifests" / "cases.json"
+    ).sha256
     decision.inputs["screen_report_hashes"] = [
         sha256_file(
             config.output_dir
@@ -1817,14 +1836,19 @@ def _run_latent_ppo_anchor_seed(
 
 def _packed_replay_observations(
     replay_batch: Any,
+    *,
+    next_observation: bool = False,
 ) -> tuple[dict[str, object], ...]:
     from interaction_vla.lerobot_bridge.rollout import policy_observation
 
+    agents = replay_batch.next_agent_rgb if next_observation else replay_batch.agent_rgb
+    wrists = replay_batch.next_wrist_rgb if next_observation else replay_batch.wrist_rgb
+    states = replay_batch.next_state if next_observation else replay_batch.state
     rows: list[dict[str, object]] = []
     for agent, wrist, state, task in zip(
-        replay_batch.agent_rgb,
-        replay_batch.wrist_rgb,
-        replay_batch.state,
+        agents,
+        wrists,
+        states,
         replay_batch.tasks,
         strict=True,
     ):
@@ -1842,6 +1866,20 @@ def _packed_replay_observations(
             )
         )
     return tuple(rows)
+
+
+def replay_policy_seeds(
+    transition_ids: Sequence[str], *, next_observation: bool
+) -> tuple[int, ...]:
+    """Deterministically separate stochastic policy draws for s_t and s_(t+1)."""
+    suffix = ":next" if next_observation else ""
+    return tuple(
+        int.from_bytes(
+            hashlib.sha256(f"{identifier}{suffix}".encode("utf-8")).digest()[:4],
+            "little",
+        )
+        for identifier in transition_ids
+    )
 
 
 def _run_latent_sac_anchor_seed(
@@ -2047,12 +2085,14 @@ def _run_latent_sac_anchor_seed(
                     for _ in range(config.sac.updates_per_environment_step):
                         sampled = replay.sample(config.sac.batch_size)
                         observations = _packed_replay_observations(sampled)
-                        seeds = tuple(
-                            int.from_bytes(
-                                hashlib.sha256(identifier.encode("utf-8")).digest()[:4],
-                                "little",
-                            )
-                            for identifier in sampled.transition_ids
+                        next_observations = _packed_replay_observations(
+                            sampled, next_observation=True
+                        )
+                        seeds = replay_policy_seeds(
+                            sampled.transition_ids, next_observation=False
+                        )
+                        next_seeds = replay_policy_seeds(
+                            sampled.transition_ids, next_observation=True
                         )
                         current_latent = recompute_latents_with_policy_seeds(
                             runtime.backend,
@@ -2060,6 +2100,12 @@ def _run_latent_sac_anchor_seed(
                             seeds,
                             tap_id=_action_proximal_tap(),
                         )
+                        next_latent = recompute_latents_with_policy_seeds(
+                            runtime.backend,
+                            next_observations,
+                            next_seeds,
+                            tap_id=_action_proximal_tap(),
+                        ).detach()
                         nominal_current: torch.Tensor | None = None
                         nominal_target: torch.Tensor | None = None
                         if full_anchor:
@@ -2072,10 +2118,7 @@ def _run_latent_sac_anchor_seed(
                         update = algorithm.update(
                             SACBatch(
                                 actor_observation=current_latent,
-                                next_actor_observation=torch.as_tensor(
-                                    sampled.next_actor_observation,
-                                    device=device,
-                                ),
+                                next_actor_observation=next_latent,
                                 oracle_state=torch.as_tensor(
                                     sampled.oracle_state,
                                     device=device,

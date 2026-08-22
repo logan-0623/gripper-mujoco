@@ -8,9 +8,9 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "implementation_phases_3_to_7_code_complete"
-  gate: "act_stagewise_experiments_pending"
-  updated_at: "2026-08-20"
+  current: "formal_act_recovery_protocol_implemented"
+  gate: "formal_act_server_execution_pending"
+  updated_at: "2026-08-22"
 artifacts:
   manuscript: "docs/paper/icra/main.tex"
   bibliography: "docs/paper/icra/references.bib"
@@ -132,6 +132,14 @@ implementation_evidence:
     details:
       - "Machine-readable rows keep accessible, control, used, useful, plasticity, and used-to-useful evidence distinct."
       - "Per-backend reports cannot overwrite each other and descriptive stage correlations are labeled non-causal."
+  - id: "IE8"
+    artifact: "interaction_vla/representation_study/rl/formal.py"
+    status: "verified_code_experiments_pending"
+    details:
+      - "Five-condition formal ACT protocol separates SFT, continued SFT, Oracle-State, RL-head, and RL-representation."
+      - "Three-seed 20,480-step runs use a gated PPO/SAC backend, isolated privileged critics, residual/nominal anchoring, and six immutable snapshots."
+      - "State Bank v2 contains 1,200 source-seed-isolated nominal, perturbation, and recovery states with structured next-relation targets."
+      - "Formal completeness validates gate chains, semantic manifests, normalization, snapshots, latent/probe coverage, evaluation rows, recomputed aggregates, and artifact hashes."
 reviews:
   - id: "R1"
     type: "claim_evidence_audit"

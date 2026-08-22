@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 import numpy as np
+from interaction_vla.lerobot_bridge.provenance import sha256_file
 
 from ..state_bank.io import write_json_atomic
 from ..statistics import (
@@ -21,11 +22,16 @@ from .formal import (
     CONSTANT_CONTROL_CONDITIONS,
     FORMAL_CONDITIONS,
     FORMAL_TRAINING_CONDITIONS,
+    prepare_formal_run,
 )
+from .formal_evaluation import validate_formal_evaluation_artifacts
+from .snapshots import SnapshotStore
+from .timeline import validate_measurement_ledger
 from .v2_config import RecoveryRLV2Config
 
 
 FORMAL_REPORT_SCHEMA = "recovery_representation_report_v2"
+ARTIFACT_VALIDATION_ERRORS = (OSError, ValueError, TypeError, KeyError)
 
 
 @dataclass(frozen=True)
@@ -397,7 +403,111 @@ def _required_protocol_artifacts(
                 run / "snapshots" / f"step_{step:06d}" / "COMPLETED"
                 for step in config.snapshot_steps
             )
+    for condition in CONSTANT_CONTROL_CONDITIONS:
+        result.append(
+            config.output_dir
+            / "formal"
+            / "controls"
+            / condition
+            / "timeline.json"
+        )
+    for condition in FORMAL_CONDITIONS:
+        measurement_seeds = (0,) if condition in CONSTANT_CONTROL_CONDITIONS else range(3)
+        for seed_index in measurement_seeds:
+            result.append(_measurement_path(config, condition, seed_index))
+        for seed_index in range(3):
+            root = _evaluation_path(config, condition, seed_index, "report.json").parent
+            result.extend(
+                (
+                    root / "report.json",
+                    root / "curve_report.json",
+                    root
+                    / "final"
+                    / f"step_{config.formal_steps:06d}"
+                    / "report.json",
+                )
+            )
     return result
+
+
+def _validate_protocol_artifacts(
+    config: RecoveryRLV2Config,
+) -> tuple[list[str], dict[str, str]]:
+    invalid: list[str] = []
+    hashes: dict[str, str] = {}
+
+    def record(path: Path) -> None:
+        if path.is_file():
+            hashes[path.as_posix()] = sha256_file(path)
+
+    try:
+        prepare_formal_run(config, condition="sft", seed_index=0)
+    except ARTIFACT_VALIDATION_ERRORS as error:
+        invalid.append(f"foundation: {error}")
+    for condition in FORMAL_TRAINING_CONDITIONS:
+        for seed_index in range(3):
+            try:
+                run = prepare_formal_run(
+                    config, condition=condition, seed_index=seed_index
+                )
+                report_path = run.output_dir / "training_report.json"
+                report = _load(report_path)
+                if report is None:
+                    continue
+                expected = {
+                    "schema_version": "recovery_rl_formal_act_v2",
+                    "passed": True,
+                    "condition": condition,
+                    "seed_index": seed_index,
+                    "training_seed": run.seed,
+                    "backend": run.backend,
+                    "anchoring": run.anchoring,
+                    "binding": run.binding,
+                    "parent_checkpoint": run.parent_checkpoint,
+                    "trainable_groups": list(run.trainable_groups),
+                    "environment_steps": config.formal_steps,
+                    "snapshot_steps": list(config.snapshot_steps),
+                }
+                if any(report.get(name) != value for name, value in expected.items()):
+                    raise ValueError("formal training report metadata differs")
+                record(report_path)
+                store = SnapshotStore(run.output_dir / "snapshots")
+                for step in config.snapshot_steps:
+                    inspected = store.inspect(step=step, expected_binding=run.binding)
+                    hashes[
+                        (run.output_dir / "snapshots" / f"step_{step:06d}").as_posix()
+                    ] = str(inspected["snapshot_sha256"])
+            except ARTIFACT_VALIDATION_ERRORS as error:
+                invalid.append(f"training/{condition}/seed_{seed_index}: {error}")
+    for condition in FORMAL_CONDITIONS:
+        measurement_seeds = (0,) if condition in CONSTANT_CONTROL_CONDITIONS else range(3)
+        for seed_index in measurement_seeds:
+            ledger_path = _measurement_path(config, condition, seed_index)
+            try:
+                run = prepare_formal_run(
+                    config, condition=condition, seed_index=seed_index
+                )
+                ledger = _load(ledger_path)
+                if ledger is None:
+                    continue
+                validate_measurement_ledger(config, run, ledger)
+                record(ledger_path)
+            except ARTIFACT_VALIDATION_ERRORS as error:
+                invalid.append(f"measurement/{condition}/seed_{seed_index}: {error}")
+        for seed_index in range(3):
+            report_path = _evaluation_path(config, condition, seed_index, "report.json")
+            try:
+                if not report_path.is_file():
+                    continue
+                validate_formal_evaluation_artifacts(
+                    config, condition=condition, seed_index=seed_index
+                )
+                record(report_path)
+            except ARTIFACT_VALIDATION_ERRORS as error:
+                invalid.append(f"evaluation/{condition}/seed_{seed_index}: {error}")
+    for path in _required_protocol_artifacts(config):
+        record(path)
+    return sorted(set(invalid)), dict(sorted(hashes.items()))
 
 
 def _trajectory_rows(
@@ -529,6 +639,9 @@ def _markdown(report: Mapping[str, object]) -> str:
     if report.get("missing"):
         lines.extend(("", "## Missing artifacts", ""))
         lines.extend(f"- `{value}`" for value in report["missing"])
+    if report.get("invalid"):
+        lines.extend(("", "## Invalid artifacts", ""))
+        lines.extend(f"- {value}" for value in report["invalid"])
     lines.extend(
         (
             "",
@@ -547,10 +660,19 @@ def build_formal_report(config: RecoveryRLV2Config) -> dict[str, object]:
         for path in _required_protocol_artifacts(config)
         if not path.is_file()
     )
-    accessible = _probe_rows(config, missing=missing)
-    useful, plasticity, final_reports = _curve_and_utility_rows(
-        config, missing=missing
-    )
+    invalid, validated_hashes = _validate_protocol_artifacts(config)
+    try:
+        accessible = _probe_rows(config, missing=missing)
+    except ARTIFACT_VALIDATION_ERRORS as error:
+        invalid.append(f"probe evidence: {error}")
+        accessible = []
+    try:
+        useful, plasticity, final_reports = _curve_and_utility_rows(
+            config, missing=missing
+        )
+    except ARTIFACT_VALIDATION_ERRORS as error:
+        invalid.append(f"behavior evidence: {error}")
+        useful, plasticity, final_reports = [], [], {}
     result_rows = assemble_formal_evidence(
         accessible=accessible,
         useful=useful,
@@ -592,7 +714,8 @@ def build_formal_report(config: RecoveryRLV2Config) -> dict[str, object]:
         else None
     )
     missing = sorted(set(missing))
-    complete = not missing
+    invalid = sorted(set(invalid))
+    complete = not missing and not invalid
     report = {
         "schema_version": FORMAL_REPORT_SCHEMA,
         "complete": complete,
@@ -612,6 +735,8 @@ def build_formal_report(config: RecoveryRLV2Config) -> dict[str, object]:
             and retention_gate["passed"]
         ),
         "missing": missing,
+        "invalid": invalid,
+        "validated_artifact_hashes": validated_hashes,
         "claims": {
             "correctness_vs_utility": "requires comparison of probe accessibility and paired behavior; no implication is assumed",
             "utility_vs_plasticity": "reported as separate axes",
@@ -625,6 +750,15 @@ def build_formal_report(config: RecoveryRLV2Config) -> dict[str, object]:
         {"rows": trajectories, "associations": associations},
     )
     write_json_atomic(destination / "pairwise_effects.json", {"rows": effects})
+    report["evidence_artifact_hashes"] = {
+        name: sha256_file(destination / name)
+        for name in (
+            "result_rows.json",
+            "curve_rows.json",
+            "probe_trajectory_rows.json",
+            "pairwise_effects.json",
+        )
+    }
     write_json_atomic(destination / "study_report.json", report)
     _write_text_atomic(destination / "study_report.md", _markdown(report))
     return report

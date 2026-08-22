@@ -14,13 +14,24 @@ import numpy as np
 from tqdm.auto import tqdm
 
 from interaction_vla.lerobot_bridge.provenance import sha256_file
+from interaction_vla.lerobot_bridge.teacher_schema import (
+    OPERATOR_IDS,
+    PREDICATE_IDS,
+    RELATION_TYPE_IDS,
+)
 
 from .io import write_json_atomic
 
 
 STATE_BANK_V2_SCHEMA = "recovery_state_bank_v2"
 PRIMARY_STRATA = ("nominal", "perturbation", "recovery")
-PRIMARY_FACTORS = ("geometry", "phase", "recovery_state", "next_relation")
+PRIMARY_FACTORS = (
+    "geometry",
+    "phase",
+    "recovery_state",
+    "recovery_type",
+    "next_relation",
+)
 SECONDARY_FACTORS = ("contact", "stable_grasp")
 V2_PARTITIONS = ("train", "validation", "test")
 V2_COUNTS = {"train": 280, "validation": 60, "test": 60}
@@ -52,6 +63,28 @@ def _image(value: object, name: str) -> np.ndarray:
     ):
         raise ValueError(f"{name} must be a non-empty HWC uint8 RGB image")
     return result.copy()
+
+
+def _structured_next_relation(value: object) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        raise ValueError("candidate next-relation label must be structured")
+    expected = {"relation_id", "operator_id", "predicate_id"}
+    if set(value) != expected:
+        raise ValueError("candidate next-relation fields do not match the ontology")
+    result: dict[str, int] = {}
+    bounds = {
+        "relation_id": len(RELATION_TYPE_IDS),
+        "operator_id": len(OPERATOR_IDS),
+        "predicate_id": len(PREDICATE_IDS),
+    }
+    for name, bound in bounds.items():
+        identifier = int(value[name])
+        if identifier != value[name] or not 0 <= identifier < bound:
+            raise ValueError(
+                "candidate next-relation ids are outside the registered ontology"
+            )
+        result[name] = identifier
+    return result
 
 
 @dataclass(frozen=True)
@@ -86,6 +119,11 @@ class StateBankV2Candidate:
         geometry = np.asarray(self.labels["geometry"], dtype=np.float32)
         if geometry.shape != (16,) or not np.isfinite(geometry).all():
             raise ValueError("candidate geometry label must be finite 16D")
+        labels = dict(self.labels)
+        labels["next_relation"] = _structured_next_relation(
+            self.labels["next_relation"]
+        )
+        object.__setattr__(self, "labels", labels)
         object.__setattr__(self, "robot_state", _vector(self.robot_state, 10, "robot_state"))
         object.__setattr__(self, "oracle_state", _vector(self.oracle_state, 36, "oracle_state"))
         agent = _image(self.agent_rgb, "agent_rgb")
@@ -253,14 +291,30 @@ def _records_bytes(
     )
 
 
-def _inspect_existing(output_dir: Path) -> StateBankV2Report:
+def _inspect_existing(
+    output_dir: Path, *, expected_case_manifest_sha256: str | None = None
+) -> StateBankV2Report:
     report = json.loads((output_dir / "report.json").read_text(encoding="utf-8"))
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("schema_version") != STATE_BANK_V2_SCHEMA:
         raise ValueError("State Bank v2 manifest schema is incompatible")
+    if (
+        expected_case_manifest_sha256 is not None
+        and manifest.get("source_case_manifest_sha256")
+        != expected_case_manifest_sha256
+    ):
+        raise ValueError("State Bank v2 and bound case manifest differ")
     for name in ("records.jsonl", "observations.npz", "split.json", "ontology.json"):
         if manifest["artifact_hashes"].get(name) != sha256_file(output_dir / name):
             raise ValueError(f"State Bank v2 artifact hash differs: {name}")
+    for line in (output_dir / "records.jsonl").read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        labels = record.get("labels")
+        if not isinstance(labels, Mapping):
+            raise ValueError("State Bank v2 record labels are incompatible")
+        _structured_next_relation(labels.get("next_relation"))
     return StateBankV2Report(**report)
 
 
@@ -346,6 +400,27 @@ def build_state_bank_v2(
                 "secondary_factors": list(SECONDARY_FACTORS),
                 "descriptive_factors": ["entity"],
                 "geometry_width": 16,
+                "next_relation": {
+                    "kind": "structured_categorical",
+                    "relation_classes": [
+                        name
+                        for name, _ in sorted(
+                            RELATION_TYPE_IDS.items(), key=lambda item: item[1]
+                        )
+                    ],
+                    "operator_classes": [
+                        name
+                        for name, _ in sorted(
+                            OPERATOR_IDS.items(), key=lambda item: item[1]
+                        )
+                    ],
+                    "predicate_classes": [
+                        name
+                        for name, _ in sorted(
+                            PREDICATE_IDS.items(), key=lambda item: item[1]
+                        )
+                    ],
+                },
             },
         )
         artifact_hashes = {
@@ -417,9 +492,49 @@ def _labels_from_oracle(
         "phase": phase,
         "recovery_state": PRIMARY_STRATA.index(family),
         "recovery_type": INTERVENTIONS.index(intervention_kind),
-        "next_relation": min(phase + 1, 5),
+        "next_relation": _next_relation_from_oracle(oracle_state),
         "contact": int(oracle_state[17] >= 0.5),
         "stable_grasp": int(oracle_state[18] >= 0.5),
+    }
+
+
+def _next_relation_from_oracle(oracle_state: np.ndarray) -> dict[str, int]:
+    """Return the next task relation, not a relabelled phase class.
+
+    The compact oracle exposes current contact, grasp, support, and goal geometry.
+    The fixed pick-place task template turns those facts into the registered
+    teacher relation/operator/predicate triple used by Graph v2.
+    """
+    contact = bool(oracle_state[17] >= 0.5)
+    stable_grasp = bool(oracle_state[18] >= 0.5)
+    supported = bool(oracle_state[19] >= 0.5)
+    aperture = float(oracle_state[16])
+    goal_distance = float(oracle_state[13])
+    released = (
+        supported
+        and goal_distance <= 0.20
+        and aperture >= 0.5
+        and not stable_grasp
+    )
+    if released:
+        names = ("gripper_to_receptacle", "increase", "clearance")
+    elif not contact and not stable_grasp:
+        names = ("gripper_to_target", "establish", "proximity")
+    elif contact and not stable_grasp:
+        names = ("gripper_to_target", "establish", "enclosure")
+    elif stable_grasp and goal_distance > 0.20:
+        names = ("target_to_receptacle", "establish", "containment")
+    elif stable_grasp and not supported:
+        names = ("target_to_support", "establish", "support")
+    elif stable_grasp:
+        names = ("gripper_to_target", "break", "co_motion")
+    else:
+        names = ("gripper_to_target", "preserve", "proximity")
+    relation, operator, predicate = names
+    return {
+        "relation_id": RELATION_TYPE_IDS[relation],
+        "operator_id": OPERATOR_IDS[operator],
+        "predicate_id": PREDICATE_IDS[predicate],
     }
 
 
@@ -440,31 +555,50 @@ def _case_by_family(
     return selected[offset % len(selected)]
 
 
+def _write_collection_report(
+    output_dir: Path,
+    *,
+    foundation_binding: str,
+    case_manifest_sha256: str,
+    rejected_cases: Sequence[Mapping[str, object]],
+    registered_interventions: Sequence[str],
+) -> Path:
+    if len(foundation_binding) != 64 or len(case_manifest_sha256) != 64:
+        raise ValueError("State Bank collection report requires bound SHA-256 ids")
+    destination = output_dir / "collection_report.json"
+    write_json_atomic(
+        destination,
+        {
+            "schema_version": "recovery_state_bank_collection_v2",
+            "passed": True,
+            "binding": foundation_binding,
+            "source_case_manifest_sha256": case_manifest_sha256,
+            "rejected_cases": [dict(value) for value in rejected_cases],
+            "registered_interventions": list(registered_interventions),
+        },
+    )
+    return destination
+
+
 def collect_state_bank_v2(config: object) -> dict[str, object]:
     from interaction_vla.physics_data import PhysicsRecoveryRejected
-    from interaction_vla.representation_study.rl.distributions import load_case_manifest
     from interaction_vla.representation_study.rl.foundation import (
         _rgb_state,
         _runtime,
-        foundation_binding,
+    )
+    from interaction_vla.representation_study.rl.formal import (
+        validate_bound_foundation,
     )
     from interaction_vla.representation_study.rl.oracle_state import INTERVENTIONS
-    from interaction_vla.representation_study.rl.protocol import require_passing_gate
 
     output_dir = Path(getattr(config, "output_dir")) / "state_bank_v2"
+    foundation = validate_bound_foundation(config)
     if output_dir.exists():
-        return _inspect_existing(output_dir).to_dict()
-    binding = foundation_binding(config)
-    gates = Path(getattr(config, "output_dir")) / "gates"
-    for name in ("distribution", "backend", "oracle", "anchoring"):
-        require_passing_gate(
-            gates / f"{name}.json",
-            expected_gate=name,
-            expected_binding=binding,
-        )
-    manifest = load_case_manifest(
-        Path(getattr(config, "output_dir")) / "manifests" / "cases.json"
-    )
+        return _inspect_existing(
+            output_dir,
+            expected_case_manifest_sha256=foundation.case_manifest.sha256,
+        ).to_dict()
+    manifest = foundation.case_manifest
     partition_map = {
         "training": "train",
         "curve": "validation",
@@ -578,15 +712,11 @@ def collect_state_bank_v2(config: object) -> dict[str, object]:
         manifest_hash=manifest.sha256,
         seed=int(getattr(config, "seed")) + 70_000,
     )
-    write_json_atomic(
-        output_dir / "collection_report.json",
-        {
-            "schema_version": "recovery_state_bank_collection_v2",
-            "passed": True,
-            "binding": binding,
-            "source_case_manifest_sha256": manifest.sha256,
-            "rejected_cases": rejected,
-            "registered_interventions": list(INTERVENTIONS),
-        },
+    _write_collection_report(
+        output_dir,
+        foundation_binding=foundation.binding,
+        case_manifest_sha256=manifest.sha256,
+        rejected_cases=rejected,
+        registered_interventions=INTERVENTIONS,
     )
     return report.to_dict()

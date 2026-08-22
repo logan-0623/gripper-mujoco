@@ -308,7 +308,21 @@ class RecoveryReplay:
         self._shard_hashes = {str(key): str(value) for key, value in hashes.items()}
         self._task_by_case = {str(key): str(value) for key, value in tasks.items()}
         self._seen_ids = {str(value) for value in state.get("seen_ids", [])}
-        self._next_shard = int(state.get("next_shard", -1))
-        if self._next_shard < 0 or len(self._entries) > self.capacity:
+        saved_next_shard = int(state.get("next_shard", -1))
+        if saved_next_shard < 0 or len(self._entries) > self.capacity:
             raise ValueError("replay state progress is incompatible")
+        # A process may be interrupted after writing replay shards but before the
+        # next registered immutable snapshot. Those shards are intentionally not
+        # part of the restored replay state. Keep them untouched for auditability
+        # and advance the writer past their names so exact resume can continue
+        # from the last committed snapshot without a filename collision.
+        existing_indices: list[int] = []
+        for path in self.shards_dir.glob("shard_*.npz"):
+            suffix = path.stem.removeprefix("shard_")
+            if suffix.isdigit():
+                existing_indices.append(int(suffix))
+        self._next_shard = max(
+            saved_next_shard,
+            max(existing_indices, default=-1) + 1,
+        )
         self.rng.bit_generator.state = dict(rng_state)

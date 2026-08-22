@@ -9,7 +9,7 @@ from typing import Mapping
 
 import torch
 
-from interaction_vla.lerobot_bridge.provenance import sha256_file
+from interaction_vla.lerobot_bridge.provenance import fingerprint_tree, sha256_file
 
 from ..state_bank.io import write_json_atomic
 
@@ -63,21 +63,17 @@ class SnapshotStore:
                 shutil.rmtree(staging)
         return destination
 
-    def load(
-        self,
-        *,
-        step: int,
-        expected_binding: str,
-        map_location: str | torch.device = "cpu",
-    ) -> dict[str, object]:
+    def inspect(self, *, step: int, expected_binding: str) -> dict[str, object]:
+        """Validate snapshot metadata and payload bytes without loading tensors."""
         if step not in SNAPSHOT_STEPS:
             raise ValueError("snapshot step is not registered")
         source = self.root / f"step_{step:06d}"
         if not (source / "COMPLETED").is_file():
             raise ValueError(f"snapshot is incomplete: {source}")
-        manifest = json.loads(
-            (source / "manifest.json").read_text(encoding="utf-8")
-        )
+        manifest_path = source / "manifest.json"
+        if not manifest_path.is_file():
+            raise ValueError(f"snapshot manifest is missing: {source}")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("schema_version") != SNAPSHOT_SCHEMA:
             raise ValueError("snapshot schema is incompatible")
         if int(manifest.get("environment_steps", -1)) != step:
@@ -85,8 +81,22 @@ class SnapshotStore:
         if manifest.get("binding") != expected_binding:
             raise ValueError("snapshot binding differs")
         payload_path = source / "training_state.pt"
-        if manifest.get("payload_sha256") != sha256_file(payload_path):
+        if not payload_path.is_file() or manifest.get("payload_sha256") != sha256_file(
+            payload_path
+        ):
             raise ValueError("snapshot payload SHA-256 differs")
+        return {**manifest, "snapshot_sha256": fingerprint_tree(source)}
+
+    def load(
+        self,
+        *,
+        step: int,
+        expected_binding: str,
+        map_location: str | torch.device = "cpu",
+    ) -> dict[str, object]:
+        source = self.root / f"step_{step:06d}"
+        self.inspect(step=step, expected_binding=expected_binding)
+        payload_path = source / "training_state.pt"
         payload = torch.load(
             payload_path,
             map_location=map_location,
