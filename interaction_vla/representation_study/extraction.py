@@ -298,3 +298,208 @@ def inspect_latents(
     if report.get("passed") is not True or report.get("latent_sha256") != manifest.get("latent_sha256"):
         raise ValueError("latent extraction report is incompatible")
     return report
+
+
+def _load_state_bank_v2_rows(
+    root: Path,
+) -> tuple[tuple[dict[str, object], ...], dict[str, np.ndarray]]:
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != "recovery_state_bank_v2":
+        raise ValueError("formal State Bank v2 manifest schema is incompatible")
+    artifact_hashes = manifest.get("artifact_hashes")
+    if not isinstance(artifact_hashes, Mapping):
+        raise ValueError("formal State Bank v2 artifact hashes are missing")
+    for name, expected in artifact_hashes.items():
+        path = root / str(name)
+        if not path.is_file() or sha256_file(path) != str(expected):
+            raise ValueError(f"formal State Bank v2 artifact hash differs: {name}")
+    records = tuple(
+        json.loads(line)
+        for line in (root / "records.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    )
+    with np.load(root / "observations.npz", allow_pickle=False) as archive:
+        observations = {name: archive[name].copy() for name in archive.files}
+    state_ids = observations.get("state_id")
+    expected_ids = [str(record["state_id"]) for record in records]
+    if state_ids is None or state_ids.astype(str).tolist() != expected_ids:
+        raise ValueError("formal State Bank v2 observations are not row-aligned")
+    return records, observations
+
+
+def _formal_batch(
+    records: Sequence[Mapping[str, object]],
+    observations: Mapping[str, np.ndarray],
+    indices: Sequence[int],
+    *,
+    task: str,
+) -> dict[str, object]:
+    agent = torch.from_numpy(
+        np.stack([observations["agent_rgb"][index] for index in indices])
+    ).permute(0, 3, 1, 2).to(torch.float32).div_(255.0)
+    wrist = torch.from_numpy(
+        np.stack([observations["wrist_rgb"][index] for index in indices])
+    ).permute(0, 3, 1, 2).to(torch.float32).div_(255.0)
+    state = torch.as_tensor(
+        np.asarray([records[index]["robot_state"] for index in indices]),
+        dtype=torch.float32,
+    )
+    if state.shape != (len(indices), 10) or not torch.isfinite(state).all():
+        raise ValueError("formal State Bank v2 robot state is incompatible")
+    return {
+        "observation.images.agent": agent,
+        "observation.images.wrist": wrist,
+        "observation.state": state,
+        "task": [task] * len(indices),
+    }
+
+
+def extract_formal_snapshot_latents(
+    config: Any,
+    *,
+    run: Any,
+    environment_steps: int,
+    snapshot: str | Path | None,
+    destination: str | Path,
+    batch_size: int = 16,
+) -> dict[str, object]:
+    """Extract ACT taps from one immutable formal snapshot on State Bank v2."""
+    from .rl.formal import CONSTANT_CONTROL_CONDITIONS, FORMAL_SCHEMA
+    from .rl.snapshots import SnapshotStore
+
+    if environment_steps not in config.snapshot_steps:
+        raise ValueError("formal latent step is not registered")
+    if batch_size < 1:
+        raise ValueError("formal latent batch size must be positive")
+    state_bank = Path(config.output_dir) / "state_bank_v2"
+    records, observations = _load_state_bank_v2_rows(state_bank)
+    bridge = load_bridge_config(config.bridge_config)
+    destination_path = Path(destination)
+    manifest_path = destination_path / "manifest.json"
+    bank_hash = sha256_file(state_bank / "manifest.json")
+    snapshot_hash: str | None = None
+    policy_state: Mapping[str, torch.Tensor] | None = None
+    if run.condition in CONSTANT_CONTROL_CONDITIONS:
+        if snapshot is not None:
+            raise ValueError("constant formal control must not provide a snapshot")
+        checkpoint = run.parent_checkpoint
+        checkpoint_hash = _checkpoint_binding(checkpoint)[0].sha256
+    else:
+        if snapshot is None:
+            raise ValueError("formal RL latent extraction requires a snapshot")
+        snapshot_path = Path(snapshot)
+        store = SnapshotStore(snapshot_path.parent)
+        payload = store.load(
+            step=environment_steps,
+            expected_binding=run.binding,
+            map_location="cpu",
+        )
+        if payload.get("schema_version") != FORMAL_SCHEMA:
+            raise ValueError("formal snapshot payload schema is incompatible")
+        raw_policy_state = payload.get("policy_state")
+        if raw_policy_state is not None and not isinstance(raw_policy_state, Mapping):
+            raise ValueError("formal snapshot policy state is incompatible")
+        policy_state = raw_policy_state
+        checkpoint = config.sft_checkpoint
+        checkpoint_hash = _checkpoint_binding(checkpoint)[0].sha256
+        snapshot_hash = fingerprint_tree(snapshot_path)
+    expected_header = {
+        "schema_version": "recovery_stage_latents_v2",
+        "condition": run.condition,
+        "seed_index": run.seed_index,
+        "environment_steps": environment_steps,
+        "formal_binding": run.binding,
+        "checkpoint": checkpoint,
+        "checkpoint_sha256": checkpoint_hash,
+        "snapshot_sha256": snapshot_hash,
+        "state_bank_manifest_sha256": bank_hash,
+        "batch_size": batch_size,
+    }
+    if manifest_path.is_file():
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if any(existing.get(key) != value for key, value in expected_header.items()):
+            raise ValueError("formal latent extraction manifest binding differs")
+        if existing.get("complete") is True:
+            latent_path = destination_path / "latents.npz"
+            if sha256_file(latent_path) != existing.get("latent_sha256"):
+                raise ValueError("formal latent artifact SHA-256 differs")
+            return json.loads(
+                (destination_path / "report.json").read_text(encoding="utf-8")
+            )
+    elif destination_path.exists() and any(destination_path.iterdir()):
+        raise FileExistsError(
+            f"formal latent destination already exists: {destination_path}"
+        )
+    else:
+        destination_path.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(manifest_path, {**expected_header, "complete": False})
+
+    runtime = make_backend("act", device=config.device)
+    runtime.load_checkpoint_for_dataset(
+        checkpoint,
+        repo_id=bridge.dataset.repo_id,
+        dataset_root=bridge.dataset.root,
+    )
+    if policy_state:
+        runtime.policy.load_state_dict(policy_state, strict=False)
+    runtime.set_trainable_groups(())
+    taps = tuple(tap.tap_id for tap in registered_taps("act"))
+    state_ids = [str(record["state_id"]) for record in records]
+    combined: dict[str, list[np.ndarray]] = {tap: [] for tap in taps}
+    combined["__action__"] = []
+    progress = tqdm(
+        total=(len(records) + batch_size - 1) // batch_size,
+        desc=f"formal/{run.condition}/step={environment_steps} latents",
+        unit="batch",
+        dynamic_ncols=True,
+    )
+    for start in range(0, len(records), batch_size):
+        indices = tuple(range(start, min(start + batch_size, len(records))))
+        seed = int.from_bytes(
+            hashlib.sha256(
+                "\n".join(state_ids[index] for index in indices).encode("utf-8")
+            ).digest()[:8],
+            "big",
+        ) % (2**31)
+        torch.manual_seed(seed)
+        values = runtime.get_latents(
+            _formal_batch(records, observations, indices, task=bridge.dataset.task),
+            taps,
+        )
+        for name in combined:
+            value = values.get(name)
+            if not isinstance(value, torch.Tensor) or value.shape[0] != len(indices):
+                raise ValueError(f"formal backend output is not row-aligned: {name}")
+            combined[name].append(value.detach().cpu().to(torch.float32).numpy())
+        progress.update(1)
+    progress.close()
+    arrays = {
+        "state_id": np.asarray(state_ids, dtype=np.str_),
+        **{
+            name: np.concatenate(values, axis=0)
+            for name, values in combined.items()
+        },
+    }
+    latent_path = destination_path / "latents.npz"
+    _write_npz_atomic(latent_path, arrays)
+    latent_hash = sha256_file(latent_path)
+    report = {
+        "passed": True,
+        **expected_header,
+        "records": len(records),
+        "taps": {name: list(arrays[name].shape[1:]) for name in taps},
+        "latent_sha256": latent_hash,
+    }
+    write_json_atomic(destination_path / "report.json", report)
+    write_json_atomic(
+        manifest_path,
+        {
+            **expected_header,
+            "complete": True,
+            "latent_path": latent_path.as_posix(),
+            "latent_sha256": latent_hash,
+            "report_path": (destination_path / "report.json").as_posix(),
+        },
+    )
+    return report

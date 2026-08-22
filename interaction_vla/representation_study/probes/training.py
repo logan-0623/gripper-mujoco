@@ -23,6 +23,62 @@ from .targets import ProbeTarget, probe_targets
 
 
 PROBE_SCHEMA_VERSION = "interaction_frozen_probe_v2"
+FORMAL_PRIMARY_TARGETS = (
+    "geometry",
+    "phase",
+    "recovery_state",
+    "recovery_type",
+    "next_relation",
+)
+FORMAL_SECONDARY_TARGETS = ("contact", "stable_grasp")
+
+
+def v2_probe_targets(
+    records: Sequence[Mapping[str, object]],
+) -> dict[str, ProbeTarget]:
+    """Translate State Bank v2 labels into the fixed formal probe ontology."""
+    if not records:
+        raise ValueError("formal v2 probe targets require records")
+    labels: list[Mapping[str, object]] = []
+    for record in records:
+        value = record.get("labels")
+        if not isinstance(value, Mapping):
+            raise ValueError("State Bank v2 record has no label mapping")
+        labels.append(value)
+    geometry = np.asarray([value["geometry"] for value in labels], dtype=np.float32)
+    if geometry.shape != (len(labels), 16) or not np.isfinite(geometry).all():
+        raise ValueError("formal geometry targets must be finite 16D rows")
+
+    def categorical(name: str, minimum_classes: int) -> ProbeTarget:
+        values = np.asarray([value[name] for value in labels], dtype=np.int64)
+        if values.shape != (len(labels),) or np.any(values < 0):
+            raise ValueError(f"formal {name} targets must be non-negative labels")
+        output_dim = max(minimum_classes, int(values.max()) + 1)
+        return ProbeTarget(name, "categorical", values, output_dim)
+
+    return {
+        "geometry": ProbeTarget(
+            "geometry", "continuous", geometry, geometry.shape[1]
+        ),
+        "phase": categorical("phase", 6),
+        "recovery_state": categorical("recovery_state", 3),
+        "recovery_type": categorical("recovery_type", 1),
+        "next_relation": categorical("next_relation", 6),
+        "contact": ProbeTarget(
+            "contact",
+            "binary",
+            np.asarray([value["contact"] for value in labels], dtype=np.int64),
+            2,
+        ),
+        "stable_grasp": ProbeTarget(
+            "stable_grasp",
+            "binary",
+            np.asarray(
+                [value["stable_grasp"] for value in labels], dtype=np.int64
+            ),
+            2,
+        ),
+    }
 
 
 class ProbeModel(nn.Module):
@@ -412,4 +468,148 @@ def train_probe_suite(
         "selection_split": "validation",
     }
     write_json_atomic(destination / "report.json", report)
+    return report
+
+
+def train_v2_probe_suite(
+    *,
+    latent_path: str | Path,
+    records_path: str | Path,
+    split_path: str | Path,
+    state_bank_manifest: str | Path,
+    backend: str,
+    condition: str,
+    seed_index: int,
+    environment_steps: int,
+    model_kind: str,
+    config: ProbeConfig,
+    destination: str | Path,
+    targets: Sequence[str],
+) -> dict[str, object]:
+    """Train frozen formal probes without changing the legacy v1 suite."""
+    latent_source = Path(latent_path)
+    destination_path = Path(destination)
+    requested = tuple(str(value) for value in targets)
+    known = set((*FORMAL_PRIMARY_TARGETS, *FORMAL_SECONDARY_TARGETS))
+    if not requested or set(requested) - known:
+        raise ValueError("formal probe target selection is incompatible")
+    if model_kind not in {"linear", "shallow_mlp"}:
+        raise ValueError("formal probe model must be linear or shallow_mlp")
+    with np.load(latent_source, allow_pickle=False) as loaded:
+        latents = {name: loaded[name].copy() for name in loaded.files}
+    state_ids = latents.pop("state_id").astype(str).tolist()
+    latents.pop("__action__", None)
+    records = [
+        json.loads(line)
+        for line in Path(records_path).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    by_id = {str(record["state_id"]): record for record in records}
+    if len(by_id) != len(records) or set(state_ids) != set(by_id):
+        raise ValueError("formal latent artifact does not cover State Bank v2")
+    ordered = tuple(by_id[state_id] for state_id in state_ids)
+    split = json.loads(Path(split_path).read_text(encoding="utf-8"))
+    if split.get("schema_version") != "recovery_state_bank_split_v2":
+        raise ValueError("formal State Bank v2 split schema is incompatible")
+    raw_partitions = split.get("partitions")
+    if not isinstance(raw_partitions, Mapping):
+        raise ValueError("formal State Bank v2 split partitions are missing")
+    partitions = {
+        name: np.asarray(
+            [
+                index
+                for index, state_id in enumerate(state_ids)
+                if state_id in set(raw_partitions[name])
+            ],
+            dtype=np.int64,
+        )
+        for name in ("train", "validation", "test")
+    }
+    if any(len(indices) == 0 for indices in partitions.values()):
+        raise ValueError("formal probe partitions must be non-empty")
+    target_map = v2_probe_targets(ordered)
+    latent_hash = sha256_file(latent_source)
+    bank_hash = sha256_file(state_bank_manifest)
+    report_path = destination_path / "report.json"
+    if report_path.is_file():
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        if (
+            report.get("latent_sha256") == latent_hash
+            and report.get("state_bank_manifest_sha256") == bank_hash
+        ):
+            return report
+        raise FileExistsError(f"formal probe output binding differs: {destination_path}")
+    if destination_path.exists() and any(destination_path.iterdir()):
+        raise FileExistsError(f"formal probe output already exists: {destination_path}")
+    destination_path.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, object]] = []
+    for tap in sorted(latents):
+        features = np.asarray(latents[tap], dtype=np.float32)
+        if features.ndim != 2 or features.shape[0] != len(ordered):
+            raise ValueError(f"formal latent tap is not row-aligned: {tap}")
+        for name in requested:
+            target = target_map[name]
+            model, result, normalization = train_single_probe(
+                features,
+                target,
+                partitions,
+                model_kind=model_kind,
+                config=config,
+            )
+            result["source_seed_group_counts"] = {
+                partition: len(
+                    {
+                        int(ordered[int(index)]["source_seed"])
+                        for index in indices
+                    }
+                )
+                for partition, indices in partitions.items()
+            }
+            metadata = {
+                "schema_version": "recovery_frozen_probe_v2",
+                "backend": backend,
+                "condition": condition,
+                "seed_index": seed_index,
+                "environment_steps": environment_steps,
+                "tap": tap,
+                "target": name,
+                "target_role": (
+                    "primary"
+                    if name in FORMAL_PRIMARY_TARGETS
+                    else "secondary"
+                ),
+                "model_kind": model_kind,
+                "input_dim": int(features.shape[1]),
+                "output_dim": target.output_dim,
+                "target_kind": target.kind,
+                "head_widths": list(target.head_widths),
+                "state_bank_manifest_sha256": bank_hash,
+                "latent_sha256": latent_hash,
+            }
+            checkpoint = destination_path / tap / f"{name}.pt"
+            _save_model(checkpoint, model, normalization, metadata)
+            rows.append(
+                {
+                    **metadata,
+                    **result,
+                    "checkpoint": checkpoint.as_posix(),
+                    "checkpoint_sha256": sha256_file(checkpoint),
+                }
+            )
+    report = {
+        "passed": True,
+        "schema_version": "recovery_frozen_probe_v2",
+        "backend": backend,
+        "condition": condition,
+        "seed_index": seed_index,
+        "environment_steps": environment_steps,
+        "model_kind": model_kind,
+        "targets": list(requested),
+        "latent_sha256": latent_hash,
+        "state_bank_manifest_sha256": bank_hash,
+        "rows": rows,
+        "primary_split": "test",
+        "selection_split": "validation",
+    }
+    write_json_atomic(report_path, report)
     return report
