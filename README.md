@@ -95,65 +95,53 @@ done
 
 Linux 使用 `configs/representation_study/icra_act_linux_cuda.yaml`。两个配置共享同一 State Bank contract；不要分别采集两套科学样本。
 
-## 2. ACT controlled mechanism study
+## 2. Recovery RL v2 foundation
 
-现有 Flat ACT checkpoint 作为 `sft` 阶段。先生成该阶段的完整 C/U 证据：
+旧 `outputs/representation_study/icra/` 与已完成的 nominal-reset PPO 结果已冻结，不再追加 steps。新 protocol 单独写入 `icra_rl_v2*`，顺序固定为：分布校准 → PPO/SAC 屏选 → privileged Oracle gate → anchoring 屏选。
+
+macOS：
 
 ```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
-  --config configs/representation_study/icra_act_macos.yaml \
-  --backend act \
-  --stage sft \
-  --secondary-probe \
-  --closed-loop-intervention
+CONFIG=configs/representation_study/recovery_rl_v2_act_macos.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl calibrate \
+  --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl screen \
+  --config "$CONFIG" --resume
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl oracle-gate \
+  --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl anchor-screen \
+  --config "$CONFIG" --resume
 ```
 
-训练 matched extra-imitation control，然后测量：
+RTX 4090：
 
 ```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study sft train \
-  --config configs/representation_study/icra_act_macos.yaml \
-  --backend act \
-  --stage continued_sft
+export MUJOCO_GL=egl
+export HF_HOME=/tmp/gripper-mujoco-hf-cache
+CONFIG=configs/representation_study/recovery_rl_v2_act_linux_cuda.yaml
 
-.venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
-  --config configs/representation_study/icra_act_macos.yaml \
-  --backend act \
-  --stage continued_sft \
-  --secondary-probe \
-  --closed-loop-intervention
+.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl calibrate --config "$CONFIG"
+.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl screen --config "$CONFIG" --resume
+.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl oracle-gate --config "$CONFIG"
+.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl anchor-screen --config "$CONFIG" --resume
 ```
 
-两条 RL branch 都从同一个 `sft` policy 出发：`rl_head` 只训练 residual actor-critic；`rl_representation` 同时更新固定的 late-fusion 参数组。动作组合为 `clip(a_sft + alpha * delta)`，主要 plasticity 指标是相同 environment-step budget 下的 normalized learning-curve AUC。
+`--resume` 在新目录与中断目录都安全；若已有 state 与当前 config、checkpoint 或 case manifest 不一致，程序会拒绝续训。后一个命令缺少前一个 passing gate 时会立即停止。
 
-```bash
-for stage in rl_head rl_representation
-do
-  .venv-lerobot/bin/python -m interaction_vla.representation_study rl train \
-    --config configs/representation_study/icra_act_macos.yaml \
-    --backend act \
-    --stage "$stage"
+主要输出：
 
-  .venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
-    --config configs/representation_study/icra_act_macos.yaml \
-    --backend act \
-    --stage "$stage" \
-    --secondary-probe \
-    --closed-loop-intervention
-done
-```
-
-SFT 和 RL 都会保存训练状态。中断后在原命令末尾加 `--resume`；配置或 parent checkpoint 改变时会拒绝错误续训。
-
-若 checkpoint 不变、只需用新版评估逻辑刷新已有 closed-loop utility（例如修正 residual action 的内部裁剪统计），无需重训：
-
-```bash
-for stage in rl_head rl_representation
-do
-  .venv-lerobot/bin/python -m interaction_vla.representation_study policy evaluate \
-    --config configs/representation_study/icra_act_macos.yaml \
-    --backend act --stage "$stage" --force
-done
+```text
+outputs/representation_study/icra_rl_v2*/
+├── calibration/
+├── manifests/
+├── anchors/
+├── screen/{ppo,sac}/seed_*/
+├── anchor_screen/{no_anchor,residual_only,full_anchoring}/
+└── gates/{distribution,backend,oracle,anchoring}.json
 ```
 
 ## 3. SmolVLA modern VLA validation

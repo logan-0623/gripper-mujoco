@@ -57,6 +57,14 @@ def test_mixture_sampler_is_resume_exact() -> None:
     assert [sampler.next_case().case_id for _ in range(20)] == expected
 
 
+def test_replacement_sampling_preserves_rejected_family() -> None:
+    sampler = RecoveryCaseSampler(
+        _manifest(), probabilities=(0.5, 0.3, 0.2), seed=9
+    )
+    for family in ("recovery", "perturbation", "nominal"):
+        assert all(sampler.next_case(family=family).family == family for _ in range(10))
+
+
 def test_mixture_sampler_uses_training_partition_only() -> None:
     sampler = RecoveryCaseSampler(
         _manifest(), probabilities=(0.5, 0.3, 0.2), seed=9

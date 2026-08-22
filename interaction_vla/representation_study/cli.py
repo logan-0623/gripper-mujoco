@@ -106,6 +106,15 @@ def build_parser() -> argparse.ArgumentParser:
         )
         if name == "train":
             command.add_argument("--resume", action="store_true")
+    recovery_rl = families.add_parser(
+        "recovery-rl",
+        help="gated Recovery RL v2 foundation protocol",
+    )
+    recovery_commands = recovery_rl.add_subparsers(dest="command", required=True)
+    for name in ("calibrate", "screen", "oracle-gate", "anchor-screen"):
+        command = recovery_commands.add_parser(name)
+        command.add_argument("--config", type=Path, required=True)
+        command.add_argument("--resume", action="store_true")
     report = families.add_parser("report", help="aggregate C/U/P study evidence")
     report_commands = report.add_subparsers(dest="command", required=True)
     report_build = report_commands.add_parser("build")
@@ -116,6 +125,18 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     try:
+        if args.family == "recovery-rl":
+            from .rl.protocol import run_recovery_command
+            from .rl.v2_config import load_recovery_rl_v2_config
+
+            recovery_config = load_recovery_rl_v2_config(args.config)
+            result = run_recovery_command(
+                recovery_config,
+                args.command,
+                resume=args.resume,
+            )
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return
         config = load_study_config(args.config)
         if args.family == "state-bank" and args.command == "collect":
             result = collect_state_bank(config)

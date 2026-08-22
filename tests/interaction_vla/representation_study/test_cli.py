@@ -1,4 +1,5 @@
 from interaction_vla.representation_study.cli import build_parser
+import pytest
 
 
 def test_state_bank_cli_commands_are_parseable() -> None:
@@ -64,3 +65,25 @@ def test_state_bank_cli_commands_are_parseable() -> None:
 
     args = parser.parse_args(["report", "build", "--config", "study.yaml"])
     assert args.family == "report"
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["calibrate", "screen", "oracle-gate", "anchor-screen"],
+)
+def test_recovery_rl_commands_parse(command: str) -> None:
+    args = build_parser().parse_args(
+        ["recovery-rl", command, "--config", "v2.yaml"]
+    )
+    assert args.family == "recovery-rl"
+    assert args.command == command
+    assert args.resume is False
+
+
+def test_recovery_training_commands_accept_resume() -> None:
+    parser = build_parser()
+    for command in ("screen", "anchor-screen"):
+        args = parser.parse_args(
+            ["recovery-rl", command, "--config", "v2.yaml", "--resume"]
+        )
+        assert args.resume is True

@@ -328,10 +328,17 @@ class RecoveryCaseSampler:
         self.probabilities = tuple(float(value) for value in values)
         self.rng = np.random.default_rng(seed)
 
-    def next_case(self) -> RecoveryCase:
-        family_index = int(self.rng.choice(len(FAMILY_NAMES), p=self.probabilities))
-        family = FAMILY_NAMES[family_index]
-        cases = self._by_family[family]
+    def next_case(self, *, family: str | None = None) -> RecoveryCase:
+        if family is None:
+            family_index = int(
+                self.rng.choice(len(FAMILY_NAMES), p=self.probabilities)
+            )
+            selected_family = FAMILY_NAMES[family_index]
+        else:
+            selected_family = str(family)
+            if selected_family not in FAMILY_NAMES:
+                raise ValueError(f"unknown replacement family: {selected_family}")
+        cases = self._by_family[selected_family]
         return cases[int(self.rng.integers(0, len(cases)))]
 
     def state_dict(self) -> dict[str, object]:
