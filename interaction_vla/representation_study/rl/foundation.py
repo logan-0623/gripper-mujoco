@@ -140,11 +140,12 @@ def _runtime(
     *,
     seed: int,
     residual_coefficient: float | None = None,
+    checkpoint: str | None = None,
 ) -> Iterator[ResidualMujocoRuntime]:
     bridge = load_bridge_config(config.bridge_config)
     backend = make_backend("act", device=config.device)
     backend.load_checkpoint_for_dataset(
-        config.sft_checkpoint,
+        config.sft_checkpoint if checkpoint is None else checkpoint,
         repo_id=bridge.dataset.repo_id,
         dataset_root=bridge.dataset.root,
     )

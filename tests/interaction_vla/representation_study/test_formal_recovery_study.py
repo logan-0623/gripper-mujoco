@@ -13,6 +13,10 @@ from interaction_vla.representation_study.rl.formal import (
     formal_matrix,
     prepare_formal_run,
 )
+from interaction_vla.representation_study.rl.formal_evaluation import (
+    validate_curve_case_alignment,
+    validate_final_distribution_counts,
+)
 from interaction_vla.representation_study.rl.protocol import GATE_SCHEMA
 
 def _sha256(path: Path) -> str:
@@ -200,3 +204,26 @@ def test_formal_condition_rejects_extra_seed_for_constant_control(tmp_path: Path
     _write_required_manifests(config, binding=binding)
     with pytest.raises(ValueError, match="seed_index=0"):
         prepare_formal_run(config, condition="continued_sft", seed_index=1)
+
+
+def test_curve_evaluation_uses_same_cases_at_every_checkpoint() -> None:
+    case_ids = ["nominal:1", "recovery:1"]
+    reports = [
+        {"environment_steps": step, "case_ids": case_ids}
+        for step in (0, 4096, 8192, 12288, 16384, 20480)
+    ]
+    assert validate_curve_case_alignment(reports) == tuple(case_ids)
+    reports[-1]["case_ids"] = ["nominal:2", "recovery:2"]
+    with pytest.raises(ValueError, match="same paired cases"):
+        validate_curve_case_alignment(reports)
+
+
+def test_final_evaluation_has_fifty_cases_per_distribution() -> None:
+    report = {
+        "nominal": {"episodes": 50},
+        "recovery": {"episodes": 50},
+    }
+    validate_final_distribution_counts(report, expected=50)
+    report["recovery"]["episodes"] = 49
+    with pytest.raises(ValueError, match="50 nominal and 50 recovery"):
+        validate_final_distribution_counts(report, expected=50)
