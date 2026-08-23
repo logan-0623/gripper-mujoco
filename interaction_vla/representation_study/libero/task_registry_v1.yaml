@@ -1,0 +1,19 @@
+schema_version: libero_interaction_task_registry_v1
+formal_suites:
+  - libero_spatial
+  - libero_object
+supported_task_family:
+  name: relocation
+  goal_predicates: [on, inside, in]
+  canonical_phases:
+    - approach
+    - align_precontact
+    - contact
+    - secure
+    - lift
+    - transport
+    - place
+    - release_retreat
+unsupported_until_reviewed:
+  libero_goal: articulation and activation semantics require explicit review
+  libero_10: conjunctive goals require an ordered task plan

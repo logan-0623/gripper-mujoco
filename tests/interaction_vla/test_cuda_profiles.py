@@ -22,7 +22,10 @@ def test_linux_cuda_requirements_pin_the_validated_cuda_stack() -> None:
         "torchcodec-0.10.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl"
         in requirements
     )
-    assert "lerobot[dataset,training]==0.6.1" in requirements.splitlines()
+    assert (
+        "lerobot[dataset,training,smolvla,libero]==0.6.1"
+        in requirements.splitlines()
+    )
     assert "mujoco==3.3.4" in requirements.splitlines()
 
 

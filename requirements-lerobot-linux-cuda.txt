@@ -10,5 +10,6 @@ torch @ https://download.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp312-cp312-
 torchvision @ https://download.pytorch.org/whl/cu128/torchvision-0.25.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl
 torchcodec @ https://download.pytorch.org/whl/cu128/torchcodec-0.10.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl
 datasets==4.8.5
+h5py>=3.11
 socksio==1.0.0
-lerobot[dataset,training]==0.6.1
+lerobot[dataset,training,smolvla,libero]==0.6.1

@@ -1,43 +1,34 @@
-# From Imitation to Improvement
+# Interaction-Centric VLA Representation Study
 
-本项目面向 ICRA，研究：
+本项目面向 ICRA，研究同一套物理交互因素在 VLA 训练过程中如何出现、迁移与重组：
 
-> **Does reinforcement learning induce action-relevant interaction structure that supervised imitation fails to capture?**
+```text
+Training Stage × Representation Tap × Interaction Factor
 
-Interaction Graph 在新主线中是 measurement language，不是强制 policy input。实验严格区分：
-
-- `Accessible`：冻结 latent 能否被 lightweight probe 读出；
-- `Useful`：固定闭环 case 上的 nominal/recovery 表现；
-- `Plasticity`：固定 online budget 下的 learning-curve AUC；
-- `Used`：latent intervention 是否真正改变动作或闭环结果。
-
-ACT 是 controlled mechanism study；SmolVLA 是 modern VLA validation；π0 是可选 external validation。旧 Graph-vs-Flat pipeline 与结果保留且只读。
-
-## 当前结论
-
-旧 ACT 主实验使用 3 个 policy seeds，每个条件共 60 个 paired rollouts：
-
-| Representation | Success | Target drop | Action clipping |
-|---|---:|---:|---:|
-| Flat | 30.0% | 6.7% | 0.117 |
-| Privileged Teacher Graph | 35.0% | 0.0% | 0.096 |
-| Predicted Random | 40.0% | 10.0% | 0.114 |
-| Predicted Reflect | 41.7% | 0.0% | 0.092 |
-
-这些结果支持的问题是 `representation correctness ≠ control utility`，但尚不能说明 RL 会改善 representation。Recovery RL v2 正式实验用于检验 RL-head 与 RL-representation 的 recovery learning、nominal retention 和 probe trajectory。
-
-## 环境
-
-macOS / Apple Silicon：
-
-```bash
-python3.12 -m venv .venv-lerobot
-.venv-lerobot/bin/python -m pip install --upgrade pip
-.venv-lerobot/bin/python -m pip install -r requirements-lerobot-macos.lock.txt
-export HF_HOME=/tmp/gripper-mujoco-hf-cache
+Accessible → Functionally Used → Closed-loop Useful
 ```
 
-Linux / RTX 4090：
+Interaction Graph 是 privileged annotation / measurement vocabulary，不是必须输入 policy 的架构。正式因素为 `Entity`、`Geometry`、`Contact`、`StableGrasp`、`Phase`、`NextRelation`。当前主模型是 SmolVLA，标准数据与环境是 LIBERO；ACT/Graph-v2 结果保留为 controlled mechanism evidence。RL 暂停，不属于当前执行阶段。
+
+## 当前证据状态
+
+| 实验 | 状态 | 角色 |
+|---|---|---|
+| ACT Graph-v2，3 seeds、每条件 60 rollouts | `formal_evidence` | 受控机制证据 |
+| Graph diagnostics / Reflect transfer / ACT stagewise | `pilot_complete` | 研究动机与诊断 |
+| Recovery RL v2 calibration | `failed_gate` | SFT recovery success 未进入 30–50% 目标区间 |
+| LIBERO State Bank / SmolVLA taps / probes | `implementation_only` | 等待 Linux 正式执行 |
+| SmolVLA pretrained/SFT25/SFT50/SFT100 结果 | `not_started` | 主现代 VLA 证据 |
+
+旧 ACT 成功率为 Flat 30.0%、Teacher Graph 35.0%、Predicted Random 40.0%、Predicted Reflect 41.7%。它说明 graph correctness 不能直接当作 control utility，但不回答新的 SmolVLA longitudinal question。
+
+完整科学审计见 [LIBERO–VLA audit](docs/research/2026-08-23-libero-vla-representation-audit.md)，机器可读状态见 [ccfa.yaml](ccfa.yaml)。
+
+## Linux / RTX 4090 环境
+
+LIBERO simulator 运行在 Linux；macOS 只用于单元测试和不依赖 simulator 的分析。
+
+准备上传并在 4090 服务器从零执行时，优先按 [SERVER_RUNBOOK.md](SERVER_RUNBOOK.md) 操作；其中分开说明了代码发布、两套 LIBERO 数据、smoke gate、正式训练和断点续跑。本 README 保留科学背景与命令速查。
 
 ```bash
 sudo apt-get update
@@ -49,200 +40,117 @@ python3.12 -m venv .venv-lerobot
 
 export MUJOCO_GL=egl
 export HF_HOME=/tmp/gripper-mujoco-hf-cache
-
-.venv-lerobot/bin/python -c \
-  'import torch; assert torch.cuda.is_available(); print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name(0))'
 ```
 
-macOS 的 `av`、`cv2`、SDL、FFmpeg duplicate-class 信息通常只是动态库警告；以退出码和最终 JSON 的 `passed` 为准。
+正式 State Bank 同时需要：
 
-## 前置工件
+- `HuggingFaceVLA/libero` 的标准 LeRobotDataset；
+- 原始 LIBERO HDF5 demonstrations（包含 simulator states、actions、`model_file`）。
+
+默认原始数据目录为 `data/libero/raw/`。仅凭 RGB/state/action 不能生成 privileged contact 和 object-pose ground truth，代码会明确拒绝这种降级。
+
+原始 HDF5 使用 LIBERO 官方下载器分别下载 `libero_spatial` 与 `libero_object`，然后让 `data/libero/raw` 指向 LIBERO 注册的 datasets 目录，或在 YAML 中改成对应的仓库内相对路径：
 
 ```bash
-for artifact in \
-  outputs/lerobot/franka_lerobot_act_pilot/meta/info.json \
-  outputs/graph_control/graph_v2_pilot/runs/seed_0/flat/checkpoint/config.json \
-  outputs/representation_study/icra/sft/act/continued_sft/checkpoint/config.json
-do
-  test -e "$artifact" && echo "READY   $artifact" || echo "MISSING $artifact"
-done
+git clone --depth 1 https://github.com/Lifelong-Robot-Learning/LIBERO.git third_party/LIBERO
+.venv-lerobot/bin/python third_party/LIBERO/benchmark_scripts/download_libero_datasets.py \
+  --datasets libero_spatial --use-huggingface
+.venv-lerobot/bin/python third_party/LIBERO/benchmark_scripts/download_libero_datasets.py \
+  --datasets libero_object --use-huggingface
 ```
 
-若缺少 LeRobotDataset 或 ACT SFT checkpoint，先按对应 `lerobot_act_recovery_*` 和 `graph_v2_act_pilot_*` 配置生成。`outputs/` 不随 Git 上传。
+正式配置选择 `HuggingFaceVLA/libero` 的 image/parquet 版本，以避免视频重编码给 vision representation 带来额外压缩变量；Hub revision 会在规划时固定为 immutable commit。
 
-## ACT 正式实验
+## Smoke 流程
 
-macOS：
-
-```bash
-CONFIG=configs/representation_study/recovery_rl_v2_act_macos.yaml
-```
-
-RTX 4090：
+Smoke 配置固定为每个 suite 3 个 task、每个 task 3 个 held-out episode、每个 episode 16 个 State Bank state；因此 task-group 与 episode-group 都具有非空 train/validation/test，仅用于端到端门禁，不作为正式结果。
 
 ```bash
-export MUJOCO_GL=egl
-export HF_HOME=/tmp/gripper-mujoco-hf-cache
-CONFIG=configs/representation_study/recovery_rl_v2_act_linux_cuda.yaml
-```
+CONFIG=configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml
 
-### 1. Foundation gates
-
-下面四步只需成功完成一次。它们校准 recovery 难度，在 PPO/SAC 中选择稳定 backend，验证 privileged Oracle-State residual interface，再选择 anchoring protocol。
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl calibrate \
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero audit \
   --config "$CONFIG"
 
-.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl screen \
-  --config "$CONFIG" --resume
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl oracle-gate \
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero state-bank collect \
   --config "$CONFIG"
 
-.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl anchor-screen \
-  --config "$CONFIG" --resume
-```
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero state-bank inspect \
+  --config "$CONFIG"
 
-### 2. State Bank v2
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero state-bank visualize \
+  --config "$CONFIG"
 
-采集固定 1,200 states：nominal、perturbation、recovery 各 400；train/validation/test 按 source seed 隔离。
+# 人工查看 outputs/.../timelines/*.png 后，显式通过语义门禁
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero state-bank approve-timelines \
+  --config "$CONFIG"
 
-```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl formal state-bank \
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero stages plan \
+  --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero stages snapshot \
   --config "$CONFIG"
 ```
 
-### 3. 正式 RL 训练
+`state-bank collect` 支持 episode shard 缓存和中断续跑；已有相同 scientific binding 的正式 State Bank 不会被覆盖。`visualize` 生成带 global/wrist RGB、Phase、Contact 与 StableGrasp 的 timeline；必须人工检查并执行 `approve-timelines`，probe 才会解锁。
 
-三个条件、三个 seeds；backend 和 anchoring 由 foundation gate 决定，不能在命令行更改。每个 run 固定 20,480 environment steps，在 `0/4096/8192/12288/16384/20480` 保存不可变 snapshot。
+## SmolVLA 分阶段训练
+
+`stages plan` 固定 immutable SmolVLA base revision 和 task-balanced nested subsets：`D25 ⊂ D50 ⊂ D100`，并排除 State Bank episodes。`stages snapshot` 下载并哈希唯一 base checkpoint。三个 SFT stage 各自从同一 base snapshot 独立训练、使用相同 epoch budget，从而把 data fraction 与 sequential continuation 分开。随后先检查 dry run，再启动训练：
 
 ```bash
-for condition in oracle_state rl_head rl_representation
+for stage in sft_25 sft_50 sft_100
 do
-  for seed_index in 0 1 2
-  do
-    .venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl formal train \
-      --config "$CONFIG" \
-      --condition "$condition" \
-      --seed-index "$seed_index" \
-      --resume
-  done
+  .venv-lerobot/bin/python -m interaction_vla.representation_study libero stages train \
+    --config "$CONFIG" --stage "$stage" --dry-run
+
+  .venv-lerobot/bin/python -m interaction_vla.representation_study libero stages train \
+    --config "$CONFIG" --stage "$stage"
 done
 ```
 
-`oracle_state` 验证 reward 与 residual action interface；`rl_head` 冻结全部 ACT 参数；`rl_representation` 只更新 ACT late-fusion。Policy encoder 与 privileged critic 分离。
+训练被终端中断后，用同一 stage 加 `--resume`；命令只接受 LeRobot 已保存的 `checkpoints/last`，不会从不完整目录猜测状态。
 
-### 4. Latent/probe timeline
+不存在的 checkpoint 始终记录为 `not_run`，不会生成虚假 checkpoint。训练元数据记录 base model、immutable dataset revision、episode subset、seed、data fraction、epochs、steps、config/code hash。
 
-RL 条件每个 seed 都测。SFT 与 continued-SFT 是固定 control，latent 只测一次，不伪装成三个独立 representation runs。
+## Latent 与 probe
 
-```bash
-for condition in oracle_state rl_head rl_representation
-do
-  for seed_index in 0 1 2
-  do
-    .venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl formal measure \
-      --config "$CONFIG" --condition "$condition" --seed-index "$seed_index"
-  done
-done
-
-for condition in sft continued_sft
-do
-  .venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl formal measure \
-    --config "$CONFIG" --condition "$condition" --seed-index 0
-done
-```
-
-六个 checkpoint 都运行 frozen linear probes；step 0 与 20,480 额外运行 shallow MLP。Primary factors 是 geometry、phase、recovery state/type 和 next relation；contact/stable grasp 作为 final secondary metrics。
-
-### 5. Paired closed-loop evaluation
-
-每条 curve 固定使用同一组 30 nominal + 30 recovery development cases。最终结果使用独立 held-out 50 + 50 cases。两个 control 也使用三个 paired evaluation seeds。
+固定语义 taps：`vision_output`、`multimodal_fusion`、`action_expert_input`、`pre_action`；primary pooling 预注册为 `valid_token_mean`。
 
 ```bash
-for condition in sft continued_sft oracle_state rl_head rl_representation
+for stage in pretrained sft_25 sft_50 sft_100
 do
-  for seed_index in 0 1 2
-  do
-    .venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl formal evaluate \
-      --config "$CONFIG" --condition "$condition" --seed-index "$seed_index"
-  done
+  .venv-lerobot/bin/python -m interaction_vla.representation_study libero latents extract \
+    --config "$CONFIG" --stage "$stage"
 done
-```
 
-### 6. 汇总与 go/no-go
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero probes run \
+  --config "$CONFIG"
 
-```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study recovery-rl formal report \
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero probes report \
   --config "$CONFIG"
 ```
 
-主要输出：
+Primary probe 是 linear，shallow MLP 只做 capacity check。主 split 是 task-group，secondary 是 episode-group；严禁 frame-level random split。Contact/StableGrasp 报 AUPRC 和 balanced accuracy，Geometry 报 normalized MAE 与 R²，其余分类因素报 Macro-F1。置信区间按 task/episode cluster bootstrap，不把 frame 当重复实验。
 
-```text
-outputs/representation_study/icra_rl_v2*/
-├── gates/{distribution,backend,oracle,anchoring}.json
-├── state_bank_v2/
-└── formal/
-    ├── runs/{oracle_state,rl_head,rl_representation}/seed_*/snapshots/
-    ├── controls/{sft,continued_sft}/
-    ├── measurements/
-    ├── evaluations/
-    ├── result_rows.json
-    ├── curve_rows.json
-    ├── probe_trajectory_rows.json
-    ├── pairwise_effects.json
-    ├── study_report.json
-    └── study_report.md
-```
-
-只有 `study_report.json` 的 `complete: true` 表示 required artifacts 全部存在，且 gate、case manifest、normalization、snapshot、probe ledger 与 evaluation 的绑定和内容哈希全部通过。迁移到 SmolVLA 还要求：
-
-- RL-representation 相对 RL-head 的 recovery AUC 至少 2/3 seeds 同方向；
-- RL-representation 每个 seed 的 nominal forgetting 不超过 10 个百分点；
-- `modern_vla_ready: true`。
-
-## SmolVLA modern VLA validation
-
-ACT go/no-go 通过后再在 4090 上运行 SmolVLA。输入保持标准 LeRobotDataset：agent RGB、wrist RGB、10D end-effector state、language、7D continuous action。
+正式配置把 `CONFIG` 改为：
 
 ```bash
-export MUJOCO_GL=egl
-export HF_HOME=/tmp/gripper-mujoco-hf-cache
-CONFIG=configs/representation_study/icra_smolvla_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
-  --config "$CONFIG" --backend smolvla --stage pretrained \
-  --secondary-probe --closed-loop-intervention
-
-for stage in sft continued_sft
-do
-  .venv-lerobot/bin/python -m interaction_vla.representation_study sft train \
-    --config "$CONFIG" --backend smolvla --stage "$stage" --resume
-  .venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
-    --config "$CONFIG" --backend smolvla --stage "$stage" \
-    --secondary-probe --closed-loop-intervention
-done
-
-for stage in rl_head rl_representation
-do
-  .venv-lerobot/bin/python -m interaction_vla.representation_study rl train \
-    --config "$CONFIG" --backend smolvla --stage "$stage" --resume
-  .venv-lerobot/bin/python -m interaction_vla.representation_study measure run \
-    --config "$CONFIG" --backend smolvla --stage "$stage" \
-    --secondary-probe --closed-loop-intervention
-done
+CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
 ```
 
-π0 adapter 已保留，但不是 ICRA 主实验的阻塞项。当前单一 language instruction 不能用于语言泛化 claim。
+## Intervention 与 RL 边界
+
+仓库已定义 factor-aligned row-space intervention、matched-random、matched-mean、instruction shuffle、whole-zero OOD control，以及 paired closed-loop report schema。只有 probe gate 通过后才执行 intervention；动作变化只叫 action-sensitive，只有 paired rollout 的任务结果变化才叫 closed-loop useful。
+
+当前不要运行或调优 PPO/SAC，不要从 nominal demonstration 制造 Recovery label。RL 只有在离线 probe、closed-loop intervention、非饱和 perturbation distribution、Oracle-State residual recovery 四个前置 gate 都通过后才恢复。
 
 ## 测试
 
 ```bash
 HF_HOME=/tmp/gripper-mujoco-pytest-hf-cache \
 PYTHONPYCACHEPREFIX=/tmp/gripper-mujoco-lerobot-pycache \
-  .venv-lerobot/bin/python -m pytest -q
+  .venv-lerobot/bin/python -m pytest -q \
+  tests/interaction_vla/representation_study/libero
 ```
 
-研究设计见 [ICRA experiment design](docs/superpowers/specs/2026-08-20-icra-interaction-representation-study-design.md)，正式实现计划见 [Recovery RL v2 formal ACT plan](docs/superpowers/plans/2026-08-21-recovery-rl-v2-formal-act.md)，项目状态见 [ccfa.yaml](ccfa.yaml)。
+真实 episode integration test 通过 `LIBERO_INTEGRATION_DEMO` 指向一个原始 HDF5；没有 Linux LIBERO runtime 时会明确 skip，不会伪装通过。旧实验命令与历史说明仍保存在 `docs/` 和现有 configs 中，旧 `outputs/` 不被新流程改写。

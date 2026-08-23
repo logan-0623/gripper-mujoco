@@ -23,6 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Stage-wise interaction-representation study",
     )
     families = parser.add_subparsers(dest="family", required=True)
+    from .libero.cli import add_libero_parser
+
+    add_libero_parser(families)
     state_bank = families.add_parser("state-bank", help="fixed held-out State Bank")
     state_commands = state_bank.add_subparsers(dest="command", required=True)
     for name in ("collect", "inspect"):
@@ -153,6 +156,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     try:
+        if args.family == "libero":
+            from .libero.cli import dispatch
+
+            result = dispatch(args)
+            print(json.dumps(result, indent=2, sort_keys=True))
+            if result.get("passed") is False:
+                raise SystemExit(1)
+            return
         if args.family == "recovery-rl":
             from .rl.v2_config import load_recovery_rl_v2_config
 
