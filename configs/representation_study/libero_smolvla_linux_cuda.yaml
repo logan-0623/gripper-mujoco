@@ -4,7 +4,7 @@ output_dir: outputs/representation_study/libero_smolvla
 
 sources:
   lerobot_repo_id: lerobot/libero
-  lerobot_revision: main
+  lerobot_revision: a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4
   raw_hdf5_root: data/libero/raw
 
 coverage:

@@ -59,7 +59,7 @@ git clone --depth 1 https://github.com/Lifelong-Robot-Learning/LIBERO.git third_
   --datasets libero_object --use-huggingface
 ```
 
-正式配置选择官方 `lerobot/libero`。所有训练阶段共享同一数据源和 State Bank，因此视频编码保持固定；Hub revision 会在规划时固定为 immutable commit。旧的 `HuggingFaceVLA/libero` 镜像体积约 35GB，并存在 episode 文件索引问题，不再用于本实验。
+正式配置选择官方 `lerobot/libero`。所有训练阶段共享同一数据源和 State Bank，因此视频编码保持固定；配置直接固定 immutable Hub commit，避免服务器运行时依赖 `main` 解析。旧的 `HuggingFaceVLA/libero` 镜像体积约 35GB，并存在 episode 文件索引问题，不再用于本实验。
 
 ## Smoke 流程
 

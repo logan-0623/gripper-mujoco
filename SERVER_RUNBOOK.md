@@ -200,7 +200,7 @@ find data/libero/raw -name '*.hdf5' -print -quit
 
 ### 4.2 标准 LeRobotDataset
 
-代码会按照配置从官方 `lerobot/libero` 下载，并在 `stages plan` 时把 mutable `main` 固定成不可变的 Hub commit。第一次运行需要可访问 Hugging Face；后续会复用 `HF_HOME` cache。
+代码会按照配置从官方 `lerobot/libero` 下载。配置已经固定不可变的 40 位 Hub commit，因此服务器无需先调用 Hub API 解析 mutable `main`。第一次下载仍需要可访问 Hugging Face；后续会复用 `HF_HOME` cache。
 
 旧版配置曾使用约 35GB 的 `HuggingFaceVLA/libero` 图像镜像。在当前服务器上，它会占满数据盘并导致 `DatasetGenerationError`，而且其 episode 文件索引不适合作为分阶段 SFT 子集来源。升级代码后，先确认旧缓存的精确删除范围：
 
