@@ -12,6 +12,10 @@ from ..state_bank.io import write_json_atomic
 
 
 TRAINABLE_STAGES = ("sft_25", "sft_50", "sft_100")
+LIBERO_SMOLVLA_RENAME_MAP = {
+    "observation.images.image": "observation.images.camera1",
+    "observation.images.image2": "observation.images.camera2",
+}
 
 
 def _tree_sha256(path: Path) -> str:
@@ -123,6 +127,8 @@ def build_stage_training_command(
         f"--dataset.repo_id={manifest['dataset_repo_id']}",
         f"--dataset.revision={manifest['dataset_revision']}",
         f"--dataset.episodes={episodes}",
+        "--rename_map="
+        + json.dumps(LIBERO_SMOLVLA_RENAME_MAP, sort_keys=True, separators=(",", ":")),
         f"--output_dir={output_dir}",
         f"--job_name=libero-{stage}",
         f"--steps={int(manifest['training_steps'])}",
