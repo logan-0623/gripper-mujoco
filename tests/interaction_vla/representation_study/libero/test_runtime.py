@@ -1,8 +1,11 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+import numpy as np
+
 from interaction_vla.representation_study.libero.runtime import (
     LiberoOffscreenSimulator,
+    _evaluate_raw_goal_state,
     _model_id2name,
     _model_name2id,
 )
@@ -36,6 +39,54 @@ def test_mujoco_name_lookup_supports_modern_and_legacy_wrappers() -> None:
     assert _model_id2name(_ModernModel(), "geom", 4) == "target_geom"
     assert _model_name2id(_LegacyModel(), "geom", "target_geom") == 7
     assert _model_id2name(_LegacyModel(), "geom", 7) == "target_geom"
+
+
+def test_goal_evaluation_preserves_libero_predicate_tokens() -> None:
+    class FakeDomain:
+        def __init__(self) -> None:
+            self.evaluated: list[tuple[str, ...]] = []
+
+        def _eval_predicate(self, state):
+            atom = tuple(state)
+            self.evaluated.append(atom)
+            return atom[0] == "in"
+
+    domain = FakeDomain()
+    assert _evaluate_raw_goal_state(
+        domain,
+        (("in", "akita_black_bowl_1", "plate_1"),),
+    )
+    assert domain.evaluated == [("in", "akita_black_bowl_1", "plate_1")]
+
+
+def test_finger_groups_support_current_robosuite_important_geoms() -> None:
+    class FakeGripper:
+        important_geoms = {
+            "left_finger": ["gripper0_finger1_collision", "gripper0_finger1_pad_collision"],
+            "right_finger": ["gripper0_finger2_collision", "gripper0_finger2_pad_collision"],
+        }
+
+    class FakeRobot:
+        gripper = FakeGripper()
+
+    simulator = object.__new__(LiberoOffscreenSimulator)
+    simulator.env = type("FakeEnv", (), {"robots": [FakeRobot()]})()
+    assert simulator._finger_groups() == {
+        "left": frozenset(
+            {"gripper0_finger1_collision", "gripper0_finger1_pad_collision"}
+        ),
+        "right": frozenset(
+            {"gripper0_finger2_collision", "gripper0_finger2_pad_collision"}
+        ),
+    }
+
+
+def test_replay_validation_vector_selects_qpos_only() -> None:
+    model = type("FakeModel", (), {"nq": 2})()
+    simulator = object.__new__(LiberoOffscreenSimulator)
+    simulator.env = type("FakeEnv", (), {"sim": type("FakeSim", (), {"model": model})()})()
+    state = np.asarray([0.2, 1.0, 2.0, 100.0, 200.0])
+    assert np.array_equal(simulator.replay_validation_vector(state), [1.0, 2.0])
 
 
 def test_runtime_relocates_recorded_assets_before_mujoco_reset(tmp_path: Path) -> None:

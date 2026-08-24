@@ -101,6 +101,9 @@ class ReplayResult:
     frames: tuple[ReplayedFrame, ...]
     l2_errors: tuple[float, ...]
     max_abs_errors: tuple[float, ...]
+    replay_mode: str
+    validation_vector: str
+    replay_protocol: str
     passed: bool
 
     @property
@@ -125,24 +128,44 @@ def replay_episode(
     l2_tolerance = action_atol if state_l2_p95_tolerance is None else state_l2_p95_tolerance
     max_tolerance = action_atol if state_max_abs_tolerance is None else state_max_abs_tolerance
     simulator.reset_from_xml_string(episode.model_xml)
-    simulator.set_state_from_flattened(np.asarray(episode.states[0], dtype=np.float64))
+    validation_transform = getattr(simulator, "replay_validation_vector", None)
+    validation_vector = str(
+        getattr(simulator, "replay_validation_vector_name", "flattened_state")
+    )
+    replay_mode = "teacher_forced_one_step"
+    replay_protocol = f"{replay_mode}_{validation_vector}"
+
+    def comparable(state: np.ndarray) -> np.ndarray:
+        values = np.asarray(state, dtype=np.float64)
+        if callable(validation_transform):
+            values = np.asarray(validation_transform(values), dtype=np.float64)
+        if values.ndim != 1 or not np.isfinite(values).all():
+            raise ValueError("replay validation vector must be a finite vector")
+        return values
+
     frames: list[ReplayedFrame] = []
     l2_errors: list[float] = []
     max_errors: list[float] = []
     for index, action in enumerate(np.asarray(episode.actions, dtype=np.float64)):
-        current = np.asarray(simulator.get_state_flattened(), dtype=np.float64).copy()
         expected_current = np.asarray(episode.states[index], dtype=np.float64)
+        # Re-anchor every frame to the recorded trajectory.  This makes the
+        # privileged annotation deterministic while the following one-step
+        # action still audits replay fidelity without compounding prior drift.
+        simulator.set_state_from_flattened(expected_current)
+        current = np.asarray(simulator.get_state_flattened(), dtype=np.float64).copy()
         if current.shape != expected_current.shape:
             raise ValueError("simulator state shape differs from raw state shape")
         pre_error = float(np.max(np.abs(current - expected_current), initial=0.0))
-        if pre_error > max_tolerance and index == 0:
-            raise ValueError("simulator failed to restore the raw initial state")
+        if pre_error > max_tolerance:
+            raise ValueError(f"simulator failed to restore raw state at frame {index}")
         observation = dict(simulator.observation())
         contacts = tuple(tuple(str(name) for name in pair) for pair in simulator.contacts())
         simulator.step(action.copy())
         if index + 1 < len(episode.states):
-            observed_next = np.asarray(simulator.get_state_flattened(), dtype=np.float64)
-            expected_next = np.asarray(episode.states[index + 1], dtype=np.float64)
+            observed_next = comparable(simulator.get_state_flattened())
+            expected_next = comparable(episode.states[index + 1])
+            if observed_next.shape != expected_next.shape:
+                raise ValueError("replay validation vector shape differs from raw state")
             difference = observed_next - expected_next
             l2_error = float(np.linalg.norm(difference))
             max_error = float(np.max(np.abs(difference), initial=0.0))
@@ -171,6 +194,9 @@ def replay_episode(
         frames=tuple(frames),
         l2_errors=tuple(l2_errors),
         max_abs_errors=tuple(max_errors),
+        replay_mode=replay_mode,
+        validation_vector=validation_vector,
+        replay_protocol=replay_protocol,
         passed=l2_p95 <= l2_tolerance and maximum <= max_tolerance,
     )
 

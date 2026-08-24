@@ -103,6 +103,27 @@ def test_replay_reports_drift_instead_of_silently_accepting() -> None:
     result = replay_episode(_episode(), FakeSimulator(drift=0.1), action_atol=1e-8)
     assert not result.passed
     assert result.max_abs_error > 0.09
+    assert np.array_equal(result.frames[1].simulator_state, [1.0, 0.0])
+    assert np.allclose(result.l2_errors, [np.sqrt(0.02), np.sqrt(0.02)])
+
+
+def test_replay_can_validate_policy_relevant_state_subset() -> None:
+    class PositionOnlySimulator(FakeSimulator):
+        replay_validation_vector_name = "position"
+
+        def replay_validation_vector(self, state: np.ndarray) -> np.ndarray:
+            return np.asarray(state)[:1]
+
+        def step(self, action: np.ndarray) -> None:
+            self.state = self.state + np.asarray(action[:2])
+            self.state[1] += 100.0
+
+    result = replay_episode(_episode(), PositionOnlySimulator(), action_atol=1e-8)
+    assert result.passed
+    assert result.replay_mode == "teacher_forced_one_step"
+    assert result.validation_vector == "position"
+    assert result.replay_protocol == "teacher_forced_one_step_position"
+    assert result.max_abs_error == 0.0
 
 
 def test_replay_rejects_unknown_frame_action_offset() -> None:

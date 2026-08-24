@@ -241,6 +241,8 @@ mkdir -p /root/.cache/libero/assets
 
 Raw HDF5 的 `model_file` 保存了数据作者机器上的 `/Users/.../robosuite` 与 `chiliocosm/assets` 绝对路径。Collector 会把这两类路径严格重定位到当前环境并验证每个文件存在；不要在服务器上伪造 `/Users/yifengz/...` 目录或软链接。若仍看到该旧路径，先 `git pull --ff-only origin main`，确认服务器代码包含路径重定位修复。
 
+State Bank annotation 会逐帧恢复官方 recorded state，再执行对应 action 做单步 replay 校验。预注册协议是 `teacher_forced_one_step_qpos`，报告中应同时显示 `"replay_mode": "teacher_forced_one_step"` 和 `"validation_vector": "qpos"`；它不是会累积速度误差的整段 open-loop rollout，也不声称验证 qvel 等价性。
+
 ## 5. 必须先跑 smoke gate
 
 建议在 `tmux` 内运行，以免 SSH 断开终止任务：

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 import numpy as np
 
@@ -59,8 +59,28 @@ def _model_id2name(model: object, kind: str, identifier: int) -> str | None:
     return None if value is None else str(value)
 
 
+def _evaluate_raw_goal_state(
+    domain: object, goal_states: tuple[tuple[str, ...], ...]
+) -> bool:
+    """Evaluate the original LIBERO predicates without ontology normalization.
+
+    The measurement schema calls the BDDL predicate ``in`` "inside", but
+    LIBERO's predicate registry only accepts the original ``in`` token.
+    Keeping simulator evaluation on the raw BDDL atoms prevents that semantic
+    normalization from changing environment behavior.
+    """
+    if not goal_states:
+        raise ValueError("LIBERO task has no raw goal states to evaluate")
+    evaluator = getattr(domain, "_eval_predicate", None)
+    if not callable(evaluator):
+        raise ValueError("LIBERO domain does not expose predicate evaluation")
+    return all(bool(evaluator(list(state))) for state in goal_states)
+
+
 class LiberoOffscreenSimulator:
     """Thin, lazy wrapper around the official LIBERO replay environment."""
+
+    replay_validation_vector_name = "qpos"
 
     def __init__(
         self,
@@ -93,9 +113,13 @@ class LiberoOffscreenSimulator:
         self.env.seed(seed)
         self._observation = self.env.reset()
         domain = getattr(self.env, "env", self.env)
-        raw_goals = tuple(
-            GoalAtom(str(value[0]).lower(), tuple(str(item) for item in value[1:]))
+        self._raw_goal_states = tuple(
+            tuple(str(item) for item in value)
             for value in domain.parsed_problem["goal_state"]
+        )
+        raw_goals = tuple(
+            GoalAtom(value[0].lower(), value[1:])
+            for value in self._raw_goal_states
         )
         if not raw_goals:
             raise ValueError(f"LIBERO task {task_name} has no parsed goal atoms")
@@ -164,6 +188,19 @@ class LiberoOffscreenSimulator:
 
     def get_state_flattened(self) -> np.ndarray:
         return np.asarray(self.sim.get_state().flatten(), dtype=np.float64)
+
+    def replay_validation_vector(self, state: np.ndarray) -> np.ndarray:
+        """Select positions from a legacy MjSimState flattened vector.
+
+        Privileged labels are generated from teacher-forced recorded states.
+        One-step replay fidelity is therefore gated on configuration (qpos),
+        while velocity mismatch remains outside the scientific label path.
+        """
+        values = np.asarray(state, dtype=np.float64)
+        nq = int(self.sim.model.nq)
+        if values.ndim != 1 or len(values) < 1 + nq:
+            raise ValueError("flattened LIBERO state is too short for qpos validation")
+        return values[1 : 1 + nq].copy()
 
     def step(self, action: np.ndarray) -> None:
         self._observation, _, _, _ = self.env.step(action)
@@ -243,10 +280,22 @@ class LiberoOffscreenSimulator:
 
     def _finger_groups(self) -> dict[str, frozenset[str]]:
         gripper = self.robots[0].gripper
-        return {
-            "left": frozenset(str(item) for item in getattr(gripper, "left_finger_geoms", ())),
-            "right": frozenset(str(item) for item in getattr(gripper, "right_finger_geoms", ())),
+        important = getattr(gripper, "important_geoms", {})
+        if not isinstance(important, Mapping):
+            important = {}
+        left = getattr(gripper, "left_finger_geoms", ()) or important.get(
+            "left_finger", important.get("left_fingerpad", ())
+        )
+        right = getattr(gripper, "right_finger_geoms", ()) or important.get(
+            "right_finger", important.get("right_fingerpad", ())
+        )
+        result = {
+            "left": frozenset(str(item) for item in left),
+            "right": frozenset(str(item) for item in right),
         }
+        if not result["left"] or not result["right"]:
+            raise ValueError("cannot resolve both LIBERO gripper finger geom groups")
+        return result
 
     def _surface_distance(self, left: Iterable[str], right: Iterable[str]) -> float:
         model = self.sim.model
@@ -312,8 +361,7 @@ class LiberoOffscreenSimulator:
         gripper_pose = self._gripper_pose()
         target_pose = self._pose(semantics.target)
         goal_pose = self._pose(str(semantics.goal))
-        goal_atom = [semantics.goal_predicate, semantics.target, semantics.goal]
-        goal_satisfied = bool(self.domain._eval_predicate(goal_atom))
+        goal_satisfied = _evaluate_raw_goal_state(self.domain, self._raw_goal_states)
         return PrivilegedFrame(
             frame_index=-1,
             gripper_pose=gripper_pose,

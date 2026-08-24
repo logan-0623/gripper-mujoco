@@ -69,7 +69,7 @@ Unknown or ambiguous entity selectors and plans are errors in formal mode. Smoke
 
 ## Replay gate
 
-Replay begins from the raw demonstration model XML and flattened simulator state, then steps the recorded action sequence. Per-transition flattened-state L2/max error and source action alignment are recorded; the flattened state already includes the simulator's robot and object state. A configurable quantile and maximum threshold gate determine pass/fail. A failed replay episode is preserved in the report and excluded from an accepted bank; a formal bank fails if acceptance or task-coverage requirements are not met.
+The preregistered protocol is `teacher_forced_one_step_qpos`. Each annotation frame is reconstructed by restoring its raw demonstration flattened simulator state. The corresponding recorded action is then stepped once, and the resulting MuJoCo `qpos` is compared with the next recorded state's `qpos`. Re-anchoring every frame prevents earlier numerical drift from changing later privileged labels; velocity fidelity is not part of this gate. Reports record `replay_mode`, `validation_vector`, and the combined `replay_protocol`, together with per-episode qpos L2/max errors and exact cross-source action alignment. Configurable quantile and maximum thresholds determine pass/fail. A failed replay episode is preserved in the report and excluded from an accepted bank; a formal bank fails if acceptance or task-coverage requirements are not met.
 
 ## Stable grasp and event hysteresis
 

@@ -237,6 +237,9 @@ def collect_libero_state_bank(config: LiberoStudyConfig) -> dict[str, object]:
                 "task_id": row.task_id,
                 "episode_id": row.raw_episode_id,
                 "passed": replay.passed,
+                "replay_mode": replay.replay_mode,
+                "validation_vector": replay.validation_vector,
+                "replay_protocol": replay.replay_protocol,
                 "validated_transitions": len(replay.l2_errors),
                 "l2_p95": replay.l2_p95_error,
                 "max_abs": replay.max_abs_error,
@@ -304,6 +307,25 @@ def collect_libero_state_bank(config: LiberoStudyConfig) -> dict[str, object]:
     }
     l2 = [float(row["l2_p95"]) for row in replay_rows]
     maximum = [float(row["max_abs"]) for row in replay_rows]
+    validation_vectors = sorted(
+        {str(row.get("validation_vector", "unknown")) for row in replay_rows}
+    )
+    replay_modes = sorted(
+        {str(row.get("replay_mode", "unknown")) for row in replay_rows}
+    )
+    replay_protocols = sorted(
+        {str(row.get("replay_protocol", "unknown")) for row in replay_rows}
+    )
+    if (
+        len(validation_vectors) != 1
+        or len(replay_modes) != 1
+        or len(replay_protocols) != 1
+    ):
+        raise ValueError(
+            "replay episodes used inconsistent protocols: "
+            f"modes={replay_modes}, vectors={validation_vectors}, "
+            f"protocols={replay_protocols}"
+        )
     replay_statistics = {
         "episodes": len(replay_rows),
         "accepted": accepted,
@@ -314,6 +336,9 @@ def collect_libero_state_bank(config: LiberoStudyConfig) -> dict[str, object]:
             {"suite": suite, "task_id": task_id}
             for suite, task_id in sorted(set(task_lookup).difference(accepted_task_keys))
         ],
+        "replay_mode": replay_modes[0],
+        "validation_vector": validation_vectors[0],
+        "replay_protocol": replay_protocols[0],
         "l2_p95": float(np.quantile(l2, 0.95)),
         "max_abs": max(maximum, default=float("inf")),
         "rows": replay_rows,
