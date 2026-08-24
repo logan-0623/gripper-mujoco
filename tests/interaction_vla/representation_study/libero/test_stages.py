@@ -94,6 +94,7 @@ def test_training_command_is_bound_to_nested_manifest(tmp_path: Path) -> None:
     assert "--dataset.episodes=[1,4,7]" in command
     assert "--steps=12" in command
     assert "--cudnn_deterministic=true" in command
+    assert "--policy.push_to_hub=false" in command
 
     (pretrained / "config.json").write_text('{"tampered": true}')
     with pytest.raises(ValueError, match="hash is stale"):

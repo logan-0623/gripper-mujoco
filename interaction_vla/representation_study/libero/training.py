@@ -119,6 +119,7 @@ def build_stage_training_command(
         "-m",
         "lerobot.scripts.lerobot_train",
         f"--policy.path={pretrained_checkpoint}",
+        "--policy.push_to_hub=false",
         f"--dataset.repo_id={manifest['dataset_repo_id']}",
         f"--dataset.revision={manifest['dataset_revision']}",
         f"--dataset.episodes={episodes}",
