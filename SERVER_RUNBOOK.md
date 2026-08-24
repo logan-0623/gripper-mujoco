@@ -147,7 +147,7 @@ Hugging Face 登录不是强制条件，但可以减少限流和断连：
 
 正式 State Bank 同时使用：
 
-- `HuggingFaceVLA/libero`：RGB、robot state、action、language；
+- 官方 `lerobot/libero`：RGB、robot state、action、language；
 - 原始 LIBERO HDF5：simulator state、`model_file`、contact 和 object pose。
 
 仅有 Hugging Face LeRobotDataset 不够生成 privileged annotations。
@@ -175,10 +175,10 @@ git clone --depth 1 \
   'from libero.libero import get_libero_path; print(get_libero_path("datasets"))'
 ```
 
-将输出的绝对目录链接到配置所要求的仓库相对路径。把下面的 `/actual/libero/datasets` 替换为上一条命令的真实输出：
+服务器上的官方原始数据盘固定为 `/root/autodl-tmp/libero/datasets`。将它链接到配置所要求的仓库相对路径：
 
 ```bash
-LIBERO_DATASETS=/actual/libero/datasets
+LIBERO_DATASETS=/root/autodl-tmp/libero/datasets
 mkdir -p data/libero
 if [ -e data/libero/raw ]
 then
@@ -200,7 +200,27 @@ find data/libero/raw -name '*.hdf5' -print -quit
 
 ### 4.2 标准 LeRobotDataset
 
-代码会按照配置从 `HuggingFaceVLA/libero` 下载，并在 `stages plan` 时把 mutable `main` 固定成不可变的 Hub commit。第一次运行需要可访问 Hugging Face；后续会复用 `HF_HOME` cache。
+代码会按照配置从官方 `lerobot/libero` 下载，并在 `stages plan` 时把 mutable `main` 固定成不可变的 Hub commit。第一次运行需要可访问 Hugging Face；后续会复用 `HF_HOME` cache。
+
+旧版配置曾使用约 35GB 的 `HuggingFaceVLA/libero` 图像镜像。在当前服务器上，它会占满数据盘并导致 `DatasetGenerationError`，而且其 episode 文件索引不适合作为分阶段 SFT 子集来源。升级代码后，先确认旧缓存的精确删除范围：
+
+```bash
+HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache \
+  .venv-lerobot/bin/hf cache rm dataset/HuggingFaceVLA/libero \
+  --cache-dir /root/autodl-tmp/gripper-mujoco-hf-cache/lerobot/hub \
+  --dry-run
+```
+
+确认输出只包含 `dataset/HuggingFaceVLA/libero` 后再删除；这不会删除 `/root/autodl-tmp/libero/datasets` 中的原始 HDF5：
+
+```bash
+HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache \
+  .venv-lerobot/bin/hf cache rm dataset/HuggingFaceVLA/libero \
+  --cache-dir /root/autodl-tmp/gripper-mujoco-hf-cache/lerobot/hub \
+  --yes
+
+df -h /root/autodl-tmp
+```
 
 ## 5. 必须先跑 smoke gate
 
@@ -227,7 +247,11 @@ CONFIG=configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study libero state-bank collect \
   --config "$CONFIG"
+```
 
+只有 `collect` 返回 `"passed": true` 并生成 `state_bank/manifest.json` 后，才继续运行：
+
+```bash
 .venv-lerobot/bin/python -m interaction_vla.representation_study libero state-bank inspect \
   --config "$CONFIG"
 

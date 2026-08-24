@@ -44,7 +44,7 @@ export HF_HOME=/tmp/gripper-mujoco-hf-cache
 
 正式 State Bank 同时需要：
 
-- `HuggingFaceVLA/libero` 的标准 LeRobotDataset；
+- 官方 `lerobot/libero` LeRobotDataset；
 - 原始 LIBERO HDF5 demonstrations（包含 simulator states、actions、`model_file`）。
 
 默认原始数据目录为 `data/libero/raw/`。仅凭 RGB/state/action 不能生成 privileged contact 和 object-pose ground truth，代码会明确拒绝这种降级。
@@ -59,7 +59,7 @@ git clone --depth 1 https://github.com/Lifelong-Robot-Learning/LIBERO.git third_
   --datasets libero_object --use-huggingface
 ```
 
-正式配置选择 `HuggingFaceVLA/libero` 的 image/parquet 版本，以避免视频重编码给 vision representation 带来额外压缩变量；Hub revision 会在规划时固定为 immutable commit。
+正式配置选择官方 `lerobot/libero`。所有训练阶段共享同一数据源和 State Bank，因此视频编码保持固定；Hub revision 会在规划时固定为 immutable commit。旧的 `HuggingFaceVLA/libero` 镜像体积约 35GB，并存在 episode 文件索引问题，不再用于本实验。
 
 ## Smoke 流程
 

@@ -73,7 +73,7 @@ def test_training_command_is_bound_to_nested_manifest(tmp_path: Path) -> None:
     config = replace(config, output_dir=tmp_path)
     manifest = {
         "stage": "sft_25",
-        "dataset_repo_id": "HuggingFaceVLA/libero",
+        "dataset_repo_id": "lerobot/libero",
         "dataset_revision": "a" * 40,
         "episode_indices": [1, 4, 7],
         "training_steps": 12,

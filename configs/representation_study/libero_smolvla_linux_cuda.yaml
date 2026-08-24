@@ -3,7 +3,7 @@ seed: 2057736129
 output_dir: outputs/representation_study/libero_smolvla
 
 sources:
-  lerobot_repo_id: HuggingFaceVLA/libero
+  lerobot_repo_id: lerobot/libero
   lerobot_revision: main
   raw_hdf5_root: data/libero/raw
 

@@ -16,6 +16,7 @@ def test_smoke_config_is_isolated_deterministic_and_rl_free() -> None:
     assert config.schema_version == LIBERO_CONFIG_SCHEMA
     assert config.seed == 2057736129
     assert config.output_dir == Path("outputs/representation_study/libero_smolvla_smoke")
+    assert config.sources.lerobot_repo_id == "lerobot/libero"
     assert config.coverage.suites == ("libero_spatial", "libero_object")
     assert config.coverage.tasks_per_suite == 3
     assert config.coverage.fail_on_unsupported_task

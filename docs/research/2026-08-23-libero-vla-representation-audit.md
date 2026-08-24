@@ -32,7 +32,7 @@ No implication between adjacent terms is assumed. The interaction graph is an an
 
 The upstream LeRobot 0.6.1 installation contains its LIBERO environment adapter. The local macOS environment does not contain `hf-libero`; deterministic simulator replay is therefore a Linux-only integration path with dependency-free unit tests on macOS.
 
-The formal profile uses `HuggingFaceVLA/libero`, whose camera observations are stored as images rather than re-encoded videos. This is a deliberate representation-study control that avoids introducing video-compression differences into vision-tap comparisons; the immutable Hub commit is recorded. A smaller video-backed LeRobot mirror can be added only as a separately registered source sensitivity analysis.
+The formal profile uses the official `lerobot/libero` LeRobotDataset. Every training stage consumes the same immutable dataset revision and shared State Bank, so camera encoding is held fixed across the longitudinal comparison. The earlier `HuggingFaceVLA/libero` choice was retired on 2026-08-23 after server validation showed two operational threats to the protocol: roughly 35GB of image-parquet materialization exceeded the available cache volume, and its published episode file pointers were unsuitable for reliable episode-subset SFT. This source change does not reinterpret any earlier ACT/Graph result; the LIBERO study remains `not_started` until its replay and alignment gates pass.
 
 ## 2. Experiment-state classification
 
