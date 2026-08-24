@@ -118,10 +118,11 @@ python3.12 -m venv .venv-lerobot
 ```bash
 mkdir -p /root/autodl-tmp/gripper-mujoco-hf-cache
 export HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache
+export HF_ENDPOINT=https://hf-mirror.com
 export MUJOCO_GL=egl
 ```
 
-如果不是 AutoDL，把 `HF_HOME` 改成该服务器的持久数据盘目录。
+AutoDL 当前无法直连 `huggingface.co`，但已验证 `hf-mirror.com` 可解析同一个固定 commit，因此这里设置 `HF_ENDPOINT`。如果服务器可以稳定直连官方 Hub，可省略该变量。如果不是 AutoDL，把 `HF_HOME` 改成该服务器的持久数据盘目录。
 
 验证环境：
 
@@ -235,6 +236,7 @@ tmux new -s libero-smoke
 ```bash
 cd /root/gripper-mujoco
 export HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache
+export HF_ENDPOINT=https://hf-mirror.com
 export MUJOCO_GL=egl
 CONFIG=configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml
 ```
