@@ -232,6 +232,7 @@ AutoDL 镜像对默认 8 路并发下载容易返回 HTTP 429。State Bank repla
 mkdir -p /root/.cache/libero/assets
 .venv-lerobot/bin/hf download lerobot/libero-assets \
   --repo-type dataset \
+  --revision 0b3ea86be5fe169d0fd036ae63d1070ec09e90f6 \
   --local-dir /root/.cache/libero/assets \
   --max-workers 1
 ```
