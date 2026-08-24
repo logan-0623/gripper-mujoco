@@ -174,7 +174,6 @@ def collect_libero_state_bank(config: LiberoStudyConfig) -> dict[str, object]:
         lift_clearance_m=config.annotations.lift_clearance_m,
         approach_surface_distance_m=config.annotations.approach_surface_distance_m,
         hysteresis_m=config.annotations.hysteresis_m,
-        grasp_aperture_threshold=config.annotations.grasp_aperture_threshold,
         minimum_finger_groups=config.annotations.minimum_finger_groups,
     )
     selected_alignment = tuple(

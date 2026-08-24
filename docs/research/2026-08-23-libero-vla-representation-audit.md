@@ -148,11 +148,10 @@ Default thresholds are registered in configuration, not hard-coded: a 5-frame st
 `StableGrasp` is applicable only to a graspable movable target. It is true when all conditions hold over the configured temporal window:
 
 1. contact exists between the target and at least the configured number of distinct gripper finger groups (default two);
-2. the gripper is closing or aperture is below the configured grasp-aperture threshold;
-3. target pose relative to the gripper remains within translation and rotation drift thresholds;
-4. either the target co-moves with the end effector by the minimum displacement or the target is lifted/off its source support.
+2. target pose relative to the gripper remains within translation and rotation drift thresholds;
+3. either the target co-moves with the end effector by the minimum displacement or the target is lifted/off its source support.
 
-Missing history produces `not_evaluable`, not `false`. Contact alone is insufficient. The report includes event durations, isolated one-frame positives, transition counts, and sensitivity to the registered thresholds.
+Missing history produces `not_evaluable`, not `false`. Contact alone is insufficient. Normalized gripper aperture is retained as a diagnostic observation but is deliberately not a cross-object hard gate: a fixed aperture cutoff rejects valid grasps of wider targets. This decision was frozen after the smoke annotation review and before any formal probe experiment. The report includes event durations, isolated one-frame positives, transition counts, and sensitivity to the registered thresholds.
 
 ## 9. Exact NextRelation definition
 

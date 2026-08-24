@@ -27,7 +27,6 @@ annotations:
   lift_clearance_m: 0.01
   approach_surface_distance_m: 0.05
   hysteresis_m: 0.01
-  grasp_aperture_threshold: 0.55
   minimum_finger_groups: 2
 
 state_bank:

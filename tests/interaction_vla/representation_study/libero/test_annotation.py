@@ -93,6 +93,25 @@ def test_stable_grasp_requires_bilateral_contact_pose_stability_and_comotion() -
     assert labels[-1].next_relation.subject_role == "target"
 
 
+def test_stable_grasp_is_not_biased_by_target_width() -> None:
+    frames = [
+        _frame(
+            i,
+            gripper_x=0.01 * i,
+            target_x=0.01 * i,
+            fingers=("left", "right"),
+            aperture=0.80,
+            source_supported=i < 2,
+        )
+        for i in range(6)
+    ]
+
+    labels = annotate_relocation_episode(frames, _semantics(), AnnotationThresholds())
+
+    assert labels[-1].stable_grasp is True
+    assert labels[-1].phase in {"lift", "transport"}
+
+
 def test_release_relation_is_clearance_not_approach() -> None:
     frames = [
         _frame(i, gripper_x=0.48, target_x=0.5, goal_x=0.5, goal_satisfied=True)

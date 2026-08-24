@@ -78,7 +78,6 @@ class AnnotationConfig:
     lift_clearance_m: float
     approach_surface_distance_m: float
     hysteresis_m: float
-    grasp_aperture_threshold: float
     minimum_finger_groups: int
 
 
@@ -269,9 +268,6 @@ def load_libero_study_config(path: str | Path) -> LiberoStudyConfig:
             hysteresis_m=_positive(
                 annotations.get("hysteresis_m", 0.01), "annotations.hysteresis_m"
             ),
-            grasp_aperture_threshold=float(
-                annotations.get("grasp_aperture_threshold", 0.55)
-            ),
             minimum_finger_groups=int(annotations.get("minimum_finger_groups", 2)),
         ),
         state_bank=StateBankConfig(
@@ -323,8 +319,6 @@ def load_libero_study_config(path: str | Path) -> LiberoStudyConfig:
         raise ValueError("replay.control_freq must be positive")
     if result.annotations.stable_window_frames < 2:
         raise ValueError("annotations.stable_window_frames must be at least two")
-    if not 0.0 <= result.annotations.grasp_aperture_threshold <= 1.0:
-        raise ValueError("annotations.grasp_aperture_threshold must be in [0, 1]")
     if result.annotations.minimum_finger_groups < 1:
         raise ValueError("annotations.minimum_finger_groups must be positive")
     if result.coverage.tasks_per_suite is not None and result.coverage.tasks_per_suite < 3:

@@ -25,7 +25,6 @@ class AnnotationThresholds:
     lift_clearance_m: float = 0.01
     approach_surface_distance_m: float = 0.05
     hysteresis_m: float = 0.01
-    grasp_aperture_threshold: float = 0.55
     minimum_finger_groups: int = 2
 
 
@@ -86,7 +85,6 @@ def _stable_grasp(
     window = frames[start : index + 1]
     if any(
         len(set(frame.finger_contact_groups)) < thresholds.minimum_finger_groups
-        or frame.gripper_aperture > thresholds.grasp_aperture_threshold
         for frame in window
     ):
         return False
