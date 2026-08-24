@@ -1,10 +1,54 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Mapping, Protocol
+import xml.etree.ElementTree as ET
 
 import numpy as np
+
+
+def relocate_model_asset_paths(
+    xml: str,
+    *,
+    robosuite_root: str | Path,
+    libero_assets_root: str | Path,
+) -> str:
+    """Relocate author-machine asset paths embedded in official LIBERO demos."""
+    robot_root = Path(robosuite_root).resolve()
+    libero_root = Path(libero_assets_root).resolve()
+    tree = ET.fromstring(xml)
+    unresolved: list[str] = []
+    for element in tree.iter():
+        old_path = element.get("file")
+        if not old_path or not PurePosixPath(old_path).is_absolute():
+            continue
+        parts = PurePosixPath(old_path).parts
+        robot_indices = [index for index, value in enumerate(parts) if value == "robosuite"]
+        chiliocosm_indices = [
+            index
+            for index in range(len(parts) - 1)
+            if parts[index : index + 2] == ("chiliocosm", "assets")
+        ]
+        if robot_indices:
+            target = robot_root.joinpath(*parts[robot_indices[-1] + 1 :]).resolve()
+            root = robot_root
+        elif chiliocosm_indices:
+            target = libero_root.joinpath(*parts[chiliocosm_indices[-1] + 2 :]).resolve()
+            root = libero_root
+        else:
+            unresolved.append(old_path)
+            continue
+        try:
+            target.relative_to(root)
+        except ValueError as error:
+            raise ValueError(f"recorded asset path escapes its installed root: {old_path}") from error
+        if not target.is_file():
+            raise FileNotFoundError(f"relocated LIBERO asset does not exist: {target}")
+        element.set("file", str(target))
+    if unresolved:
+        raise ValueError(f"unrecognized absolute paths in recorded model XML: {unresolved}")
+    return ET.tostring(tree, encoding="unicode")
 
 
 @dataclass(frozen=True)

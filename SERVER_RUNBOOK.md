@@ -239,6 +239,8 @@ mkdir -p /root/.cache/libero/assets
 
 若出现 429 和 `Waiting ... before retry`，让进程等待并自动续传，不要同时启动第二个下载进程。命令正常返回后再运行 State Bank collect；否则不完整的顶层资产目录可能被 LIBERO 误判为已经下载完成。
 
+Raw HDF5 的 `model_file` 保存了数据作者机器上的 `/Users/.../robosuite` 与 `chiliocosm/assets` 绝对路径。Collector 会把这两类路径严格重定位到当前环境并验证每个文件存在；不要在服务器上伪造 `/Users/yifengz/...` 目录或软链接。若仍看到该旧路径，先 `git pull --ff-only origin main`，确认服务器代码包含路径重定位修复。
+
 ## 5. 必须先跑 smoke gate
 
 建议在 `tmux` 内运行，以免 SSH 断开终止任务：

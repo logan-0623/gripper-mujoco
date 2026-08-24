@@ -1,12 +1,54 @@
 from dataclasses import dataclass
+from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytest
 
+from interaction_vla.representation_study.libero import replay as replay_module
 from interaction_vla.representation_study.libero.replay import (
     RawReplayEpisode,
     replay_episode,
 )
+
+
+def test_recorded_asset_paths_are_relocated_to_installed_roots(tmp_path: Path) -> None:
+    robosuite_root = tmp_path / "robosuite"
+    libero_assets_root = tmp_path / "libero-assets"
+    robot_mesh = robosuite_root / "models/assets/robots/panda/meshes/link0.stl"
+    object_texture = libero_assets_root / "textures/object.png"
+    robot_mesh.parent.mkdir(parents=True)
+    object_texture.parent.mkdir(parents=True)
+    robot_mesh.touch()
+    object_texture.touch()
+    xml = """
+    <mujoco><asset>
+      <mesh name="robot" file="/Users/author/work/robosuite/robosuite/models/assets/robots/panda/meshes/link0.stl"/>
+      <texture name="object" file="/Users/author/work/libero/chiliocosm/assets/scenes/../textures/object.png"/>
+    </asset></mujoco>
+    """
+
+    relocated = replay_module.relocate_model_asset_paths(
+        xml,
+        robosuite_root=robosuite_root,
+        libero_assets_root=libero_assets_root,
+    )
+
+    files = [element.get("file") for element in ET.fromstring(relocated).iter() if element.get("file")]
+    assert files == [str(robot_mesh.resolve()), str(object_texture.resolve())]
+
+
+def test_recorded_asset_relocation_rejects_unknown_absolute_paths(
+    tmp_path: Path,
+) -> None:
+    xml = '<mujoco><asset><mesh file="/unknown/assets/object.stl"/></asset></mujoco>'
+
+    with pytest.raises(ValueError, match="unrecognized absolute paths"):
+        replay_module.relocate_model_asset_paths(
+            xml,
+            robosuite_root=tmp_path / "robosuite",
+            libero_assets_root=tmp_path / "libero-assets",
+        )
 
 
 class FakeSimulator:

@@ -7,6 +7,7 @@ import numpy as np
 
 from .annotation import PrivilegedFrame
 from .contacts import SemanticContactMap, contact_labels_from_pairs
+from .replay import relocate_model_asset_paths
 from .task_semantics import GoalAtom, TaskSemantics, TaskSemanticsRegistry
 
 
@@ -73,9 +74,13 @@ class LiberoOffscreenSimulator:
         control_freq: int,
     ) -> None:
         try:
+            import robosuite
+            from libero.libero import get_assets_path
             from libero.libero.envs import OffScreenRenderEnv
         except ImportError as error:  # pragma: no cover - Linux optional dependency
             raise RuntimeError("hf-libero is required for deterministic replay") from error
+        self._robosuite_root = Path(robosuite.__file__).resolve().parent
+        self._libero_assets_root = Path(get_assets_path()).resolve()
         self.env = OffScreenRenderEnv(
             bddl_file_name=str(bddl_path),
             camera_heights=256,
@@ -128,12 +133,17 @@ class LiberoOffscreenSimulator:
         self.env.close()
 
     def reset_from_xml_string(self, xml: str) -> None:
+        relocated_xml = relocate_model_asset_paths(
+            xml,
+            robosuite_root=self._robosuite_root,
+            libero_assets_root=self._libero_assets_root,
+        )
         target = (
             self.env
             if callable(getattr(self.env, "reset_from_xml_string", None))
             else self.domain
         )
-        target.reset_from_xml_string(xml)
+        target.reset_from_xml_string(relocated_xml)
         self.sim.reset()
 
     def set_state_from_flattened(self, state: np.ndarray) -> None:
