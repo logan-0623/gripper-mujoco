@@ -224,6 +224,20 @@ HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache \
 df -h /root/autodl-tmp
 ```
 
+### 4.3 单线程预取 LIBERO simulator assets
+
+AutoDL 镜像对默认 8 路并发下载容易返回 HTTP 429。State Bank replay 前，先把 assets 单线程下载到 LIBERO 默认目录；中断后重复同一命令会续传：
+
+```bash
+mkdir -p /root/.cache/libero/assets
+.venv-lerobot/bin/hf download lerobot/libero-assets \
+  --repo-type dataset \
+  --local-dir /root/.cache/libero/assets \
+  --max-workers 1
+```
+
+若出现 429 和 `Waiting ... before retry`，让进程等待并自动续传，不要同时启动第二个下载进程。命令正常返回后再运行 State Bank collect；否则不完整的顶层资产目录可能被 LIBERO 误判为已经下载完成。
+
 ## 5. 必须先跑 smoke gate
 
 建议在 `tmux` 内运行，以免 SSH 断开终止任务：
