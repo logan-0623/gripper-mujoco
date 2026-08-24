@@ -53,3 +53,30 @@ def test_episode_alignment_rejects_unmatched_episode() -> None:
             (_episode("lerobot", "episode_1", 0.1),),
             action_atol=1e-8,
         )
+
+
+def test_episode_alignment_can_audit_an_exact_shared_subset() -> None:
+    raw = (_episode("raw", "demo_a"), _episode("raw", "demo_b", 1.0))
+    lerobot = (
+        _episode("lerobot", "episode_2"),
+        _episode("lerobot", "episode_extra", 2.0),
+    )
+
+    manifest = align_episode_sources(
+        raw,
+        lerobot,
+        action_atol=1e-8,
+        require_all_raw=False,
+    )
+
+    assert [(row.raw_episode_id, row.lerobot_episode_id) for row in manifest.rows] == [
+        ("demo_a", "episode_2")
+    ]
+    assert manifest.raw_episode_count == 2
+    assert manifest.lerobot_episode_count == 2
+    assert manifest.matched_episode_count == 1
+    assert manifest.unmatched_raw_episode_ids == ("libero_spatial:0:demo_b",)
+    assert manifest.unmatched_lerobot_episode_ids == (
+        "libero_spatial:0:episode_extra",
+    )
+    assert manifest.to_dict()["coverage"]["raw_match_rate"] == 0.5

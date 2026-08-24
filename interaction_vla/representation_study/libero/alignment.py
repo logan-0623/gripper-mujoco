@@ -8,7 +8,7 @@ from typing import Literal, Sequence
 import numpy as np
 
 
-ALIGNMENT_SCHEMA = "libero_source_alignment_v1"
+ALIGNMENT_SCHEMA = "libero_source_alignment_v2"
 
 
 @dataclass(frozen=True)
@@ -57,7 +57,15 @@ class AlignmentManifest:
     rows: tuple[AlignmentRow, ...]
     action_atol: float
     semantic_sha256: str
+    raw_episode_count: int
+    lerobot_episode_count: int
+    unmatched_raw_episode_ids: tuple[str, ...]
+    unmatched_lerobot_episode_ids: tuple[str, ...]
     schema_version: str = ALIGNMENT_SCHEMA
+
+    @property
+    def matched_episode_count(self) -> int:
+        return len(self.rows)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -65,6 +73,19 @@ class AlignmentManifest:
             "action_atol": self.action_atol,
             "semantic_sha256": self.semantic_sha256,
             "rows": [asdict(row) for row in self.rows],
+            "coverage": {
+                "raw_episode_count": self.raw_episode_count,
+                "lerobot_episode_count": self.lerobot_episode_count,
+                "matched_episode_count": self.matched_episode_count,
+                "raw_match_rate": self.matched_episode_count / self.raw_episode_count,
+                "lerobot_match_rate": (
+                    self.matched_episode_count / self.lerobot_episode_count
+                ),
+                "unmatched_raw_episode_ids": list(self.unmatched_raw_episode_ids),
+                "unmatched_lerobot_episode_ids": list(
+                    self.unmatched_lerobot_episode_ids
+                ),
+            },
         }
 
 
@@ -73,11 +94,27 @@ def _array_sha(array: np.ndarray) -> str:
     return hashlib.sha256(canonical.tobytes()).hexdigest()
 
 
-def _semantic_hash(rows: Sequence[AlignmentRow], action_atol: float) -> str:
+def _episode_key(row: EpisodeDescriptor) -> str:
+    return f"{row.suite}:{row.task_id}:{row.episode_id}"
+
+
+def _semantic_hash(
+    rows: Sequence[AlignmentRow],
+    action_atol: float,
+    *,
+    raw_episode_count: int,
+    lerobot_episode_count: int,
+    unmatched_raw_episode_ids: Sequence[str],
+    unmatched_lerobot_episode_ids: Sequence[str],
+) -> str:
     payload = {
         "schema_version": ALIGNMENT_SCHEMA,
         "action_atol": float(action_atol),
         "rows": [asdict(row) for row in rows],
+        "raw_episode_count": raw_episode_count,
+        "lerobot_episode_count": lerobot_episode_count,
+        "unmatched_raw_episode_ids": list(unmatched_raw_episode_ids),
+        "unmatched_lerobot_episode_ids": list(unmatched_lerobot_episode_ids),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -88,6 +125,7 @@ def align_episode_sources(
     lerobot_episodes: Sequence[EpisodeDescriptor],
     *,
     action_atol: float,
+    require_all_raw: bool = True,
 ) -> AlignmentManifest:
     if action_atol <= 0:
         raise ValueError("action_atol must be positive")
@@ -102,6 +140,7 @@ def align_episode_sources(
 
     used_lerobot: set[str] = set()
     aligned: list[AlignmentRow] = []
+    unmatched_raw: list[str] = []
     for raw in sorted(raw_episodes, key=lambda item: (item.suite, item.task_id, item.episode_id)):
         candidates: list[tuple[EpisodeDescriptor, float]] = []
         raw_actions = np.asarray(raw.actions, dtype=np.float64)
@@ -117,9 +156,13 @@ def align_episode_sources(
             if error <= action_atol:
                 candidates.append((candidate, error))
         if not candidates:
-            raise ValueError(
-                f"no matching LeRobot episode for {raw.suite}/{raw.task_id}/{raw.episode_id}"
-            )
+            if require_all_raw:
+                raise ValueError(
+                    "no matching LeRobot episode for "
+                    f"{raw.suite}/{raw.task_id}/{raw.episode_id}"
+                )
+            unmatched_raw.append(_episode_key(raw))
+            continue
         if len(candidates) != 1:
             names = sorted(candidate.episode_id for candidate, _ in candidates)
             raise ValueError(
@@ -144,8 +187,29 @@ def align_episode_sources(
             )
         )
     rows = tuple(aligned)
+    if not rows:
+        raise ValueError("the raw and LeRobot sources have no exact shared episodes")
+    unmatched_raw_ids = tuple(sorted(unmatched_raw))
+    unmatched_lerobot_ids = tuple(
+        sorted(
+            _episode_key(row)
+            for row in lerobot_episodes
+            if row.episode_id not in used_lerobot
+        )
+    )
     return AlignmentManifest(
         rows=rows,
         action_atol=float(action_atol),
-        semantic_sha256=_semantic_hash(rows, action_atol),
+        semantic_sha256=_semantic_hash(
+            rows,
+            action_atol,
+            raw_episode_count=len(raw_episodes),
+            lerobot_episode_count=len(lerobot_episodes),
+            unmatched_raw_episode_ids=unmatched_raw_ids,
+            unmatched_lerobot_episode_ids=unmatched_lerobot_ids,
+        ),
+        raw_episode_count=len(raw_episodes),
+        lerobot_episode_count=len(lerobot_episodes),
+        unmatched_raw_episode_ids=unmatched_raw_ids,
+        unmatched_lerobot_episode_ids=unmatched_lerobot_ids,
     )

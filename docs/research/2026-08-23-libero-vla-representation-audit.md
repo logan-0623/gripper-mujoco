@@ -75,6 +75,7 @@ The formal profile uses the official `lerobot/libero` LeRobotDataset. Every trai
 - **Pseudo-replication.** Frames are not independent replicates. Confidence intervals and comparisons use episode/task sampling units.
 - **SFT fraction confound.** Fractions must be nested and task balanced. Each stage starts independently from the same immutable base snapshot and uses a fixed epoch budget, not fixed steps, for the primary data-scale comparison.
 - **Replay drift.** Annotation is invalid if state/action playback does not match the stored trajectory within the registered tolerances.
+- **Cross-source subset mismatch.** The official LeRobot release is a filtered subset of the raw HDF5 demonstrations. State Bank construction therefore uses only episodes with an exact task, frame-count, and action-sequence match (within the registered tolerance), reports unmatched episodes explicitly, and fails unless every configured task retains the required held-out episode count. Unmatched raw episodes are never assigned LeRobot observations by approximate nearest matching.
 - **Outcome availability.** The public nominal demonstration records do not expose a trustworthy success/failure field aligned to every pre-action observation. The audit reports whether the terminal goal relation is observed, but does not relabel its absence as failure. Failed/partial outcome supervision must come from a source that explicitly records it.
 
 ## 5. Data-leakage risks and controls

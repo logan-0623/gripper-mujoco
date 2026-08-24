@@ -81,6 +81,7 @@ def collect_libero_state_bank(config: LiberoStudyConfig) -> dict[str, object]:
         catalog.raw_episodes,
         tuple(item.descriptor for item in catalog.lerobot_episodes),
         action_atol=config.replay.action_atol,
+        require_all_raw=False,
     )
     config_hash = _config_hash(config)
     pipeline_hash = _pipeline_hash()
@@ -148,7 +149,8 @@ def collect_libero_state_bank(config: LiberoStudyConfig) -> dict[str, object]:
     rows_by_task: dict[tuple[str, int], list[AlignmentRow]] = {}
     for row in alignment.rows:
         rows_by_task.setdefault((row.suite, row.task_id), []).append(row)
-    for task_key, task_rows in rows_by_task.items():
+    for task_key in sorted(task_lookup):
+        task_rows = rows_by_task.get(task_key, [])
         if len(task_rows) < config.state_bank.holdout_episodes_per_task:
             raise ValueError(
                 f"task {task_key} has only {len(task_rows)} aligned episodes; "
@@ -340,6 +342,7 @@ def collect_libero_state_bank(config: LiberoStudyConfig) -> dict[str, object]:
             "source_binding_sha256": source_binding,
             "source_catalog_sha256": catalog_binding,
             "alignment_sha256": alignment.semantic_sha256,
+            "alignment_coverage": alignment.to_dict()["coverage"],
             "config_sha256": config_hash,
             "pipeline_sha256": pipeline_hash,
             "ontology_sha256": ontology_hash,
