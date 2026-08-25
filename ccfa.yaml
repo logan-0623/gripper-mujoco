@@ -8,9 +8,9 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "libero_state_bank_implementation_ready"
-  gate: "linux_libero_source_alignment_and_replay_pending"
-  updated_at: "2026-08-23"
+  current: "libero_state_bank_formal_complete"
+  gate: "smolvla_longitudinal_execution_pending"
+  updated_at: "2026-08-24"
 
 artifacts:
   scientific_audit: "docs/research/2026-08-23-libero-vla-representation-audit.md"
@@ -19,6 +19,7 @@ artifacts:
   experiments: "outputs/representation_study/"
   legacy_act: "outputs/graph_control/graph_v2_pilot/"
   libero_main: "outputs/representation_study/libero_smolvla/"
+  libero_state_bank_evidence: "docs/results/libero_state_bank_formal/"
 
 scientific_contract:
   primary_question: "What physically grounded interaction information exists before manipulation SFT, what is selectively acquired or reorganized during SFT, where does it become action-proximal, and which factors are accessible, functionally used, or useful in closed loop?"
@@ -93,9 +94,21 @@ experiment_registry:
     role: conditional_future_extension
   - id: LIBERO_STATE_BANK
     name: "Shared deterministic LIBERO interaction State Bank"
-    status: implementation_only
+    status: formal_evidence
     role: blocking_main-study_infrastructure
-    next_gate: "execute source alignment, replay, annotation, distribution audit, and timeline review on Linux"
+    evidence:
+      tasks: 20
+      episodes: 100
+      states: 13603
+      selected_replay_acceptance_rate: 1.0
+      candidate_replay_acceptance_rate: 0.8333333333333334
+      replay_l2_p95: 0.007929165315353093
+      replay_max_abs: 0.03937558327259269
+      audit_passed: true
+      manual_timeline_review_passed: true
+      artifact: "docs/results/libero_state_bank_formal/"
+    limitation: "Candidate replay rejection is task-dependent; libero_spatial task 7 required 23 candidates to obtain 5 valid episodes. This is infrastructure evidence, not a SmolVLA representation result."
+    next_gate: "complete checkpoint manifests and fixed-tap latent extraction for all available SmolVLA stages"
   - id: SMOLVLA_LONGITUDINAL
     name: "SmolVLA pretrained/SFT25/SFT50/SFT100 longitudinal study"
     status: not_started
@@ -118,17 +131,17 @@ dependency_graph:
     requires: []
   - id: P0_B
     name: "LIBERO source alignment and deterministic replay"
-    status: implementation_only
+    status: formal_evidence
     requires: [P0_A]
     gate: "raw HDF5 + immutable LeRobot revision + replay tolerances"
   - id: P0_C
     name: "privileged interaction annotation"
-    status: implementation_only
+    status: formal_evidence
     requires: [P0_B]
     gate: "finite geometry + temporal contact/stable-grasp/phase/next-relation audit"
   - id: P0_D
     name: "shared State Bank and group splits"
-    status: implementation_only
+    status: formal_evidence
     requires: [P0_C]
     gate: "audit report + task leakage test + episode leakage test + video-backed timelines + explicit manual timeline approval"
   - id: P0_E

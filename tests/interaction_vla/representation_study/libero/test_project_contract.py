@@ -9,7 +9,11 @@ def test_ccfa_registry_preserves_evidence_and_stops_before_rl() -> None:
     assert registry["ACT_GRAPH_V2"]["status"] == "formal_evidence"
     assert registry["REFLECT_GRAPH_PRETRAIN"]["status"] == "pilot_complete"
     assert registry["RECOVERY_RL_V2_CALIBRATION"]["status"] == "failed_gate"
-    assert registry["LIBERO_STATE_BANK"]["status"] == "implementation_only"
+    state_bank = registry["LIBERO_STATE_BANK"]
+    assert state_bank["status"] == "formal_evidence"
+    assert state_bank["evidence"]["audit_passed"] is True
+    assert state_bank["evidence"]["manual_timeline_review_passed"] is True
+    assert Path(state_bank["evidence"]["artifact"]).is_dir()
     assert registry["SMOLVLA_LONGITUDINAL"]["status"] == "not_started"
     assert config["scientific_contract"]["rl_scope"] == "conditional_future_work"
     graph = {row["id"]: row for row in config["dependency_graph"]}

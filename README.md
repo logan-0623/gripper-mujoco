@@ -17,12 +17,13 @@ Interaction Graph 是 privileged annotation / measurement vocabulary，不是必
 | ACT Graph-v2，3 seeds、每条件 60 rollouts | `formal_evidence` | 受控机制证据 |
 | Graph diagnostics / Reflect transfer / ACT stagewise | `pilot_complete` | 研究动机与诊断 |
 | Recovery RL v2 calibration | `failed_gate` | SFT recovery success 未进入 30–50% 目标区间 |
-| LIBERO State Bank / SmolVLA taps / probes | `implementation_only` | 等待 Linux 正式执行 |
+| LIBERO State Bank | `formal_evidence` | 20 tasks、100 episodes、13,603 states；自动审计与 12 张 timeline 人工审批通过 |
+| SmolVLA taps / latent / probes | `implementation_only` | State Bank gate 已解锁，等待正式 checkpoint 与分析运行 |
 | SmolVLA pretrained/SFT25/SFT50/SFT100 结果 | `not_started` | 主现代 VLA 证据 |
 
 旧 ACT 成功率为 Flat 30.0%、Teacher Graph 35.0%、Predicted Random 40.0%、Predicted Reflect 41.7%。它说明 graph correctness 不能直接当作 control utility，但不回答新的 SmolVLA longitudinal question。
 
-完整科学审计见 [LIBERO–VLA audit](docs/research/2026-08-23-libero-vla-representation-audit.md)，机器可读状态见 [ccfa.yaml](ccfa.yaml)。
+完整科学审计见 [LIBERO–VLA audit](docs/research/2026-08-23-libero-vla-representation-audit.md)，正式 State Bank 的轻量审计证据见 [result package](docs/results/libero_state_bank_formal/README.md)，机器可读状态见 [ccfa.yaml](ccfa.yaml)。
 
 ## Linux / RTX 4090 环境
 
