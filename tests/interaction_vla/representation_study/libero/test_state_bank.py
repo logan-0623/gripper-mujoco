@@ -1,3 +1,4 @@
+import inspect
 import json
 from pathlib import Path
 
@@ -28,6 +29,28 @@ def test_state_bank_shards_resume_only_when_binding_matches(tmp_path: Path) -> N
     stale = EpisodeShardWriter(tmp_path / "bank", source_binding_sha256="b" * 64)
     with pytest.raises(ValueError, match="stale episode shard"):
         stale.write("libero_spatial:0:demo_0", records)
+
+
+def test_state_bank_shards_allow_explicitly_compatible_prior_binding(
+    tmp_path: Path,
+) -> None:
+    parameters = inspect.signature(EpisodeShardWriter).parameters
+    assert "compatible_source_bindings" in parameters
+    records = (make_record(task_id=0, episode=0, frame=0),)
+    old_binding = "a" * 64
+    current_binding = "b" * 64
+    old = EpisodeShardWriter(tmp_path / "bank", source_binding_sha256=old_binding)
+    old.write("libero_spatial:0:demo_0", records, metadata={"replay": {"passed": True}})
+
+    current = EpisodeShardWriter(
+        tmp_path / "bank",
+        source_binding_sha256=current_binding,
+        compatible_source_bindings=(old_binding,),
+    )
+
+    loaded = current.load("libero_spatial:0:demo_0")
+    assert loaded is not None
+    assert loaded[0] == records
 
 
 def test_finalize_builds_two_splits_and_rejects_incompatible_overwrite(tmp_path: Path) -> None:

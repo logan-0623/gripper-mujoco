@@ -429,6 +429,16 @@ done
 
 `state-bank collect` 每个 episode 保存一个绑定过的 shard。中断后直接重跑同一条命令；已经完成的 episode 会从 cache 恢复。完整 State Bank 已存在且 scientific binding 相同，也会直接返回现有 audit。
 
+正式采集按固定 hash 顺序为每个 task 寻找 5 个 replay-valid episode。若某个 candidate 超出预注册的 `l2_p95` 或 `max_abs` 容差，它会保留在 `replay/report.json` 的 rejection audit 中，并由同一 task 的下一个 candidate 确定性补位；容差不会被自动放宽。报告中的 `episodes/accepted/acceptance_rate` 描述最终纳入 State Bank 的 episode，`candidate_attempts/candidate_rejected/candidate_acceptance_rate` 描述完整筛选过程。
+
+如果旧版本已完成 100 个 replay、随后以 `94/100` 失败，不要删除 `.episode_shards`。更新代码后直接重跑同一正式命令；兼容迁移只接受该已知旧 pipeline binding，通常会读取原有 100 个 shard，并只运行每个失败 task 所需的补位 candidate：
+
+```bash
+CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
+.venv-lerobot/bin/python -m interaction_vla.representation_study libero state-bank collect \
+  --config "$CONFIG"
+```
+
 如果报告 scientific binding 不同，不要删除旧结果。修改配置的 `output_dir`，生成新的隔离实验目录。
 
 ### SmolVLA SFT

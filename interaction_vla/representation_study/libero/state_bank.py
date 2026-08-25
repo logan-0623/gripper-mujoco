@@ -37,9 +37,16 @@ def _records_bytes(records: Sequence[StateRecord]) -> bytes:
 
 
 class EpisodeShardWriter:
-    def __init__(self, output_dir: str | Path, *, source_binding_sha256: str) -> None:
+    def __init__(
+        self,
+        output_dir: str | Path,
+        *,
+        source_binding_sha256: str,
+        compatible_source_bindings: Sequence[str] = (),
+    ) -> None:
         self.output_dir = Path(output_dir)
         self.source_binding_sha256 = source_binding_sha256
+        self.compatible_source_bindings = frozenset(compatible_source_bindings)
         self.shards = self.output_dir / ".episode_shards"
 
     def _path(self, episode_key: str) -> Path:
@@ -53,10 +60,11 @@ class EpisodeShardWriter:
         if not path.is_file():
             return None
         payload = json.loads(path.read_text(encoding="utf-8"))
-        if (
-            payload.get("episode_key") != episode_key
-            or payload.get("source_binding_sha256") != self.source_binding_sha256
-        ):
+        shard_binding = payload.get("source_binding_sha256")
+        if payload.get("episode_key") != episode_key or shard_binding not in {
+            self.source_binding_sha256,
+            *self.compatible_source_bindings,
+        }:
             raise ValueError(f"stale episode shard: {path}")
         records = tuple(StateRecord.from_dict(item) for item in payload.get("records", ()))
         if _sha256_bytes(_records_bytes(records)) != payload.get("record_sha256"):
