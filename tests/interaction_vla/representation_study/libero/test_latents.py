@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import torch
 
+from interaction_vla.representation_study.libero import latents as latents_module
 from interaction_vla.representation_study.libero.latents import (
     LatentCacheWriter,
     deterministic_inference_noise,
@@ -73,3 +74,38 @@ def test_inference_noise_is_state_keyed_and_batch_order_invariant() -> None:
     assert torch.equal(first[0], reverse[1])
     assert torch.equal(first[1], reverse[0])
     assert not torch.equal(first[0], first[1])
+
+
+def test_libero_smolvla_camera_binding_matches_formal_training() -> None:
+    from interaction_vla.representation_study.libero.feature_binding import (
+        LIBERO_SMOLVLA_RENAME_MAP,
+    )
+
+    assert LIBERO_SMOLVLA_RENAME_MAP == {
+        "observation.images.image": "observation.images.camera1",
+        "observation.images.image2": "observation.images.camera2",
+    }
+
+
+def test_latent_implementation_binding_includes_dataset_bound_loader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = latents_module._latent_implementation_source_paths()
+    relative_names = {path.as_posix().split("representation_study/")[-1] for path in paths}
+    assert relative_names == {
+        "libero/latents.py",
+        "libero/taps.py",
+        "libero/feature_binding.py",
+        "backends/lerobot.py",
+    }
+    digests = {
+        path.as_posix(): f"{index + 1:064x}" for index, path in enumerate(paths)
+    }
+    monkeypatch.setattr(
+        latents_module, "_file_sha256", lambda path: digests[Path(path).as_posix()]
+    )
+    first = latents_module._latent_implementation_sha256()
+    backend_path = next(path for path in paths if path.name == "lerobot.py")
+    digests[backend_path.as_posix()] = "f" * 64
+    second = latents_module._latent_implementation_sha256()
+    assert first != second
