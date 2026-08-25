@@ -8,14 +8,11 @@ from pathlib import Path
 from typing import Sequence
 
 from .config import LiberoStudyConfig
+from .feature_binding import LIBERO_SMOLVLA_RENAME_MAP
 from ..state_bank.io import write_json_atomic
 
 
 TRAINABLE_STAGES = ("sft_25", "sft_50", "sft_100")
-LIBERO_SMOLVLA_RENAME_MAP = {
-    "observation.images.image": "observation.images.camera1",
-    "observation.images.image2": "observation.images.camera2",
-}
 
 
 def _tree_sha256(path: Path) -> str:
