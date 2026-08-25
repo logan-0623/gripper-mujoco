@@ -12,6 +12,7 @@ from tqdm.auto import tqdm
 
 from ..state_bank.io import write_json_atomic
 from .config import LiberoStudyConfig
+from .feature_binding import LIBERO_SMOLVLA_RENAME_MAP
 from .schema import StateRecord
 from .state_bank import load_state_bank
 from .taps import SEMANTIC_TAPS, SmolVLASemanticTapCapture
@@ -47,6 +48,24 @@ def _tree_sha256(path: Path) -> str:
         relative = str(item.relative_to(path)) if path.is_dir() else item.name
         digest.update(relative.encode("utf-8"))
         digest.update(_file_sha256(item).encode("ascii"))
+    return digest.hexdigest()
+
+
+def _latent_implementation_source_paths() -> tuple[Path, ...]:
+    return (
+        Path(__file__),
+        Path(__file__).with_name("taps.py"),
+        Path(__file__).with_name("feature_binding.py"),
+        Path(__file__).parents[1] / "backends" / "lerobot.py",
+    )
+
+
+def _latent_implementation_sha256() -> str:
+    source_root = Path(__file__).parents[1]
+    digest = hashlib.sha256()
+    for source in _latent_implementation_source_paths():
+        digest.update(source.relative_to(source_root).as_posix().encode("utf-8"))
+        digest.update(_file_sha256(source).encode("ascii"))
     return digest.hexdigest()
 
 
@@ -160,15 +179,11 @@ def extract_smolvla_latents(
         checkpoint,
         repo_id=config.sources.lerobot_repo_id,
         dataset_root=dataset.root,
+        rename_map=LIBERO_SMOLVLA_RENAME_MAP,
     )
     policy, preprocessor, _ = backend._loaded()
     state_bank_hash = _file_sha256(bank_root / "manifest.json")
-    implementation_hash = hashlib.sha256(
-        (
-            _file_sha256(Path(__file__))
-            + _file_sha256(Path(__file__).with_name("taps.py"))
-        ).encode("ascii")
-    ).hexdigest()
+    implementation_hash = _latent_implementation_sha256()
     state_ids = tuple(record.state_id for record in records)
     writers = {
         tap: LatentCacheWriter(
