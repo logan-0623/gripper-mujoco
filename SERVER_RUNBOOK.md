@@ -462,6 +462,36 @@ outputs/representation_study/<run>/stages/<stage>/run/checkpoints/last/
 
 Latent 以 `state_id × checkpoint × tap` 分片缓存；同一 binding 下可直接重跑 `latents extract`。Probe cell 同样有严格 binding cache。若 checkpoint、State Bank、配置或实现发生改变，旧 cache 会被拒绝，不应手工混用。
 
+如果曾在 `1f9a7cc` 之前运行正式 SmolVLA latent extraction，并看到 policy 期待 `image/image2`、preprocessor 却输出 `camera1/camera2` 的错误，那么旧 latent rows 使用了错误 camera binding。它们不能继续复用，但 SFT checkpoint 本身不受影响，无需重训。
+
+更新代码后，先把旧 cache 移到可恢复备份；不要删除：
+
+```bash
+cd /root/gripper-mujoco
+git pull --ff-only origin main
+
+LATENT_ROOT=outputs/representation_study/libero_smolvla/latents
+LATENT_BACKUP=outputs/representation_study/libero_smolvla/latents_invalid_camera_binding_20260825
+test -e "$LATENT_ROOT"
+test ! -e "$LATENT_BACKUP"
+mv "$LATENT_ROOT" "$LATENT_BACKUP"
+```
+
+然后只重新抽取当前已经存在的正式 stages。当前至少运行 `pretrained` 和 `sft_25`：
+
+```bash
+CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
+for stage in pretrained sft_25
+do
+  .venv-lerobot/bin/python -m interaction_vla.representation_study \
+    libero latents extract --config "$CONFIG" --stage "$stage"
+  .venv-lerobot/bin/python -m interaction_vla.representation_study \
+    libero latents inspect --config "$CONFIG" --stage "$stage"
+done
+```
+
+新 loader 会保留 checkpoint 的 `camera1/camera2/camera3` 输入契约，并用训练时相同的 rename map 处理 LIBERO 的 `image/image2`。新的 latent implementation binding 同时覆盖 loader 和 rename contract，因此旧目录即使移回原位也会被明确拒绝，而不会静默混入新结果。
+
 ## 8. 关键产物
 
 Smoke 根目录：
