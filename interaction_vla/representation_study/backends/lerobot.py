@@ -185,6 +185,7 @@ class LeRobotPolicyBackend:
         *,
         repo_id: str,
         dataset_root: str | Path,
+        rename_map: Mapping[str, str] | None = None,
     ) -> None:
         """Load foundation weights while binding policy features to one LeRobotDataset."""
         if self.backend_name == "act" or (Path(checkpoint) / "residual_study.json").is_file():
@@ -197,10 +198,13 @@ class LeRobotPolicyBackend:
         policy_config = PreTrainedConfig.from_pretrained(str(checkpoint))
         policy_config.device = self.device.type
         policy_config.pretrained_path = Path(checkpoint)
-        policy_config.input_features = {}
-        policy_config.output_features = {}
+        feature_rename_map = dict(rename_map or {})
         metadata = LeRobotDatasetMetadata(repo_id, root=Path(dataset_root))
-        policy = make_policy(policy_config, ds_meta=metadata)
+        policy = make_policy(
+            policy_config,
+            ds_meta=metadata,
+            rename_map=feature_rename_map,
+        )
         features = {**policy.config.input_features, **policy.config.output_features}
         preprocessor, postprocessor = make_pre_post_processors(
             policy_cfg=policy.config,
@@ -208,6 +212,9 @@ class LeRobotPolicyBackend:
             dataset_stats=metadata.stats,
             preprocessor_overrides={
                 "device_processor": {"device": self.device.type},
+                "rename_observations_processor": {
+                    "rename_map": feature_rename_map,
+                },
                 "normalizer_processor": {
                     "features": features,
                     "norm_map": policy.config.normalization_mapping,
