@@ -492,6 +492,18 @@ done
 
 新 loader 会保留 checkpoint 的 `camera1/camera2/camera3` 输入契约，并用训练时相同的 rename map 处理 LIBERO 的 `image/image2`。新的 latent implementation binding 同时覆盖 loader 和 rename contract，因此旧目录即使移回原位也会被明确拒绝，而不会静默混入新结果。
 
+如果 extraction 已经运行到 `1700/1701`，随后报告 `SmolVLA semantic tap metadata changed across batches`，这是 `13,603` 个 states 的最后一个 3-state batch 暴露出的旧 metadata bug。`ec4eb66` 已让 shape metadata 排除可变 batch 维。更新代码后，把这次未完成目录单独保留，再重新运行上面的 extraction；checkpoint 和 State Bank 都不需要重建：
+
+```bash
+git pull --ff-only origin main
+
+LATENT_ROOT=outputs/representation_study/libero_smolvla/latents
+LATENT_BACKUP=outputs/representation_study/libero_smolvla/latents_incomplete_batch_metadata_20260825
+test -e "$LATENT_ROOT"
+test ! -e "$LATENT_BACKUP"
+mv "$LATENT_ROOT" "$LATENT_BACKUP"
+```
+
 ## 8. 关键产物
 
 Smoke 根目录：
