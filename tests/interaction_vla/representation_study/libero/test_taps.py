@@ -45,11 +45,14 @@ class FakeFlow(nn.Module):
     def run(self, images, img_masks):
         prefix, pad, _ = self.embed_prefix(images, img_masks, None, None)
         self.vlm_with_expert.forward(inputs_embeds=[prefix, None])
+        batch_size = images[0].shape[0]
         for value in (1.0, 2.0, 3.0):
-            expert = self.action_time_mlp_out(torch.full((2, 3, 4), value))
+            expert = self.action_time_mlp_out(
+                torch.full((batch_size, 3, 4), value)
+            )
             suffix, _ = self.vlm_with_expert.forward(inputs_embeds=[None, expert])
             self.action_out_proj(suffix[1])
-        return torch.zeros(2, 7)
+        return torch.zeros(batch_size, 7)
 
 
 class FakePolicy(nn.Module):
@@ -75,3 +78,23 @@ def test_smolvla_taps_select_prefix_and_final_denoising_call() -> None:
     assert torch.equal(taps["action_expert_input"], torch.full((2, 4), 3.0))
     assert torch.equal(taps["pre_action"], torch.full((2, 4), 23.0))
     assert metadata["pre_action"]["call_selection"] == "final_denoising"
+
+
+def test_smolvla_tap_metadata_excludes_variable_batch_dimension() -> None:
+    policy = FakePolicy()
+
+    def capture(batch_size: int) -> dict[str, dict[str, object]]:
+        images = [
+            torch.ones(batch_size, 2, 4),
+            torch.full((batch_size, 2, 4), 2.0),
+        ]
+        masks = [
+            torch.ones(batch_size, dtype=torch.bool),
+            torch.ones(batch_size, dtype=torch.bool),
+        ]
+        _, _, metadata = SmolVLASemanticTapCapture(policy).capture(
+            lambda: policy.model.run(images, masks)
+        )
+        return metadata
+
+    assert capture(2) == capture(1)
