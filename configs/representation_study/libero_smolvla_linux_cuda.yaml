@@ -56,6 +56,8 @@ taps:
 probes:
   bootstrap_samples: 2000
   confidence_level: 0.95
+  minimum_bootstrap_valid_rate: 0.90
+  matched_seed_offsets: [0, 1, 2]
   linear_l2: [0.0, 0.0001, 0.001, 0.01]
   mlp_hidden_dim: 256
   linear_epochs: 150

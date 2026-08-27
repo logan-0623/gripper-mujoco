@@ -346,6 +346,8 @@ done
   --config "$CONFIG"
 ```
 
+Probe protocol v2 会复用现有 State Bank、checkpoint 和 latent cache，不需要重新训练或重新提取。Smoke 使用一个确定性 seed 验证流程；正式配置使用三个按 `tap/factor/split` 匹配、且跨 training stage 完全相同的 probe seeds。旧的 v1 `probes/report.json` 和 `probes/.cells/` 保留不动；v2 写入 `probes/protocol_v2/`。
+
 只有以上流程全部通过，才进入正式配置。
 
 ## 6. 正式实验
@@ -529,7 +531,7 @@ stages/sft_25/manifest.json
 stages/sft_50/manifest.json
 stages/sft_100/manifest.json
 latents/<stage>/report.json
-probes/report.json
+probes/protocol_v2/report.json
 ```
 
 快速检查：
@@ -549,6 +551,12 @@ find outputs/representation_study/libero_smolvla \
 - 哪些因素随 SFT 增强、减弱或向 action-proximal tap 移动；
 - Contact、StableGrasp、NextRelation 是否仍然薄弱；
 - 线性 probe 与 MLP capacity check 是否一致。
+- `stage_deltas` / `secondary_stage_deltas` 的 paired `destination_minus_reference` 与置信区间；
+- `identical_latent_sanity.passed` 是否为 `true`。相同 latent 若产生不同 probe 结果会直接失败，不能解释为训练阶段变化。
+
+`primary_metric` 是 matched probe seeds 的均值，`probe_metric_std` 只描述 probe 优化敏感性，不是机器人任务的独立重复。阶段变化应读取 paired stage delta，不能通过两个独立 accessibility 区间是否重叠来推断。
+
+分类指标始终使用训练分区的完整类别全集。二元事件的 bootstrap 若有效重采样比例低于 `minimum_bootstrap_valid_rate`，该区间和对应 accessibility/stage-delta gate 会失败，不能从剩余条件样本推断。阶段报告分别给出 `delta_low/high` 和按指标方向转换后的 `improvement_low/high`；Geometry 不要把 raw delta 区间直接画成 improvement 区间。
 
 在 probe gate 得到可解释结果前，不运行：
 

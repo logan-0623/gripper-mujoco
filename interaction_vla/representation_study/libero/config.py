@@ -117,6 +117,8 @@ class TapConfig:
 class ProbeConfig:
     bootstrap_samples: int
     confidence_level: float
+    minimum_bootstrap_valid_rate: float
+    matched_seed_offsets: tuple[int, ...]
     linear_l2: tuple[float, ...]
     mlp_hidden_dim: int
     linear_epochs: int
@@ -304,6 +306,12 @@ def load_libero_study_config(path: str | Path) -> LiberoStudyConfig:
         probes=ProbeConfig(
             bootstrap_samples=int(probes.get("bootstrap_samples", 2000)),
             confidence_level=float(probes.get("confidence_level", 0.95)),
+            minimum_bootstrap_valid_rate=float(
+                probes.get("minimum_bootstrap_valid_rate", 0.9)
+            ),
+            matched_seed_offsets=tuple(
+                int(item) for item in probes.get("matched_seed_offsets", (0,))
+            ),
             linear_l2=tuple(float(item) for item in probes.get("linear_l2", (0.0, 1e-4, 1e-3))),
             mlp_hidden_dim=int(probes.get("mlp_hidden_dim", 256)),
             linear_epochs=int(probes.get("linear_epochs", 150)),
@@ -346,6 +354,17 @@ def load_libero_study_config(path: str | Path) -> LiberoStudyConfig:
         raise ValueError("probes.bootstrap_samples must be positive")
     if not 0.0 < result.probes.confidence_level < 1.0:
         raise ValueError("probes.confidence_level must be in (0, 1)")
+    if not 0.0 < result.probes.minimum_bootstrap_valid_rate <= 1.0:
+        raise ValueError("probes.minimum_bootstrap_valid_rate must be in (0, 1]")
+    if (
+        not result.probes.matched_seed_offsets
+        or any(value < 0 for value in result.probes.matched_seed_offsets)
+        or len(set(result.probes.matched_seed_offsets))
+        != len(result.probes.matched_seed_offsets)
+    ):
+        raise ValueError(
+            "probes.matched_seed_offsets must contain unique non-negative integers"
+        )
     if not result.probes.linear_l2 or any(value < 0 for value in result.probes.linear_l2):
         raise ValueError("probes.linear_l2 must contain non-negative values")
     if result.probes.mlp_hidden_dim <= 0:

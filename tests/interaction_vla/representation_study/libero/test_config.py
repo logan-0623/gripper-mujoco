@@ -33,7 +33,17 @@ def test_smoke_config_is_isolated_deterministic_and_rl_free() -> None:
         "pre_action",
     )
     assert config.taps.pooling == "valid_token_mean"
+    assert config.probes.matched_seed_offsets == (0,)
+    assert config.probes.minimum_bootstrap_valid_rate == 0.9
     assert not hasattr(config, "rl")
+
+
+def test_formal_probe_config_uses_three_matched_seed_offsets() -> None:
+    config = load_libero_study_config(
+        "configs/representation_study/libero_smolvla_linux_cuda.yaml"
+    )
+
+    assert config.probes.matched_seed_offsets == (0, 1, 2)
 
 
 def test_config_rejects_non_nested_fraction_order(tmp_path: Path) -> None:
@@ -120,6 +130,8 @@ def test_config_rejects_invalid_gate_and_probe_parameters(tmp_path: Path) -> Non
         ("states_per_episode: 16", "states_per_episode: 0"),
         ("confidence_level: 0.95", "confidence_level: 1.0"),
         ("denoising_call: final", "denoising_call: first"),
+        ("matched_seed_offsets: [0]", "matched_seed_offsets: [0, 0]"),
+        ("minimum_bootstrap_valid_rate: 0.90", "minimum_bootstrap_valid_rate: 1.1"),
     )
     for index, (original, changed) in enumerate(replacements):
         path = tmp_path / f"bad-parameter-{index}.yaml"

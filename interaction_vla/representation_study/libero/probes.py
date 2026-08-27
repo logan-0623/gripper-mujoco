@@ -231,11 +231,13 @@ def run_linear_probe(
             prediction = test_logits.argmax(dim=1).numpy()
             probability = torch.softmax(test_logits, dim=1).numpy()
         binary = len(classes) == 2
+        label_universe = np.arange(len(classes), dtype=np.int64)
         test_metrics = classification_metrics(
             encoded[test],
             prediction,
             score=probability[:, 1] if binary else None,
             binary=binary,
+            labels=label_universe,
         )
         baseline_prediction = constant_classification_baseline(encoded[train])
         majority = int(baseline_prediction[0])
@@ -246,6 +248,7 @@ def run_linear_probe(
             baseline_test,
             score=np.full(len(test), prevalence) if binary else None,
             binary=binary,
+            labels=label_universe,
         )
         return {
             "model": "linear",
@@ -381,6 +384,7 @@ def run_shallow_mlp_probe(
             prediction,
             score=probability[:, 1] if binary else None,
             binary=binary,
+            labels=np.arange(output_dim, dtype=np.int64),
         )
         return {
             "model": "shallow_mlp",

@@ -27,7 +27,33 @@ from .state_bank import load_state_bank
 from .visualize import validate_annotation_timeline_report
 
 
-PROBE_REPORT_SCHEMA = "libero_stage_tap_factor_probe_report_v1"
+PROBE_PROTOCOL = "protocol_v2"
+PROBE_REPORT_SCHEMA = "libero_stage_tap_factor_probe_report_v2"
+
+
+def _probe_artifact_root(output_dir: Path) -> Path:
+    return output_dir / "probes" / PROBE_PROTOCOL
+
+
+def _matched_probe_seed(
+    *,
+    base_seed: int,
+    tap: str,
+    factor: str,
+    split_name: str,
+    replicate_offset: int,
+) -> int:
+    if base_seed < 0 or replicate_offset < 0:
+        raise ValueError("probe seeds and offsets must be non-negative")
+    if tap not in STUDY_TAPS or factor not in FACTOR_NAMES:
+        raise ValueError("probe seed identity contains an unknown tap or factor")
+    if split_name not in {"task_group", "episode_group"}:
+        raise ValueError("probe seed identity contains an unknown split")
+    payload = json.dumps(
+        [base_seed, tap, factor, split_name, replicate_offset],
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") % (2**31 - 1)
 
 
 def _json_safe(value: object) -> object:
@@ -216,9 +242,14 @@ def _shortcut_baseline_metrics(
                     encoded_prediction,
                     score=encoded_prediction.astype(np.float64),
                     binary=True,
+                    labels=np.asarray([0, 1], dtype=np.int64),
                 )
             else:
-                result[name] = classification_metrics(targets[test], prediction)
+                result[name] = classification_metrics(
+                    targets[test],
+                    prediction,
+                    labels=np.unique(targets[train]),
+                )
     return result
 
 
@@ -248,6 +279,8 @@ def _bootstrap_ci(
     confidence: float,
     seed: int,
     normalization_scale: np.ndarray | None = None,
+    labels: np.ndarray | None = None,
+    minimum_valid_rate: float = 0.0,
 ) -> dict[str, object]:
     unique = tuple(sorted(set(clusters)))
     if len(unique) < 2:
@@ -259,6 +292,9 @@ def _bootstrap_ci(
     rng = np.random.default_rng(seed)
     values: list[float] = []
     metric_name, _ = _primary_metric(factor)
+    label_universe = labels
+    if factor != "geometry" and label_universe is None:
+        label_universe = np.unique(np.concatenate((target, prediction)))
     for _ in range(samples):
         chosen = rng.choice(unique, size=len(unique), replace=True)
         indices = np.concatenate([by_cluster[str(cluster)] for cluster in chosen])
@@ -275,21 +311,319 @@ def _bootstrap_ci(
                 prediction[indices],
                 score=sampled_score,
                 binary=binary,
-                labels=np.unique(target),
+                labels=label_universe,
             )[metric_name]
         if np.isfinite(value):
             values.append(float(value))
-    if not values:
-        return {"unit": "group", "groups": len(unique), "low": None, "high": None}
+    valid_rate = len(values) / samples
+    if not values or valid_rate < minimum_valid_rate:
+        return {
+            "unit": "group",
+            "groups": len(unique),
+            "requested_samples": samples,
+            "samples": len(values),
+            "valid_rate": valid_rate,
+            "minimum_valid_rate": minimum_valid_rate,
+            "gate_reason": "bootstrap valid rate is below threshold",
+            "low": None,
+            "high": None,
+        }
     alpha = (1.0 - confidence) / 2.0
     return {
         "unit": "group",
         "groups": len(unique),
+        "requested_samples": samples,
         "samples": len(values),
+        "valid_rate": valid_rate,
+        "minimum_valid_rate": minimum_valid_rate,
         "confidence_level": confidence,
         "low": float(np.quantile(values, alpha)),
         "high": float(np.quantile(values, 1.0 - alpha)),
     }
+
+
+def _paired_metric_value(
+    *,
+    factor: str,
+    target: np.ndarray,
+    prediction: np.ndarray,
+    score: np.ndarray | None,
+    indices: np.ndarray,
+    normalization_scale: np.ndarray | None,
+    labels: np.ndarray | None,
+) -> float:
+    metric_name, _ = _primary_metric(factor)
+    if factor == "geometry":
+        if normalization_scale is None:
+            raise ValueError("paired geometry delta requires normalization scale")
+        return float(
+            geometry_metrics(
+                target[indices],
+                prediction[indices],
+                normalization_scale=normalization_scale,
+            )[metric_name]
+        )
+    binary = factor in {"contact", "stable_grasp"}
+    sampled_score = None if score is None else score[indices]
+    return float(
+        classification_metrics(
+            target[indices],
+            prediction[indices],
+            score=sampled_score,
+            binary=binary,
+            labels=labels,
+        )[metric_name]
+    )
+
+
+def _replicated_bootstrap_ci(
+    *,
+    factor: str,
+    target: np.ndarray,
+    predictions: Sequence[np.ndarray],
+    scores: Sequence[np.ndarray | None],
+    clusters: Sequence[str],
+    samples: int,
+    confidence: float,
+    seed: int,
+    normalization_scale: np.ndarray | None,
+    labels: np.ndarray | None,
+    minimum_valid_rate: float,
+) -> dict[str, object]:
+    if not predictions or len(predictions) != len(scores):
+        raise ValueError("replicated bootstrap requires aligned probe predictions and scores")
+    unique = tuple(sorted(set(clusters)))
+    if len(unique) < 2:
+        return {"unit": "group", "groups": len(unique), "low": None, "high": None}
+    label_universe = labels
+    if factor != "geometry" and label_universe is None:
+        label_universe = np.unique(np.concatenate([target, *predictions]))
+    cluster_array = np.asarray(clusters)
+    by_cluster = {
+        cluster: np.flatnonzero(cluster_array == cluster) for cluster in unique
+    }
+    rng = np.random.default_rng(seed)
+    values: list[float] = []
+    for _ in range(samples):
+        chosen = rng.choice(unique, size=len(unique), replace=True)
+        indices = np.concatenate([by_cluster[str(cluster)] for cluster in chosen])
+        replicate_values = [
+            _paired_metric_value(
+                factor=factor,
+                target=target,
+                prediction=prediction,
+                score=score,
+                indices=indices,
+                normalization_scale=normalization_scale,
+                labels=label_universe,
+            )
+            for prediction, score in zip(predictions, scores, strict=True)
+        ]
+        if all(np.isfinite(value) for value in replicate_values):
+            values.append(float(np.mean(replicate_values)))
+    valid_rate = len(values) / samples
+    if not values or valid_rate < minimum_valid_rate:
+        return {
+            "unit": "group",
+            "groups": len(unique),
+            "requested_samples": samples,
+            "samples": len(values),
+            "valid_rate": valid_rate,
+            "minimum_valid_rate": minimum_valid_rate,
+            "gate_reason": "bootstrap valid rate is below threshold",
+            "low": None,
+            "high": None,
+        }
+    alpha = (1.0 - confidence) / 2.0
+    return {
+        "unit": "group",
+        "groups": len(unique),
+        "requested_samples": samples,
+        "samples": len(values),
+        "valid_rate": valid_rate,
+        "minimum_valid_rate": minimum_valid_rate,
+        "confidence_level": confidence,
+        "low": float(np.quantile(values, alpha)),
+        "high": float(np.quantile(values, 1.0 - alpha)),
+    }
+
+
+def _paired_stage_delta(
+    *,
+    factor: str,
+    reference: Mapping[str, object],
+    destination: Mapping[str, object],
+    samples: int,
+    confidence: float,
+    seed: int,
+    minimum_valid_rate: float = 0.9,
+) -> dict[str, object]:
+    if reference.get("status") != "complete" or destination.get("status") != "complete":
+        return {"status": "not_available", "reason": "one or both probe cells did not complete"}
+    reference_payload = reference.get("paired_payload")
+    destination_payload = destination.get("paired_payload")
+    if not isinstance(reference_payload, Mapping) or not isinstance(destination_payload, Mapping):
+        return {"status": "not_available", "reason": "paired prediction payload is missing"}
+    state_ids = tuple(str(item) for item in reference_payload.get("state_ids", ()))
+    destination_state_ids = tuple(
+        str(item) for item in destination_payload.get("state_ids", ())
+    )
+    clusters = tuple(str(item) for item in reference_payload.get("clusters", ()))
+    destination_clusters = tuple(
+        str(item) for item in destination_payload.get("clusters", ())
+    )
+    if not state_ids or state_ids != destination_state_ids or clusters != destination_clusters:
+        return {"status": "not_available", "reason": "paired state/group identities differ"}
+    target = np.asarray(reference_payload.get("target"))
+    destination_target = np.asarray(destination_payload.get("target"))
+    if target.shape[0] != len(state_ids) or not np.array_equal(target, destination_target):
+        return {"status": "not_available", "reason": "paired factor targets differ"}
+    reference_replicates = reference_payload.get("replicates")
+    destination_replicates = destination_payload.get("replicates")
+    if not isinstance(reference_replicates, list) or not isinstance(destination_replicates, list):
+        return {"status": "not_available", "reason": "paired probe replicates are missing"}
+    reference_by_seed = {
+        int(item["seed"]): item for item in reference_replicates if isinstance(item, Mapping)
+    }
+    destination_by_seed = {
+        int(item["seed"]): item for item in destination_replicates if isinstance(item, Mapping)
+    }
+    matched_seeds = tuple(sorted(set(reference_by_seed).intersection(destination_by_seed)))
+    if not matched_seeds or set(reference_by_seed) != set(destination_by_seed):
+        return {"status": "not_available", "reason": "paired probe seeds differ"}
+    normalization_value = reference_payload.get("normalization_scale")
+    destination_normalization = destination_payload.get("normalization_scale")
+    normalization_scale = (
+        None if normalization_value is None else np.asarray(normalization_value, dtype=np.float64)
+    )
+    if normalization_value != destination_normalization:
+        return {"status": "not_available", "reason": "paired normalization scales differ"}
+    labels = None
+    if factor != "geometry":
+        reference_labels = reference_payload.get("labels")
+        destination_labels = destination_payload.get("labels")
+        if reference_labels != destination_labels:
+            return {"status": "not_available", "reason": "paired label universes differ"}
+        if reference_labels is not None:
+            labels = np.asarray(reference_labels)
+        else:
+            predictions = [
+                np.asarray(reference_by_seed[value]["prediction"])
+                for value in matched_seeds
+            ] + [
+                np.asarray(destination_by_seed[value]["prediction"])
+                for value in matched_seeds
+            ]
+            labels = np.unique(np.concatenate([target, *predictions]))
+    all_indices = np.arange(len(state_ids), dtype=np.int64)
+
+    def replicate_delta(probe_seed: int, indices: np.ndarray) -> float:
+        reference_item = reference_by_seed[probe_seed]
+        destination_item = destination_by_seed[probe_seed]
+        reference_score_value = reference_item.get("score")
+        destination_score_value = destination_item.get("score")
+        reference_metric = _paired_metric_value(
+            factor=factor,
+            target=target,
+            prediction=np.asarray(reference_item["prediction"]),
+            score=(
+                None
+                if reference_score_value is None
+                else np.asarray(reference_score_value, dtype=np.float64)
+            ),
+            indices=indices,
+            normalization_scale=normalization_scale,
+            labels=labels,
+        )
+        destination_metric = _paired_metric_value(
+            factor=factor,
+            target=target,
+            prediction=np.asarray(destination_item["prediction"]),
+            score=(
+                None
+                if destination_score_value is None
+                else np.asarray(destination_score_value, dtype=np.float64)
+            ),
+            indices=indices,
+            normalization_scale=normalization_scale,
+            labels=labels,
+        )
+        return destination_metric - reference_metric
+
+    seed_deltas = {
+        str(probe_seed): replicate_delta(probe_seed, all_indices)
+        for probe_seed in matched_seeds
+    }
+    point = float(np.mean(tuple(seed_deltas.values())))
+    unique_clusters = tuple(sorted(set(clusters)))
+    if len(unique_clusters) < 2:
+        delta_low = delta_high = None
+        valid_samples = 0
+        valid_rate = 0.0
+        gate_reason = "paired bootstrap requires at least two held-out groups"
+    else:
+        by_cluster = {
+            cluster: np.flatnonzero(np.asarray(clusters) == cluster)
+            for cluster in unique_clusters
+        }
+        rng = np.random.default_rng(seed)
+        bootstrapped: list[float] = []
+        for _ in range(samples):
+            chosen = rng.choice(unique_clusters, size=len(unique_clusters), replace=True)
+            indices = np.concatenate([by_cluster[str(cluster)] for cluster in chosen])
+            values = [replicate_delta(probe_seed, indices) for probe_seed in matched_seeds]
+            if all(np.isfinite(value) for value in values):
+                bootstrapped.append(float(np.mean(values)))
+        valid_samples = len(bootstrapped)
+        valid_rate = valid_samples / samples
+        if bootstrapped and valid_rate >= minimum_valid_rate:
+            alpha = (1.0 - confidence) / 2.0
+            delta_low = float(np.quantile(bootstrapped, alpha))
+            delta_high = float(np.quantile(bootstrapped, 1.0 - alpha))
+            gate_reason = None
+        else:
+            delta_low = delta_high = None
+            gate_reason = "paired bootstrap valid rate is below threshold"
+    metric_name, higher_is_better = _primary_metric(factor)
+    improvement_low = delta_low
+    improvement_high = delta_high
+    if not higher_is_better and delta_low is not None and delta_high is not None:
+        improvement_low = -delta_high
+        improvement_high = -delta_low
+    return {
+        "status": "complete" if gate_reason is None else "failed_gate",
+        "gate_reason": gate_reason,
+        "metric": metric_name,
+        "higher_is_better": higher_is_better,
+        "destination_minus_reference": point,
+        "improvement": point if higher_is_better else -point,
+        "seed_deltas": seed_deltas,
+        "matched_probe_seeds": list(matched_seeds),
+        "groups": len(unique_clusters),
+        "requested_bootstrap_samples": samples,
+        "bootstrap_samples": valid_samples,
+        "bootstrap_valid_rate": valid_rate,
+        "minimum_bootstrap_valid_rate": minimum_valid_rate,
+        "confidence_level": confidence,
+        "delta_low": delta_low,
+        "delta_high": delta_high,
+        "improvement_low": improvement_low,
+        "improvement_high": improvement_high,
+    }
+
+
+def _assert_stage_invariant_probe_results(
+    reference: Mapping[str, object], destination: Mapping[str, object]
+) -> None:
+    excluded = {"stage", "cell_artifact"}
+    reference_value = {
+        key: value for key, value in reference.items() if key not in excluded
+    }
+    destination_value = {
+        key: value for key, value in destination.items() if key not in excluded
+    }
+    if _json_safe(reference_value) != _json_safe(destination_value):
+        raise ValueError("identical latent matrices produced different probe results")
 
 
 def _run_cell(
@@ -298,8 +632,9 @@ def _run_cell(
     records: Sequence[StateRecord],
     features: np.ndarray,
     split: SplitManifest,
+    split_name: str,
+    tap: str,
     factor: str,
-    seed_offset: int,
     run_capacity_check: bool,
 ) -> dict[str, object]:
     applicable = np.asarray(
@@ -329,17 +664,31 @@ def _run_cell(
                     raise ValueError(
                         f"{factor} {partition} partition lacks both binary classes; AUPRC is undefined"
                     )
-    linear = run_linear_probe(
-        selected_features,
-        targets,
-        train_indices=local_parts["train"],
-        validation_indices=local_parts["validation"],
-        test_indices=local_parts["test"],
-        task=task,
-        seed=config.seed + seed_offset,
-        l2_grid=config.probes.linear_l2,
-        epochs=config.probes.linear_epochs,
-    )
+    probe_seeds = [
+        _matched_probe_seed(
+            base_seed=config.seed,
+            tap=tap,
+            factor=factor,
+            split_name=split_name,
+            replicate_offset=offset,
+        )
+        for offset in config.probes.matched_seed_offsets
+    ]
+    linears = [
+        run_linear_probe(
+            selected_features,
+            targets,
+            train_indices=local_parts["train"],
+            validation_indices=local_parts["validation"],
+            test_indices=local_parts["test"],
+            task=task,
+            seed=probe_seed,
+            l2_grid=config.probes.linear_l2,
+            epochs=config.probes.linear_epochs,
+        )
+        for probe_seed in probe_seeds
+    ]
+    linear = linears[0]
     mlp = (
         run_shallow_mlp_probe(
             selected_features,
@@ -348,7 +697,7 @@ def _run_cell(
             validation_indices=local_parts["validation"],
             test_indices=local_parts["test"],
             task=task,
-            seed=config.seed + seed_offset,
+            seed=probe_seeds[0],
             hidden_dim=config.probes.mlp_hidden_dim,
             l2=float(linear["selected_l2"]),
             epochs=config.probes.mlp_epochs,
@@ -359,27 +708,47 @@ def _run_cell(
     test_source_indices = partitions["test"]
     clusters = [_cluster_key(records[index], split.group_unit) for index in test_source_indices]
     target = np.asarray(linear["test_target"])
-    prediction = np.asarray(linear["test_prediction"])
-    score_value = linear.get("test_score")
-    score = None if score_value is None else np.asarray(score_value, dtype=np.float64)
+    classification_labels = None
+    if factor != "geometry":
+        classification_labels = np.arange(len(linear["classes"]), dtype=np.int64)
+        if any(item.get("classes") != linear.get("classes") for item in linears[1:]):
+            raise ValueError("matched probe replicates produced different class universes")
+    predictions = [np.asarray(item["test_prediction"]) for item in linears]
+    scores = [
+        (
+            None
+            if item.get("test_score") is None
+            else np.asarray(item["test_score"], dtype=np.float64)
+        )
+        for item in linears
+    ]
     normalization_scale = None
     if factor == "geometry":
         train_targets = targets[np.asarray(local_parts["train"], dtype=np.int64)]
         normalization_scale = np.ptp(train_targets, axis=0)
         normalization_scale = np.where(normalization_scale > 1e-8, normalization_scale, 1.0)
-    confidence_interval = _bootstrap_ci(
+    confidence_interval = _replicated_bootstrap_ci(
         factor=factor,
         target=target,
-        prediction=prediction,
-        score=score,
+        predictions=predictions,
+        scores=scores,
         clusters=clusters,
         samples=config.probes.bootstrap_samples,
         confidence=config.probes.confidence_level,
-        seed=config.seed + seed_offset,
+        seed=_matched_probe_seed(
+            base_seed=config.seed,
+            tap=tap,
+            factor=factor,
+            split_name=split_name,
+            replicate_offset=10_000,
+        ),
         normalization_scale=normalization_scale,
+        labels=classification_labels,
+        minimum_valid_rate=config.probes.minimum_bootstrap_valid_rate,
     )
     metric_name, higher_is_better = _primary_metric(factor)
-    metric = float(linear["test_metrics"][metric_name])
+    seed_metrics = [float(item["test_metrics"][metric_name]) for item in linears]
+    metric = float(np.mean(seed_metrics))
     baseline = float(linear["baseline_metrics"][metric_name])
     shortcut_baselines = _shortcut_baseline_metrics(
         records=records,
@@ -395,11 +764,19 @@ def _run_cell(
         threshold=threshold,
         higher_is_better=higher_is_better,
     )
+    confidence_gate_reason = confidence_interval.get("gate_reason")
     return {
-        "status": "complete",
+        "status": "failed_gate" if confidence_gate_reason is not None else "complete",
+        "reason": confidence_gate_reason,
         "accessible": accessible,
         "primary_metric_name": metric_name,
         "primary_metric": metric,
+        "probe_metric_std": float(np.std(seed_metrics)),
+        "probe_seeds": probe_seeds,
+        "probe_seed_metrics": {
+            str(probe_seed): value
+            for probe_seed, value in zip(probe_seeds, seed_metrics, strict=True)
+        },
         "baseline_metric": baseline,
         "shortcut_baselines": shortcut_baselines,
         "accessibility_threshold": threshold,
@@ -407,12 +784,181 @@ def _run_cell(
         "applicable_states": int(applicable.sum()),
         "states_by_partition": {name: len(values) for name, values in partitions.items()},
         "linear": linear,
+        "linear_replicates": [
+            {
+                "seed": probe_seed,
+                "selected_l2": item["selected_l2"],
+                "test_metrics": item["test_metrics"],
+                "baseline_metrics": item["baseline_metrics"],
+            }
+            for probe_seed, item in zip(probe_seeds, linears, strict=True)
+        ],
+        "paired_payload": {
+            "state_ids": [records[index].state_id for index in test_source_indices],
+            "clusters": clusters,
+            "target": linear["test_target"],
+            "normalization_scale": (
+                None if normalization_scale is None else normalization_scale.tolist()
+            ),
+            "labels": (
+                None if classification_labels is None else classification_labels.tolist()
+            ),
+            "replicates": [
+                {
+                    "seed": probe_seed,
+                    "prediction": item["test_prediction"],
+                    "score": item.get("test_score"),
+                }
+                for probe_seed, item in zip(probe_seeds, linears, strict=True)
+            ],
+        },
         "capacity_check": mlp,
+        "capacity_check_seed": probe_seeds[0] if run_capacity_check else None,
     }
+
+
+def _array_sha256(values: np.ndarray) -> str:
+    array = np.ascontiguousarray(values)
+    digest = hashlib.sha256()
+    digest.update(array.dtype.str.encode("ascii"))
+    digest.update(json.dumps(array.shape, separators=(",", ":")).encode("ascii"))
+    digest.update(memoryview(array).cast("B"))
+    return digest.hexdigest()
+
+
+def _compact_probe_row(row: Mapping[str, object], *, cell_path: Path) -> dict[str, object]:
+    keys = (
+        "stage",
+        "tap",
+        "factor",
+        "split",
+        "status",
+        "accessible",
+        "primary_metric_name",
+        "primary_metric",
+        "probe_metric_std",
+        "probe_seeds",
+        "probe_seed_metrics",
+        "baseline_metric",
+        "shortcut_baselines",
+        "accessibility_threshold",
+        "confidence_interval",
+        "applicable_states",
+        "states_by_partition",
+        "linear_replicates",
+        "capacity_check_seed",
+        "reason",
+    )
+    compact = {key: row[key] for key in keys if key in row}
+    capacity = row.get("capacity_check")
+    if isinstance(capacity, Mapping):
+        compact["capacity_check"] = {
+            key: capacity[key]
+            for key in ("status", "model", "task", "test_metrics", "hidden_dim", "reason")
+            if key in capacity
+        }
+    linear = row.get("linear")
+    if isinstance(linear, Mapping):
+        compact["primary_linear_probe"] = {
+            key: linear[key]
+            for key in ("model", "task", "selected_l2", "test_metrics", "baseline_metrics")
+            if key in linear
+        }
+    compact["cell_artifact"] = str(cell_path)
+    return compact
+
+
+def _stage_delta_grid(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    split_name: str,
+    config: LiberoStudyConfig,
+) -> list[dict[str, object]]:
+    lookup = {
+        (str(row.get("stage")), str(row.get("tap")), str(row.get("factor"))): row
+        for row in rows
+    }
+    result: list[dict[str, object]] = []
+    for stage_index, destination_stage in enumerate(STUDY_STAGES[1:], start=1):
+        for tap in STUDY_TAPS:
+            for factor in FACTOR_NAMES:
+                reference = lookup.get(("pretrained", tap, factor), {"status": "not_run"})
+                destination = lookup.get(
+                    (destination_stage, tap, factor), {"status": "not_run"}
+                )
+                delta = _paired_stage_delta(
+                    factor=factor,
+                    reference=reference,
+                    destination=destination,
+                    samples=config.probes.bootstrap_samples,
+                    confidence=config.probes.confidence_level,
+                    minimum_valid_rate=config.probes.minimum_bootstrap_valid_rate,
+                    seed=_matched_probe_seed(
+                        base_seed=config.seed,
+                        tap=tap,
+                        factor=factor,
+                        split_name=split_name,
+                        replicate_offset=20_000 + stage_index,
+                    ),
+                )
+                result.append(
+                    {
+                        "reference_stage": "pretrained",
+                        "destination_stage": destination_stage,
+                        "tap": tap,
+                        "factor": factor,
+                        "split": split_name,
+                        **delta,
+                    }
+                )
+    return result
+
+
+def _identical_latent_sanity(
+    split_reports: Mapping[str, Sequence[Mapping[str, object]]],
+    latent_content_hashes: Mapping[str, str],
+) -> dict[str, object]:
+    lookup = {
+        (
+            split_name,
+            str(row.get("stage")),
+            str(row.get("tap")),
+            str(row.get("factor")),
+        ): row
+        for split_name, rows in split_reports.items()
+        for row in rows
+    }
+    checked: list[dict[str, str]] = []
+    for tap in STUDY_TAPS:
+        available = [
+            stage for stage in STUDY_STAGES if f"{stage}/{tap}" in latent_content_hashes
+        ]
+        for left_index, reference_stage in enumerate(available):
+            for destination_stage in available[left_index + 1 :]:
+                if (
+                    latent_content_hashes[f"{reference_stage}/{tap}"]
+                    != latent_content_hashes[f"{destination_stage}/{tap}"]
+                ):
+                    continue
+                for split_name in split_reports:
+                    for factor in FACTOR_NAMES:
+                        _assert_stage_invariant_probe_results(
+                            lookup[(split_name, reference_stage, tap, factor)],
+                            lookup[(split_name, destination_stage, tap, factor)],
+                        )
+                checked.append(
+                    {
+                        "tap": tap,
+                        "reference_stage": reference_stage,
+                        "destination_stage": destination_stage,
+                    }
+                )
+    return {"passed": True, "identical_stage_tap_pairs_checked": checked}
 
 
 def run_probe_study(config: LiberoStudyConfig) -> dict[str, object]:
     bank_root = config.output_dir / "state_bank"
+    artifact_root = _probe_artifact_root(config.output_dir)
     records, bank_manifest, task_split, episode_split = load_state_bank(bank_root)
     timeline_path = config.output_dir / "timelines" / "report.json"
     if not timeline_path.is_file():
@@ -425,6 +971,7 @@ def run_probe_study(config: LiberoStudyConfig) -> dict[str, object]:
     )
     completed: list[dict[str, object]] = []
     latent_bindings: dict[str, str] = {}
+    latent_content_hashes: dict[str, str] = {}
     split_reports: dict[str, list[dict[str, object]]] = {
         "task_group": [],
         "episode_group": [],
@@ -436,8 +983,12 @@ def run_probe_study(config: LiberoStudyConfig) -> dict[str, object]:
             + _file_sha256(Path(__file__).with_name("probes.py"))
         ).encode("ascii")
     ).hexdigest()
-    for stage_index, stage in enumerate(STUDY_STAGES):
-        for tap_index, tap in enumerate(STUDY_TAPS):
+    split_hashes = {
+        "task_group": _file_sha256(bank_root / "splits" / "task_group.json"),
+        "episode_group": _file_sha256(bank_root / "splits" / "episode_group.json"),
+    }
+    for stage in STUDY_STAGES:
+        for tap in STUDY_TAPS:
             cache_root = config.output_dir / "latents" / stage / tap
             if not (cache_root / "manifest.json").is_file():
                 continue
@@ -446,12 +997,13 @@ def run_probe_study(config: LiberoStudyConfig) -> dict[str, object]:
                 cache_root / "manifest.json"
             )
             latent_hash = latent_bindings[f"{stage}/{tap}"]
+            latent_content_hashes[f"{stage}/{tap}"] = _array_sha256(features)
             expected = tuple(record.state_id for record in records)
             if state_ids != expected:
                 raise ValueError(f"latent State Bank ordering mismatch: {stage}/{tap}")
             if latent_manifest.get("state_bank_sha256") != bank_hash:
                 raise ValueError(f"latent State Bank binding mismatch: {stage}/{tap}")
-            for factor_index, factor in enumerate(
+            for factor in (
                 tqdm(
                     FACTOR_NAMES,
                     desc=f"probes {stage}/{tap}",
@@ -463,14 +1015,16 @@ def run_probe_study(config: LiberoStudyConfig) -> dict[str, object]:
                     identity = {"stage": stage, "tap": tap, "factor": factor, "split": split_name}
                     cell_binding = {
                         **identity,
+                        "probe_protocol": PROBE_PROTOCOL,
                         "state_bank_manifest_sha256": bank_hash,
+                        "split_manifest_sha256": split_hashes[split_name],
                         "latent_manifest_sha256": latent_hash,
+                        "latent_content_sha256": latent_content_hashes[f"{stage}/{tap}"],
                         "config_sha256": config_hash,
                         "implementation_sha256": implementation_hash,
                     }
                     cell_path = (
-                        config.output_dir
-                        / "probes"
+                        artifact_root
                         / ".cells"
                         / stage
                         / tap
@@ -491,8 +1045,9 @@ def run_probe_study(config: LiberoStudyConfig) -> dict[str, object]:
                                 records=records,
                                 features=features,
                                 split=split,
+                                split_name=split_name,
+                                tap=tap,
                                 factor=factor,
-                                seed_offset=stage_index * 100 + tap_index * 10 + factor_index,
                                 run_capacity_check=split_name == "task_group",
                             )
                             row = {**identity, **result}
@@ -506,41 +1061,82 @@ def run_probe_study(config: LiberoStudyConfig) -> dict[str, object]:
                             }
                         safe_cell = _json_safe({"binding": cell_binding, "row": row})
                         write_json_atomic(cell_path, safe_cell)
+                    row = dict(row)
+                    row["cell_artifact"] = str(cell_path)
                     split_reports[split_name].append(row)
                     if split_name == "task_group":
                         completed.append(row)
-    grid = build_stage_tap_factor_grid(completed)
-    secondary_grid = build_stage_tap_factor_grid(split_reports["episode_group"])
+    identical_latent_sanity = _identical_latent_sanity(
+        split_reports, latent_content_hashes
+    )
+    primary_stage_deltas = _stage_delta_grid(
+        split_reports["task_group"], split_name="task_group", config=config
+    )
+    secondary_stage_deltas = _stage_delta_grid(
+        split_reports["episode_group"], split_name="episode_group", config=config
+    )
+    compact_primary = [
+        _compact_probe_row(row, cell_path=Path(str(row["cell_artifact"])))
+        for row in completed
+    ]
+    compact_secondary = [
+        _compact_probe_row(row, cell_path=Path(str(row["cell_artifact"])))
+        for row in split_reports["episode_group"]
+    ]
+    grid = build_stage_tap_factor_grid(compact_primary)
+    secondary_grid = build_stage_tap_factor_grid(compact_secondary)
     report = {
         "schema_version": PROBE_REPORT_SCHEMA,
+        "probe_protocol": PROBE_PROTOCOL,
         "passed": any(row.get("status") == "complete" for row in completed),
         "complete": all(row.get("status") == "complete" for row in grid),
         "state_bank_manifest_sha256": bank_hash,
+        "split_manifest_sha256": split_hashes,
         "latent_cache_manifest_sha256": dict(sorted(latent_bindings.items())),
+        "latent_content_sha256": dict(sorted(latent_content_hashes.items())),
         "config_sha256": config_hash,
         "implementation_sha256": implementation_hash,
         "primary_split": "task_group",
         "secondary_split": "episode_group",
         "bootstrap_unit": {"task_group": "task", "episode_group": "episode"},
+        "probe_seed_offsets": list(config.probes.matched_seed_offsets),
+        "minimum_bootstrap_valid_rate": config.probes.minimum_bootstrap_valid_rate,
+        "probe_seed_matching": "matched across training stages by tap/factor/split/replicate",
+        "identical_latent_sanity": identical_latent_sanity,
         "rows": grid,
         "secondary_rows": secondary_grid,
+        "stage_deltas": primary_stage_deltas,
+        "secondary_stage_deltas": secondary_stage_deltas,
+        "stage_delta_reference": "pretrained",
+        "stage_delta_interpretation": (
+            "destination_minus_reference; improvement flips sign for lower-is-better metrics"
+        ),
         "missing_cells_are_not_zero": True,
         "rl_in_scope": False,
     }
     report = _json_safe(report)  # type: ignore[assignment]
     assert isinstance(report, dict)
-    write_json_atomic(config.output_dir / "probes" / "report.json", report)
+    write_json_atomic(artifact_root / "report.json", report)
     return report
 
 
 def inspect_probe_report(config: LiberoStudyConfig) -> dict[str, object]:
-    path = config.output_dir / "probes" / "report.json"
+    path = _probe_artifact_root(config.output_dir) / "report.json"
     report = json.loads(path.read_text(encoding="utf-8"))
     if report.get("schema_version") != PROBE_REPORT_SCHEMA:
         raise ValueError("probe report schema is incompatible")
     bank_manifest = config.output_dir / "state_bank" / "manifest.json"
     if report.get("state_bank_manifest_sha256") != _file_sha256(bank_manifest):
         raise ValueError("probe report State Bank binding is stale")
+    split_bindings = report.get("split_manifest_sha256")
+    expected_split_bindings = {
+        "task_group": _file_sha256(bank_manifest.parent / "splits" / "task_group.json"),
+        "episode_group": _file_sha256(
+            bank_manifest.parent / "splits" / "episode_group.json"
+        ),
+    }
+    if split_bindings != expected_split_bindings:
+        raise ValueError("probe report split-manifest binding is stale")
     if report.get("config_sha256") != _file_sha256(config.source_path):
         raise ValueError("probe report config binding is stale")
     implementation_hash = hashlib.sha256(
