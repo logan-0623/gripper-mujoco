@@ -59,10 +59,21 @@ Add a report-only module that reads the already validated Probe v2 report and
 the full rows stored under `probes/protocol_v2/.cells/`. It calls the existing
 paired-delta implementation and atomically enriches `report.json`.
 
+The already computed `pretrained -> sft_25` rows are copied from the existing
+absolute-reference delta arrays. Only genuinely missing adjacent comparisons
+are bootstrapped: currently `sft_25 -> sft_50`, and later
+`sft_50 -> sft_100`. This avoids duplicating valid inference work.
+
 The CLI invokes this enrichment after `probes run` and before returning
 `probes report`. The cell-generating implementation in `probe_runner.py` is not
 modified, so its implementation hash and the existing 307 MB server cache stay
 valid. The new analysis has its own implementation hash in the report.
+
+The enrichment is CPU-only and may run while SFT-100 occupies the GPU. It must
+not launch latent extraction or another probe-fitting process concurrently with
+SFT training. On the current 16-core server, the SFT dataloader retains its four
+workers and the adjacent analysis uses the remaining CPU capacity without
+changing any training hyperparameter.
 
 ## Determinism and validation
 
@@ -79,6 +90,7 @@ Tests cover:
 - explicit unavailable rows for a missing SFT-100 stage;
 - preservation of all existing report fields;
 - deterministic repeated enrichment;
+- reuse of existing `pretrained -> sft_25` rows without recomputation;
 - CLI integration for both `probes run` and `probes report`.
 
 ## Scope
