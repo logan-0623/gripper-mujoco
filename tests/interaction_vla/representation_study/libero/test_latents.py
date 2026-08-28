@@ -23,6 +23,8 @@ def test_latent_cache_resumes_and_finalizes_exact_coverage(tmp_path: Path) -> No
         expected_state_ids=("state-1", "state-2"),
     )
     writer.add("state-1", np.asarray([1.0, 2.0], dtype=np.float32))
+    assert writer.has("state-1")
+    assert not writer.has("state-2")
     writer.add("state-1", np.asarray([1.0, 2.0], dtype=np.float32))
     with pytest.raises(ValueError, match="missing"):
         writer.finalize()
@@ -32,6 +34,10 @@ def test_latent_cache_resumes_and_finalizes_exact_coverage(tmp_path: Path) -> No
     assert state_ids == ("state-1", "state-2")
     assert np.array_equal(values, [[1.0, 2.0], [3.0, 4.0]])
     assert loaded == manifest
+
+    row = writer._row_path("state-2")
+    row.write_bytes(row.read_bytes() + b"tampered")
+    assert not writer.has("state-2")
 
 
 def test_latent_cache_rejects_stale_checkpoint_binding(tmp_path: Path) -> None:

@@ -8,9 +8,9 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "libero_state_bank_formal_complete"
-  gate: "smolvla_longitudinal_execution_pending"
-  updated_at: "2026-08-24"
+  current: "smolvla_probe_v2_pilot_complete"
+  gate: "protocol_v3_same_runtime_latent_execution_pending"
+  updated_at: "2026-08-28"
 
 artifacts:
   scientific_audit: "docs/research/2026-08-23-libero-vla-representation-audit.md"
@@ -20,6 +20,7 @@ artifacts:
   legacy_act: "outputs/graph_control/graph_v2_pilot/"
   libero_main: "outputs/representation_study/libero_smolvla/"
   libero_state_bank_evidence: "docs/results/libero_state_bank_formal/"
+  longitudinal_v3_design: "docs/superpowers/specs/2026-08-28-libero-longitudinal-protocol-v3-design.md"
 
 scientific_contract:
   primary_question: "What physically grounded interaction information exists before manipulation SFT, what is selectively acquired or reorganized during SFT, where does it become action-proximal, and which factors are accessible, functionally used, or useful in closed loop?"
@@ -111,8 +112,16 @@ experiment_registry:
     next_gate: "complete checkpoint manifests and fixed-tap latent extraction for all available SmolVLA stages"
   - id: SMOLVLA_LONGITUDINAL
     name: "SmolVLA pretrained/SFT25/SFT50/SFT100 longitudinal study"
-    status: not_started
+    status: pilot_complete
     role: main_modern_vla_evidence
+    evidence:
+      protocol: "probe_v2"
+      primary_cells_complete: 80
+      primary_cells_total: 96
+      secondary_cells_complete: 80
+      secondary_cells_total: 96
+    limitation: "Latents were extracted across different server runtimes; protocol v2 cannot support the formal longitudinal claim. Entity task-group and NextRelation episode-group cells also failed class-support gates."
+    next_gate: "same-runtime protocol-v3 extraction over saved matched-update checkpoints"
   - id: SMOLVLA_FACTOR_INTERVENTION
     name: "Factor-aligned SmolVLA action and closed-loop intervention"
     status: implementation_only
@@ -146,26 +155,33 @@ dependency_graph:
     gate: "audit report + task leakage test + episode leakage test + video-backed timelines + explicit manual timeline approval"
   - id: P0_E
     name: "nested SmolVLA stage manifests and fixed semantic taps"
-    status: implementation_only
+    status: formal_evidence
     requires: [P0_D]
     gate: "D25 subset D50 subset D100; checkpoint identity and tensor contract"
   - id: P0_F
     name: "shared-state latent cache"
-    status: implementation_only
+    status: pilot_complete
     requires: [P0_E]
     gate: "exact state-id coverage and immutable checkpoint/state-bank hashes"
+    limitation: "Protocol-v2 caches have a cross-runtime confound."
+  - id: P0_G
+    name: "same-runtime matched-update longitudinal latent gate"
+    status: implementation_only
+    requires: [P0_F]
+    gate: "8 checkpoint conditions; one runtime fingerprint, State Bank, and latent implementation"
   - id: P1_A
     name: "linear probes, baselines, and group-bootstrap intervals"
-    status: implementation_only
+    status: pilot_complete
     requires: [P0_F]
   - id: P1_B
     name: "shallow-MLP capacity check"
-    status: implementation_only
+    status: pilot_complete
     requires: [P1_A]
   - id: P1_C
     name: "Stage × Tap × Factor report"
-    status: not_started
+    status: pilot_complete
     requires: [P1_A, P1_B]
+    limitation: "Single task-group holdout has only two test task groups for many factors; formal v3 report requires task-group cross-fitting after P0_G."
   - id: P1_D
     name: "factor-aligned intervention execution"
     status: implementation_only

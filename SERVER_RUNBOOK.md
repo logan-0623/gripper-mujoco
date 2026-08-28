@@ -348,7 +348,36 @@ done
 
 Probe protocol v2 会复用现有 State Bank、checkpoint 和 latent cache，不需要重新训练或重新提取。Smoke 使用一个确定性 seed 验证流程；正式配置使用三个按 `tap/factor/split` 匹配、且跨 training stage 完全相同的 probe seeds。旧的 v1 `probes/report.json` 和 `probes/.cells/` 保留不动；v2 写入 `probes/protocol_v2/`。`stage_deltas` 使用 Pretrained 作为共同参照；`adjacent_stage_deltas` 固定报告 Pretrained→SFT-25、SFT-25→SFT-50、SFT-50→SFT-100。`probes report` 直接读取现有 cell 的 paired payload 并原子补齐相邻 CI，不重新拟合 probe。
 
-只有以上流程全部通过，才进入正式配置。
+### 5.4 正式 longitudinal protocol v3（当前下一步）
+
+这一段只用于正式配置。它复用已训练 checkpoint，不重新训练模型；所有条件
+必须在同一服务器顺序提取，不能并行或混用旧 `latents/`：
+
+```bash
+CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero longitudinal plan --config "$CONFIG"
+
+for condition in \
+  pretrained d25_u16070 d50_u16324 d100_u16617 \
+  d50_u32650 d100_u33234 d100_u49851 d100_u66470
+do
+  .venv-lerobot/bin/python -m interaction_vla.representation_study \
+    libero longitudinal extract --config "$CONFIG" \
+    --condition "$condition" --batch-size 8
+done
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero longitudinal inspect --config "$CONFIG"
+```
+
+最终 gate 必须满足：`passed: true`、`missing_conditions: []`、
+`runtime_gate.runtime_fingerprints: 1`、`state_banks: 1`、`implementations: 1`。
+中断后重复同一个 condition 会复用 row cache。不要删除 protocol-v2 结果。
+
+Smoke 的 5.1–5.3 通过后才进入正式配置；5.4 是已有正式 checkpoint 时的
+当前续跑入口。
 
 ## 6. 正式实验
 
@@ -539,6 +568,8 @@ stages/sft_50/manifest.json
 stages/sft_100/manifest.json
 latents/<stage>/report.json
 probes/protocol_v2/report.json
+protocol_v3/conditions/manifest.json
+protocol_v3/latent_gate/report.json
 ```
 
 快速检查：

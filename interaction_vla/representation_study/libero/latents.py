@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import os
+import platform
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -153,11 +155,68 @@ def extract_smolvla_latents(
         raise ValueError(f"unknown SmolVLA stage: {stage}")
     if batch_size <= 0:
         raise ValueError("latent batch size must be positive")
+    checkpoint, checkpoint_id, checkpoint_hash = _resolve_checkpoint(config, stage)
+    return extract_smolvla_latents_from_checkpoint(
+        config,
+        checkpoint=checkpoint,
+        checkpoint_id=checkpoint_id,
+        checkpoint_hash=checkpoint_hash,
+        output_dir=config.output_dir / "latents" / stage,
+        label=stage,
+        batch_size=batch_size,
+        report_fields={"stage": stage},
+    )
+
+
+def _runtime_provenance(policy: object, *, batch_size: int) -> dict[str, object]:
+    parameter = next(policy.parameters())  # type: ignore[attr-defined]
+    versions = {}
+    for package in ("lerobot", "transformers", "torch"):
+        try:
+            versions[package] = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            versions[package] = "not-installed"
+    device = parameter.device
+    cuda = device.type == "cuda"
+    return {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "packages": versions,
+        "device_type": device.type,
+        "device_name": torch.cuda.get_device_name(device) if cuda else device.type,
+        "device_capability": list(torch.cuda.get_device_capability(device)) if cuda else None,
+        "torch_cuda": torch.version.cuda,
+        "cudnn": torch.backends.cudnn.version(),
+        "model_dtype": str(parameter.dtype),
+        "batch_size": batch_size,
+    }
+
+
+def _canonical_sha256(value: Mapping[str, object]) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def extract_smolvla_latents_from_checkpoint(
+    config: LiberoStudyConfig,
+    *,
+    checkpoint: str,
+    checkpoint_id: str,
+    checkpoint_hash: str,
+    output_dir: str | Path,
+    label: str,
+    batch_size: int = 8,
+    runtime_binding: bool = False,
+    report_schema: str = "libero_smolvla_latent_extraction_v1",
+    report_fields: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    if batch_size <= 0:
+        raise ValueError("latent batch size must be positive")
+    output_dir = Path(output_dir)
     bank_root = config.output_dir / "state_bank"
     records, bank_manifest, _, _ = load_state_bank(bank_root)
     if not bank_manifest.get("audit_passed"):
         raise ValueError("LIBERO State Bank audit has not passed")
-    checkpoint, checkpoint_id, checkpoint_hash = _resolve_checkpoint(config, stage)
     source_revisions = {record.source_revision for record in records}
     if len(source_revisions) != 1:
         raise ValueError("State Bank records do not share one LeRobot dataset revision")
@@ -182,18 +241,21 @@ def extract_smolvla_latents(
         rename_map=LIBERO_SMOLVLA_RENAME_MAP,
     )
     policy, preprocessor, _ = backend._loaded()
+    runtime = _runtime_provenance(policy, batch_size=batch_size)
+    runtime_fingerprint = _canonical_sha256(runtime) if runtime_binding else None
     state_bank_hash = _file_sha256(bank_root / "manifest.json")
     implementation_hash = _latent_implementation_sha256()
     state_ids = tuple(record.state_id for record in records)
     writers = {
         tap: LatentCacheWriter(
-            config.output_dir / "latents" / stage / tap,
+            output_dir / tap,
             checkpoint_id=checkpoint_id,
             checkpoint_sha256=checkpoint_hash,
             state_bank_sha256=state_bank_hash,
             tap=tap,
             pooling="valid_token_mean",
             implementation_sha256=implementation_hash,
+            runtime_fingerprint_sha256=runtime_fingerprint,
             expected_state_ids=state_ids,
         )
         for tap in SEMANTIC_TAPS
@@ -201,10 +263,16 @@ def extract_smolvla_latents(
     tap_metadata: dict[str, Mapping[str, object]] | None = None
     for start in tqdm(
         range(0, len(records), batch_size),
-        desc=f"SmolVLA latents {stage}",
+        desc=f"SmolVLA latents {label}",
         unit="batch",
     ):
         selected = records[start : start + batch_size]
+        if tap_metadata is not None and all(
+            writer.has(record.state_id)
+            for record in selected
+            for writer in writers.values()
+        ):
+            continue
         batch = collate_state_bank_observations(selected, dataset)
         processed = preprocessor(backend._raw_batch(batch))
         flow = policy.model
@@ -238,17 +306,20 @@ def extract_smolvla_latents(
                 writers[tap].add(record.state_id, row)
     manifests = {tap: writer.finalize() for tap, writer in writers.items()}
     report = {
-        "schema_version": "libero_smolvla_latent_extraction_v1",
+        "schema_version": report_schema,
         "passed": True,
-        "stage": stage,
         "checkpoint_id": checkpoint_id,
+        "checkpoint_sha256": checkpoint_hash,
         "state_bank_sha256": state_bank_hash,
         "implementation_sha256": implementation_hash,
+        "runtime": runtime,
+        "runtime_fingerprint_sha256": runtime_fingerprint,
         "states": len(records),
         "tap_metadata": tap_metadata,
         "caches": manifests,
+        **dict(report_fields or {}),
     }
-    write_json_atomic(config.output_dir / "latents" / stage / "report.json", report)
+    write_json_atomic(output_dir / "report.json", report)
     return report
 
 
@@ -282,6 +353,7 @@ class LatentCacheWriter:
         pooling: str,
         expected_state_ids: Sequence[str],
         implementation_sha256: str | None = None,
+        runtime_fingerprint_sha256: str | None = None,
     ) -> None:
         self.root = Path(output_dir)
         self.rows = self.root / ".rows"
@@ -299,6 +371,8 @@ class LatentCacheWriter:
             "implementation_sha256": implementation_sha256,
             "expected_state_ids": list(self.expected_state_ids),
         }
+        if runtime_fingerprint_sha256 is not None:
+            self.binding["runtime_fingerprint_sha256"] = runtime_fingerprint_sha256
         binding_path = self.root / "binding.json"
         if binding_path.exists():
             existing = json.loads(binding_path.read_text(encoding="utf-8"))
@@ -311,6 +385,27 @@ class LatentCacheWriter:
         digest = hashlib.sha256(state_id.encode("utf-8")).hexdigest()
         return self.rows / f"{digest}.npy"
 
+    def _row_hash_path(self, state_id: str) -> Path:
+        return self._row_path(state_id).with_suffix(".sha256.json")
+
+    def has(self, state_id: str) -> bool:
+        if state_id not in self.expected_state_id_set:
+            raise ValueError(f"latent state ID is not expected: {state_id}")
+        path = self._row_path(state_id)
+        hash_path = self._row_hash_path(state_id)
+        if not path.is_file() or not hash_path.is_file():
+            return False
+        try:
+            expected = json.loads(hash_path.read_text(encoding="utf-8"))["sha256"]
+            array = np.load(path, allow_pickle=False)
+        except (OSError, KeyError, TypeError, ValueError):
+            return False
+        return (
+            expected == _file_sha256(path)
+            and array.ndim == 1
+            and np.isfinite(array).all()
+        )
+
     def add(self, state_id: str, value: np.ndarray) -> Path:
         if state_id not in self.expected_state_id_set:
             raise ValueError(f"latent state ID is not expected: {state_id}")
@@ -322,6 +417,9 @@ class LatentCacheWriter:
             existing = np.load(path, allow_pickle=False)
             if not np.array_equal(existing, array):
                 raise ValueError(f"cached latent differs for state: {state_id}")
+            write_json_atomic(
+                self._row_hash_path(state_id), {"sha256": _file_sha256(path)}
+            )
             return path
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix(".npy.tmp")
@@ -330,10 +428,13 @@ class LatentCacheWriter:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
+        write_json_atomic(
+            self._row_hash_path(state_id), {"sha256": _file_sha256(path)}
+        )
         return path
 
     def finalize(self) -> dict[str, object]:
-        missing = [state_id for state_id in self.expected_state_ids if not self._row_path(state_id).exists()]
+        missing = [state_id for state_id in self.expected_state_ids if not self.has(state_id)]
         if missing:
             raise ValueError(f"latent cache is missing {len(missing)} expected states")
         arrays = [np.load(self._row_path(state_id), allow_pickle=False) for state_id in self.expected_state_ids]

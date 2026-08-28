@@ -18,8 +18,8 @@ Interaction Graph 是 privileged annotation / measurement vocabulary，不是必
 | Graph diagnostics / Reflect transfer / ACT stagewise | `pilot_complete` | 研究动机与诊断 |
 | Recovery RL v2 calibration | `failed_gate` | SFT recovery success 未进入 30–50% 目标区间 |
 | LIBERO State Bank | `formal_evidence` | 20 tasks、100 episodes、13,603 states；自动审计与 12 张 timeline 人工审批通过 |
-| SmolVLA taps / latent / probes | `implementation_only` | State Bank gate 已解锁，等待正式 checkpoint 与分析运行 |
-| SmolVLA pretrained/SFT25/SFT50/SFT100 结果 | `not_started` | 主现代 VLA 证据 |
+| SmolVLA protocol v2 stages / latent / probes | `pilot_complete` | 80/96 cells 完成；存在跨服务器 latent confound，只作 pilot |
+| SmolVLA longitudinal protocol v3 | `implementation_only` | 等待同机重提取 8 个已有 checkpoint，通过后运行 cross-fit probe |
 
 旧 ACT 成功率为 Flat 30.0%、Teacher Graph 35.0%、Predicted Random 40.0%、Predicted Reflect 41.7%。它说明 graph correctness 不能直接当作 control utility，但不回答新的 SmolVLA longitudinal question。
 
@@ -141,11 +141,31 @@ Pretrained/SFT-25/SFT-50 时，它可以在 SFT-100 占用 GPU 训练期间使�
 并行汇总。不要在 SFT 训练期间并行执行 latent extraction 或另一个
 `probes run`。
 
-正式配置把 `CONFIG` 改为：
+现有 protocol v2 只保留为 pilot。正式下一步不重训 SmolVLA，而是复用中间
+checkpoint，在同一服务器、同一 runtime 上重提取 8 个条件：
 
 ```bash
 CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero longitudinal plan --config "$CONFIG"
+
+for condition in \
+  pretrained d25_u16070 d50_u16324 d100_u16617 \
+  d50_u32650 d100_u33234 d100_u49851 d100_u66470
+do
+  .venv-lerobot/bin/python -m interaction_vla.representation_study \
+    libero longitudinal extract --config "$CONFIG" \
+    --condition "$condition" --batch-size 8
+done
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero longitudinal inspect --config "$CONFIG"
 ```
+
+`inspect` 必须报告 `passed: true` 且 `runtime_fingerprints: 1`。它同时形成约
+16k/32k updates 的 matched-update 比较和 D100 optimization trajectory；旧
+`latents/` 与 `probes/protocol_v2/` 不会被覆盖。
 
 ## Intervention 与 RL 边界
 

@@ -33,6 +33,7 @@ def test_libero_cli_has_required_ordered_families() -> None:
     for family, command in (
         ("stages", "plan"),
         ("latents", "extract"),
+        ("longitudinal", "plan"),
         ("probes", "run"),
         ("interventions", "run"),
         ("evaluate", "paired"),
@@ -49,6 +50,14 @@ def test_libero_cli_has_required_ordered_families() -> None:
         args = parser.parse_args(argv)
         assert args.libero_family == family
         assert args.libero_command == command
+
+    longitudinal_extract = parser.parse_args(
+        [
+            "libero", "longitudinal", "extract", "--condition", "d25_u16070",
+            "--config", "configs/representation_study/libero_smolvla_linux_cuda.yaml",
+        ]
+    )
+    assert longitudinal_extract.condition == "d25_u16070"
 
     train = parser.parse_args(
         [

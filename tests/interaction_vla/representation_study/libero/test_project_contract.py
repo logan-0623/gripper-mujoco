@@ -14,9 +14,10 @@ def test_ccfa_registry_preserves_evidence_and_stops_before_rl() -> None:
     assert state_bank["evidence"]["audit_passed"] is True
     assert state_bank["evidence"]["manual_timeline_review_passed"] is True
     assert Path(state_bank["evidence"]["artifact"]).is_dir()
-    assert registry["SMOLVLA_LONGITUDINAL"]["status"] == "not_started"
+    assert registry["SMOLVLA_LONGITUDINAL"]["status"] == "pilot_complete"
     assert config["scientific_contract"]["rl_scope"] == "conditional_future_work"
     graph = {row["id"]: row for row in config["dependency_graph"]}
+    assert graph["P0_G"]["status"] == "implementation_only"
     assert graph["RL_EXTENSION"]["execution_allowed"] is False
 
 
@@ -29,4 +30,5 @@ def test_linux_requirements_and_readme_expose_the_formal_libero_path() -> None:
     assert "libero state-bank collect" in readme
     assert "libero stages snapshot" in readme
     assert "libero probes run" in readme
+    assert "libero longitudinal plan" in readme
     assert "当前不要运行或调优 PPO/SAC" in readme

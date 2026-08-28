@@ -56,6 +56,20 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
             required=True,
         )
 
+    longitudinal = commands.add_parser(
+        "longitudinal", help="same-runtime supervision/update protocol v3"
+    )
+    longitudinal_commands = longitudinal.add_subparsers(
+        dest="libero_command", required=True
+    )
+    for name in ("plan", "inspect"):
+        command = longitudinal_commands.add_parser(name)
+        command.add_argument("--config", type=Path, required=True)
+    longitudinal_extract = longitudinal_commands.add_parser("extract")
+    longitudinal_extract.add_argument("--config", type=Path, required=True)
+    longitudinal_extract.add_argument("--condition", required=True)
+    longitudinal_extract.add_argument("--batch-size", type=int, default=8)
+
     probes = commands.add_parser("probes", help="Stage × Tap × Factor probes")
     probe_commands = probes.add_subparsers(dest="libero_command", required=True)
     for name in ("run", "report"):
@@ -349,6 +363,22 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
             return extract_smolvla_latents(config, stage=args.stage)
         if args.libero_command == "inspect":
             return inspect_stage_latents(config, stage=args.stage)
+    if args.libero_family == "longitudinal":
+        from .longitudinal import (
+            extract_longitudinal_condition,
+            inspect_longitudinal_latents,
+            plan_longitudinal_conditions,
+        )
+
+        config = load_libero_study_config(args.config)
+        if args.libero_command == "plan":
+            return plan_longitudinal_conditions(config)
+        if args.libero_command == "extract":
+            return extract_longitudinal_condition(
+                config, condition=args.condition, batch_size=args.batch_size
+            )
+        if args.libero_command == "inspect":
+            return inspect_longitudinal_latents(config)
     if args.libero_family == "probes":
         from .probe_runner import run_probe_study
         from .probe_transitions import enrich_adjacent_stage_deltas
