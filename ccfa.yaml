@@ -20,6 +20,7 @@ artifacts:
   legacy_act: "outputs/graph_control/graph_v2_pilot/"
   libero_main: "outputs/representation_study/libero_smolvla/"
   libero_state_bank_evidence: "docs/results/libero_state_bank_formal/"
+  smolvla_probe_v2_pilot_evidence: "docs/results/libero_smolvla_probe_v2_pilot/"
   longitudinal_v3_design: "docs/superpowers/specs/2026-08-28-libero-longitudinal-protocol-v3-design.md"
 
 scientific_contract:
@@ -116,6 +117,7 @@ experiment_registry:
     role: main_modern_vla_evidence
     evidence:
       protocol: "probe_v2"
+      artifact: "docs/results/libero_smolvla_probe_v2_pilot/"
       primary_cells_complete: 80
       primary_cells_total: 96
       secondary_cells_complete: 80

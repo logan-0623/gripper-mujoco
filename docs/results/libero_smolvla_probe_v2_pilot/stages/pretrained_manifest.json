@@ -1,0 +1,19 @@
+{
+  "base_model": "lerobot/smolvla_base",
+  "base_revision": "c83c3163b8ca9b7e67c509fffd9121e66cb96205",
+  "checkpoint": "outputs/representation_study/libero_smolvla/stages/pretrained/checkpoint",
+  "checkpoint_sha256": "bd8a2c55d285972df7cf3e87af2be93f503380e5088db90671f109135140e182",
+  "code_hash": "27c5b541edc56a61739f027d20607ea1b065f59f7696d529e2342b236a6dcbf7",
+  "config_hash": "d0f0bf0a1d2ce9867c5d41e4ea6c231b1e3061d83cf6576f63f82d06bd7849af",
+  "data_fraction": 0.0,
+  "dataset_repo_id": "lerobot/libero",
+  "dataset_revision": "a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4",
+  "episode_indices": [],
+  "epochs": 0,
+  "schema_version": "libero_smolvla_stage_v1",
+  "seed": 2057736129,
+  "stage": "pretrained",
+  "status": "complete",
+  "subset_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "training_steps": 0
+}

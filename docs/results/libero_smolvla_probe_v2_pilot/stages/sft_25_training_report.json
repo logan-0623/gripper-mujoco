@@ -1,0 +1,31 @@
+{
+  "checkpoint": "outputs/representation_study/libero_smolvla/stages/sft_25/run/checkpoints/last/pretrained_model",
+  "checkpoint_sha256": "87eb73e69e199f067932be03069e4ebdb9d2d24fc8d828968dfc2dff762c591a",
+  "command": [
+    "/root/gripper-mujoco/.venv-lerobot/bin/python",
+    "-m",
+    "lerobot.scripts.lerobot_train",
+    "--policy.path=outputs/representation_study/libero_smolvla/stages/pretrained/checkpoint",
+    "--policy.push_to_hub=false",
+    "--dataset.repo_id=lerobot/libero",
+    "--dataset.revision=a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4",
+    "--dataset.episodes=[809,815,816,831,835,839,844,845,848,850,851,858,861,874,875,892,898,901,909,912,913,921,922,924,925,929,945,947,948,952,953,958,964,971,974,975,976,981,982,984,986,987,988,991,992,993,997,1003,1005,1006,1008,1009,1010,1011,1022,1028,1036,1049,1059,1060,1075,1076,1077,1081,1084,1091,1094,1100,1120,1127,1129,1136,1142,1145,1148,1152,1154,1158,1167,1172,1174,1181,1189,1191,1193,1200,1202,1205,1206,1210,1212,1217,1218,1227,1237,1244,1253,1256,1257,1266,1277,1283,1286,1298,1299,1300,1301,1309,1311,1316,1317,1318,1332,1335,1340,1348,1350,1355,1365,1368,1372,1378,1379,1389,1406,1408,1418,1421,1422,1424,1428,1429,1435,1438,1440,1450,1452,1464,1470,1474,1475,1481,1482,1489,1494,1499,1505,1506,1510,1518,1520,1521,1522,1523,1525,1529,1532,1534,1536,1541,1548,1549,1550,1551,1552,1560,1566,1567,1569,1577,1584,1585,1586,1587,1605,1608,1613,1619,1622,1637,1638,1642,1652,1655,1667,1671,1672,1674,1678,1681,1685]",
+    "--rename_map={\"observation.images.image\":\"observation.images.camera1\",\"observation.images.image2\":\"observation.images.camera2\"}",
+    "--output_dir=outputs/representation_study/libero_smolvla/stages/sft_25/run",
+    "--job_name=libero-sft_25",
+    "--steps=16070",
+    "--batch_size=8",
+    "--num_workers=4",
+    "--seed=2057736129",
+    "--cudnn_deterministic=true",
+    "--env_eval_freq=0",
+    "--save_checkpoint=true",
+    "--save_freq=4017",
+    "--wandb.enable=false"
+  ],
+  "executed": true,
+  "resume": false,
+  "schema_version": "libero_smolvla_stage_training_v1",
+  "stage": "sft_25",
+  "status": "complete"
+}

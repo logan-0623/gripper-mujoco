@@ -14,7 +14,10 @@ def test_ccfa_registry_preserves_evidence_and_stops_before_rl() -> None:
     assert state_bank["evidence"]["audit_passed"] is True
     assert state_bank["evidence"]["manual_timeline_review_passed"] is True
     assert Path(state_bank["evidence"]["artifact"]).is_dir()
-    assert registry["SMOLVLA_LONGITUDINAL"]["status"] == "pilot_complete"
+    longitudinal = registry["SMOLVLA_LONGITUDINAL"]
+    assert longitudinal["status"] == "pilot_complete"
+    pilot_artifact = Path(longitudinal["evidence"]["artifact"])
+    assert (pilot_artifact / "probe_report.json").is_file()
     assert config["scientific_contract"]["rl_scope"] == "conditional_future_work"
     graph = {row["id"]: row for row in config["dependency_graph"]}
     assert graph["P0_G"]["status"] == "implementation_only"

@@ -23,7 +23,7 @@ Interaction Graph 是 privileged annotation / measurement vocabulary，不是必
 
 旧 ACT 成功率为 Flat 30.0%、Teacher Graph 35.0%、Predicted Random 40.0%、Predicted Reflect 41.7%。它说明 graph correctness 不能直接当作 control utility，但不回答新的 SmolVLA longitudinal question。
 
-完整科学审计见 [LIBERO–VLA audit](docs/research/2026-08-23-libero-vla-representation-audit.md)，正式 State Bank 的轻量审计证据见 [result package](docs/results/libero_state_bank_formal/README.md)，机器可读状态见 [ccfa.yaml](ccfa.yaml)。
+完整科学审计见 [LIBERO–VLA audit](docs/research/2026-08-23-libero-vla-representation-audit.md)，正式 State Bank 的轻量审计证据见 [State Bank package](docs/results/libero_state_bank_formal/README.md)，现有 SmolVLA protocol-v2 报告见 [pilot package](docs/results/libero_smolvla_probe_v2_pilot/README.md)，机器可读状态见 [ccfa.yaml](ccfa.yaml)。
 
 ## Linux / RTX 4090 环境
 
