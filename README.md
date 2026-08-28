@@ -133,6 +133,14 @@ done
 
 Primary probe 是 linear，shallow MLP 只做 capacity check。主 split 是 task-group，secondary 是 episode-group；严禁 frame-level random split。Contact/StableGrasp 报 AUPRC 和 balanced accuracy，Geometry 报 normalized MAE 与 R²，其余分类因素报 Macro-F1。置信区间按 task/episode cluster bootstrap，不把 frame 当重复实验。
 
+Probe v2 同时报告两类 paired CI：`stage_deltas` 保持
+Pretrained→各 SFT stage 的共同参照，`adjacent_stage_deltas` 报告
+Pretrained→SFT-25、SFT-25→SFT-50、SFT-50→SFT-100 的相邻变化。
+`probes report` 直接复用现有 `.cells`，不会重新拟合 probe；因此已有
+Pretrained/SFT-25/SFT-50 时，它可以在 SFT-100 占用 GPU 训练期间使用 CPU
+并行汇总。不要在 SFT 训练期间并行执行 latent extraction 或另一个
+`probes run`。
+
 正式配置把 `CONFIG` 改为：
 
 ```bash

@@ -1,4 +1,7 @@
+import interaction_vla.representation_study.libero.probe_runner as probe_runner
+import interaction_vla.representation_study.libero.probe_transitions as probe_transitions
 from interaction_vla.representation_study.cli import build_parser
+from interaction_vla.representation_study.libero.cli import dispatch
 
 
 def test_libero_cli_has_required_ordered_families() -> None:
@@ -81,3 +84,35 @@ def test_libero_cli_does_not_offer_rl_commands() -> None:
         assert error.code != 0
     else:
         raise AssertionError("LIBERO representation CLI must stop before RL")
+
+
+def test_probe_commands_automatically_enrich_adjacent_stage_deltas(
+    monkeypatch,
+) -> None:
+    parser = build_parser()
+    config = "configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml"
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        probe_runner,
+        "run_probe_study",
+        lambda _config: calls.append("run") or {"probe": "raw"},
+    )
+    monkeypatch.setattr(
+        probe_transitions,
+        "enrich_adjacent_stage_deltas",
+        lambda _config: calls.append("enrich") or {"probe": "enriched"},
+    )
+
+    run_args = parser.parse_args(
+        ["libero", "probes", "run", "--config", config]
+    )
+    assert dispatch(run_args) == {"probe": "enriched"}
+    assert calls == ["run", "enrich"]
+
+    calls.clear()
+    report_args = parser.parse_args(
+        ["libero", "probes", "report", "--config", config]
+    )
+    assert dispatch(report_args) == {"probe": "enriched"}
+    assert calls == ["enrich"]

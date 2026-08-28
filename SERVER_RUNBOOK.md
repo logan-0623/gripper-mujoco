@@ -346,7 +346,7 @@ done
   --config "$CONFIG"
 ```
 
-Probe protocol v2 会复用现有 State Bank、checkpoint 和 latent cache，不需要重新训练或重新提取。Smoke 使用一个确定性 seed 验证流程；正式配置使用三个按 `tap/factor/split` 匹配、且跨 training stage 完全相同的 probe seeds。旧的 v1 `probes/report.json` 和 `probes/.cells/` 保留不动；v2 写入 `probes/protocol_v2/`。
+Probe protocol v2 会复用现有 State Bank、checkpoint 和 latent cache，不需要重新训练或重新提取。Smoke 使用一个确定性 seed 验证流程；正式配置使用三个按 `tap/factor/split` 匹配、且跨 training stage 完全相同的 probe seeds。旧的 v1 `probes/report.json` 和 `probes/.cells/` 保留不动；v2 写入 `probes/protocol_v2/`。`stage_deltas` 使用 Pretrained 作为共同参照；`adjacent_stage_deltas` 固定报告 Pretrained→SFT-25、SFT-25→SFT-50、SFT-50→SFT-100。`probes report` 直接读取现有 cell 的 paired payload 并原子补齐相邻 CI，不重新拟合 probe。
 
 只有以上流程全部通过，才进入正式配置。
 
@@ -424,6 +424,13 @@ done
 .venv-lerobot/bin/python -m interaction_vla.representation_study libero probes report \
   --config "$CONFIG"
 ```
+
+若 Pretrained、SFT-25、SFT-50 的 latent 与 Probe v2 cell 已完成，可以在
+SFT-100 使用 GPU 训练期间另开一个终端运行上面的 `probes report`。该汇总只
+使用 CPU，并会先生成 SFT-25→SFT-50；缺失的 SFT-50→SFT-100 保持显式
+`not_available`。当前正式服务器有 16 个 CPU 核，SFT dataloader 保留 4 个
+workers 即可。不要同时启动 `latents extract` 或第二个 `probes run`，因为它们
+会分别争用 GPU 或重复 probe 计算。
 
 ## 7. 中断与续跑
 
@@ -552,6 +559,7 @@ find outputs/representation_study/libero_smolvla \
 - Contact、StableGrasp、NextRelation 是否仍然薄弱；
 - 线性 probe 与 MLP capacity check 是否一致。
 - `stage_deltas` / `secondary_stage_deltas` 的 paired `destination_minus_reference` 与置信区间；
+- `adjacent_stage_deltas` / `secondary_adjacent_stage_deltas` 的相邻阶段 paired CI；区间跨零只能记为 inconclusive，不能写成精确饱和；
 - `identical_latent_sanity.passed` 是否为 `true`。相同 latent 若产生不同 probe 结果会直接失败，不能解释为训练阶段变化。
 
 `primary_metric` 是 matched probe seeds 的均值，`probe_metric_std` 只描述 probe 优化敏感性，不是机器人任务的独立重复。阶段变化应读取 paired stage delta，不能通过两个独立 accessibility 区间是否重叠来推断。

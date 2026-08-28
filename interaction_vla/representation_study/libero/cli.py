@@ -350,13 +350,14 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
         if args.libero_command == "inspect":
             return inspect_stage_latents(config, stage=args.stage)
     if args.libero_family == "probes":
-        from .probe_runner import inspect_probe_report, run_probe_study
+        from .probe_runner import run_probe_study
+        from .probe_transitions import enrich_adjacent_stage_deltas
 
         config = load_libero_study_config(args.config)
         if args.libero_command == "run":
-            return run_probe_study(config)
-        if args.libero_command == "report":
-            return inspect_probe_report(config)
+            run_probe_study(config)
+        if args.libero_command in {"run", "report"}:
+            return enrich_adjacent_stage_deltas(config)
     raise ValueError(
         f"{args.libero_family} {args.libero_command} is implementation-only until its prerequisite gate passes"
     )
