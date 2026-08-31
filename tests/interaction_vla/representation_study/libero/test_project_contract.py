@@ -15,12 +15,16 @@ def test_ccfa_registry_preserves_evidence_and_stops_before_rl() -> None:
     assert state_bank["evidence"]["manual_timeline_review_passed"] is True
     assert Path(state_bank["evidence"]["artifact"]).is_dir()
     longitudinal = registry["SMOLVLA_LONGITUDINAL"]
-    assert longitudinal["status"] == "pilot_complete"
-    pilot_artifact = Path(longitudinal["evidence"]["artifact"])
-    assert (pilot_artifact / "probe_report.json").is_file()
+    assert longitudinal["status"] == "formal_evidence"
+    formal_artifact = Path(longitudinal["evidence"]["artifact"])
+    assert (formal_artifact / "protocol_v3/probes/crossfit_v1/report.json").is_file()
+    assert registry["SMOLVLA_FACTOR_INTERVENTION"]["status"] == "implementation_only"
+    assert registry["SMOLVLA_FUNCTIONAL_RECRUITMENT"]["status"] == "not_run"
+    assert registry["SMOLVLA_PAIRED_CLOSED_LOOP"]["status"] == "not_run"
     assert config["scientific_contract"]["rl_scope"] == "conditional_future_work"
     graph = {row["id"]: row for row in config["dependency_graph"]}
-    assert graph["P0_G"]["status"] == "implementation_only"
+    assert graph["P0_G"]["status"] == "formal_evidence"
+    assert graph["RL_EXTENSION"]["status"] == "frozen_not_blocking"
     assert graph["RL_EXTENSION"]["execution_allowed"] is False
 
 

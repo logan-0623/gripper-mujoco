@@ -19,11 +19,12 @@ Interaction Graph 是 privileged annotation / measurement vocabulary，不是必
 | Recovery RL v2 calibration | `failed_gate` | SFT recovery success 未进入 30–50% 目标区间 |
 | LIBERO State Bank | `formal_evidence` | 20 tasks、100 episodes、13,603 states；自动审计与 12 张 timeline 人工审批通过 |
 | SmolVLA protocol v2 stages / latent / probes | `pilot_complete` | 80/96 cells 完成；存在跨服务器 latent confound，只作 pilot |
-| SmolVLA longitudinal protocol v3 | `implementation_only` | 8-condition latent gate 已在服务器执行；正式 cross-fit report 尚未运行/归档 |
+| SmolVLA longitudinal protocol v3 | `formal_evidence` | 8 conditions、4 taps、6 factors；288/384 cells complete，96 cells 因预注册 support gate 不可估计 |
+| StableGrasp longitudinal recruitment | `not_run` | specificity/action-sensitivity 代码已实现；尚无实验结果 |
 
 旧 ACT 成功率为 Flat 30.0%、Teacher Graph 35.0%、Predicted Random 40.0%、Predicted Reflect 41.7%。它说明 graph correctness 不能直接当作 control utility，但不回答新的 SmolVLA longitudinal question。
 
-完整科学审计见 [LIBERO–VLA audit](docs/research/2026-08-23-libero-vla-representation-audit.md)，正式 State Bank 的轻量审计证据见 [State Bank package](docs/results/libero_state_bank_formal/README.md)，现有 SmolVLA protocol-v2 报告见 [pilot package](docs/results/libero_smolvla_probe_v2_pilot/README.md)，机器可读状态见 [ccfa.yaml](ccfa.yaml)。
+完整科学审计见 [LIBERO–VLA audit](docs/research/2026-08-23-libero-vla-representation-audit.md)，正式 State Bank 的轻量审计证据见 [State Bank package](docs/results/libero_state_bank_formal/README.md)，正式 Protocol-v3 报告见 [Protocol-v3 package](docs/results/libero_smolvla_protocol_v3/README.md)，机器可读状态见 [ccfa.yaml](ccfa.yaml)。
 
 ## Linux / RTX 4090 环境
 
@@ -185,7 +186,28 @@ policy functionally used 该因素，更不表示 closed-loop useful。
 
 ## Intervention 与 RL 边界
 
-仓库已定义 factor-aligned row-space intervention、matched-random、matched-mean、instruction shuffle、whole-zero OOD control，以及 paired closed-loop report schema。只有 probe gate 通过后才执行 intervention；动作变化只叫 action-sensitive，只有 paired rollout 的任务结果变化才叫 closed-loop useful。
+当前只执行 `StableGrasp × action_expert_input × 4 checkpoints`。先运行只读审计和 64-state specificity smoke：
+
+```bash
+CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero interventions audit --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero interventions run --config "$CONFIG" \
+  --max-states 64 --batch-size 16 --specificity-only
+```
+
+只有 `specificity.json` 的四个 checkpoint 全部 `passed: true`，才运行 formal offline action sensitivity：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero interventions run --config "$CONFIG" \
+  --max-states 1600 --batch-size 16
+```
+
+64 与 1600 states 写入不同 profile 目录；相同 profile 可直接重跑续用。动作变化只叫 action-sensitive，只有未来 paired rollout 的任务结果变化才叫 closed-loop useful。Phase 是强制 specificity 对照；若它与 StableGrasp 同时被同等破坏，代码会停止在 specificity gate。
 
 当前不要运行或调优 PPO/SAC，不要从 nominal demonstration 制造 Recovery label。RL 只有在离线 probe、closed-loop intervention、非饱和 perturbation distribution、Oracle-State residual recovery 四个前置 gate 都通过后才恢复。
 

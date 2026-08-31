@@ -82,8 +82,14 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
     intervention_commands = interventions.add_subparsers(
         dest="libero_command", required=True
     )
+    intervention_audit = intervention_commands.add_parser("audit")
+    intervention_audit.add_argument("--config", type=Path, required=True)
     intervention_run = intervention_commands.add_parser("run")
     intervention_run.add_argument("--config", type=Path, required=True)
+    intervention_run.add_argument("--max-states", type=int, default=1600)
+    intervention_run.add_argument("--batch-size", type=int, default=16)
+    intervention_run.add_argument("--specificity-only", action="store_true")
+    intervention_run.add_argument("--dry-run", action="store_true")
 
     evaluate = commands.add_parser("evaluate", help="paired LIBERO closed-loop utility")
     evaluate_commands = evaluate.add_subparsers(dest="libero_command", required=True)
@@ -397,6 +403,23 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
             run_probe_study(config)
         if args.libero_command in {"run", "report"}:
             return enrich_adjacent_stage_deltas(config)
+    if args.libero_family == "interventions":
+        from .recruitment import (
+            audit_longitudinal_recruitment,
+            run_longitudinal_recruitment,
+        )
+
+        config = load_libero_study_config(args.config)
+        if args.libero_command == "audit":
+            return audit_longitudinal_recruitment(config)
+        if args.libero_command == "run":
+            return run_longitudinal_recruitment(
+                config,
+                max_states=args.max_states,
+                batch_size=args.batch_size,
+                specificity_only=args.specificity_only,
+                dry_run=args.dry_run,
+            )
     raise ValueError(
         f"{args.libero_family} {args.libero_command} is implementation-only until its prerequisite gate passes"
     )

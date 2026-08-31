@@ -8,8 +8,8 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "smolvla_protocol_v3_crossfit_implementation"
-  gate: "protocol_v3_crossfit_execution_and_archive_pending"
+  current: "smolvla_longitudinal_functional_recruitment"
+  gate: "stablegrasp_longitudinal_action_sensitivity_vs_matched_random"
   updated_at: "2026-08-31"
 
 artifacts:
@@ -22,6 +22,8 @@ artifacts:
   libero_state_bank_evidence: "docs/results/libero_state_bank_formal/"
   smolvla_probe_v2_pilot_evidence: "docs/results/libero_smolvla_probe_v2_pilot/"
   longitudinal_v3_design: "docs/superpowers/specs/2026-08-28-libero-longitudinal-protocol-v3-design.md"
+  recruitment_design: "docs/superpowers/specs/2026-08-31-smolvla-stablegrasp-longitudinal-recruitment-design.md"
+  recruitment_plan: "docs/superpowers/plans/2026-08-31-smolvla-stablegrasp-longitudinal-recruitment.md"
 
 scientific_contract:
   primary_question: "What physically grounded interaction information exists before manipulation SFT, what is selectively acquired or reorganized during SFT, where does it become action-proximal, and which factors are accessible, functionally used, or useful in closed loop?"
@@ -113,22 +115,38 @@ experiment_registry:
     next_gate: "complete checkpoint manifests and fixed-tap latent extraction for all available SmolVLA stages"
   - id: SMOLVLA_LONGITUDINAL
     name: "SmolVLA pretrained/SFT25/SFT50/SFT100 longitudinal study"
-    status: pilot_complete
+    status: formal_evidence
     role: main_modern_vla_evidence
     evidence:
-      protocol: "probe_v2"
-      artifact: "docs/results/libero_smolvla_probe_v2_pilot/"
-      primary_cells_complete: 80
-      primary_cells_total: 96
-      secondary_cells_complete: 80
-      secondary_cells_total: 96
-    limitation: "Latents were extracted across different server runtimes; protocol v2 cannot support the formal longitudinal claim. Entity task-group and NextRelation episode-group cells also failed class-support gates."
-    next_gate: "same-runtime protocol-v3 extraction over saved matched-update checkpoints"
+      protocol: "protocol_v3_crossfit_v1"
+      artifact: "docs/results/libero_smolvla_protocol_v3/"
+      state_bank_states: 13603
+      checkpoints: 8
+      taps: 4
+      factors: 6
+      cells_complete: 288
+      cells_not_estimable: 96
+      identical_latent_sanity_passed: true
+      paired_delta_gate_passed: true
+    limitation: "Expert-only SFT freezes the upstream vision pathway; results describe trainable downstream action-pathway dynamics. Entity has task/instruction shortcuts, NextRelation lacks held-out class support, and task-group support is limited."
+    next_gate: "StableGrasp factor-specificity and longitudinal action sensitivity at action_expert_input"
   - id: SMOLVLA_FACTOR_INTERVENTION
     name: "Factor-aligned SmolVLA action and closed-loop intervention"
     status: implementation_only
     role: main_functional_evidence
-    blocked_by: "validated probe report"
+    blocked_by: null
+    limitation: "No intervention result exists until the specificity and action-sensitivity reports pass."
+  - id: SMOLVLA_FUNCTIONAL_RECRUITMENT
+    name: "StableGrasp longitudinal functional recruitment"
+    status: not_run
+    role: main_functional_evidence
+    requires: [SMOLVLA_LONGITUDINAL, SMOLVLA_FACTOR_INTERVENTION]
+    gate: "StableGrasp-targeted action displacement exceeds same-rank matched-random under fold-held-out intervention bases"
+  - id: SMOLVLA_PAIRED_CLOSED_LOOP
+    name: "StableGrasp paired closed-loop dependence"
+    status: not_run
+    role: conditional_closed_loop_evidence
+    blocked_by: "factor-specificity and longitudinal action-sensitivity gates"
   - id: SECOND_VLA_REPLICATION
     name: "Targeted second-VLA replication"
     status: not_started
@@ -168,12 +186,12 @@ dependency_graph:
     limitation: "Protocol-v2 caches have a cross-runtime confound."
   - id: P0_G
     name: "same-runtime matched-update longitudinal latent gate"
-    status: implementation_only
+    status: formal_evidence
     requires: [P0_F]
     gate: "8 checkpoint conditions; one runtime fingerprint, State Bank, and latent implementation; passing report must be archived before evidence promotion"
   - id: P1_A
     name: "linear probes, baselines, and group-bootstrap intervals"
-    status: pilot_complete
+    status: formal_evidence
     requires: [P0_F]
   - id: P1_B
     name: "shallow-MLP capacity check"
@@ -181,20 +199,20 @@ dependency_graph:
     requires: [P1_A]
   - id: P1_C
     name: "Stage × Tap × Factor report"
-    status: pilot_complete
+    status: formal_evidence
     requires: [P1_A, P1_B]
-    limitation: "Protocol-v2 remains pilot evidence. Protocol-v3 5-fold task/episode group cross-fit is implemented under protocol_v3/probes/crossfit_v1 but is not evidence until its report is run and archived."
+    limitation: "Entity task-group and NextRelation cells remain not estimable; accessibility is not functional use."
   - id: P1_D
     name: "factor-aligned intervention execution"
     status: implementation_only
     requires: [P1_C]
   - id: P1_E
     name: "paired closed-loop utility evaluation"
-    status: implementation_only
+    status: not_run
     requires: [P1_D]
   - id: RL_EXTENSION
     name: "online adaptation and RL plasticity"
-    status: not_started
+    status: frozen_not_blocking
     requires: [P1_E]
     execution_allowed: false
 

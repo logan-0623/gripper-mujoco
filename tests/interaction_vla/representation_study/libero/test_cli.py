@@ -160,3 +160,21 @@ def test_longitudinal_crossfit_probe_cli_routes_without_loading_models(monkeypat
     )
     assert dispatch(report_args) == {"passed": True}
     assert calls == ["run", "inspect"]
+
+
+def test_longitudinal_recruitment_cli_has_audit_and_gated_run() -> None:
+    parser = build_parser()
+    config = "configs/representation_study/libero_smolvla_linux_cuda.yaml"
+    audit = parser.parse_args(
+        ["libero", "interventions", "audit", "--config", config]
+    )
+    assert audit.libero_command == "audit"
+    run = parser.parse_args(
+        [
+            "libero", "interventions", "run", "--config", config,
+            "--max-states", "64", "--batch-size", "8", "--specificity-only",
+        ]
+    )
+    assert run.max_states == 64
+    assert run.batch_size == 8
+    assert run.specificity_only

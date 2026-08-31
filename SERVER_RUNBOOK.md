@@ -10,7 +10,7 @@ LIBERO shared State Bank
 → Stage × Tap × Factor report
 ```
 
-ACT/Graph-v2 是已经保留的受控机制证据；Recovery RL v2 是 `failed_gate`。当前不要运行 intervention、PPO 或 SAC。
+ACT/Graph-v2 是已经保留的受控机制证据；Recovery RL v2 是 `failed_gate`。当前只允许运行 StableGrasp 离线 specificity/action-sensitivity；不要运行 closed-loop intervention、PPO 或 SAC。
 
 ## 0. 先理解“上传”包含什么
 
@@ -348,7 +348,7 @@ done
 
 Probe protocol v2 会复用现有 State Bank、checkpoint 和 latent cache，不需要重新训练或重新提取。Smoke 使用一个确定性 seed 验证流程；正式配置使用三个按 `tap/factor/split` 匹配、且跨 training stage 完全相同的 probe seeds。旧的 v1 `probes/report.json` 和 `probes/.cells/` 保留不动；v2 写入 `probes/protocol_v2/`。`stage_deltas` 使用 Pretrained 作为共同参照；`adjacent_stage_deltas` 固定报告 Pretrained→SFT-25、SFT-25→SFT-50、SFT-50→SFT-100。`probes report` 直接读取现有 cell 的 paired payload 并原子补齐相邻 CI，不重新拟合 probe。
 
-### 5.4 正式 longitudinal protocol v3（当前下一步）
+### 5.4 正式 longitudinal protocol v3（已完成时只做校验）
 
 这一段只用于正式配置。它复用已训练 checkpoint，不重新训练模型；所有条件
 必须在同一服务器顺序提取，不能并行或混用旧 `latents/`：
@@ -392,6 +392,47 @@ binding 相同的 `protocol_v3/probes/crossfit_v1/cells/*.json.gz`。runtime fin
 
 Smoke 的 5.1–5.3 通过后才进入正式配置；5.4 是已有正式 checkpoint 时的
 当前续跑入口。
+
+### 5.5 StableGrasp longitudinal recruitment（当前下一步）
+
+先确认 frozen Protocol-v3 与四个 checkpoint 的只读绑定：
+
+```bash
+CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero interventions audit --config "$CONFIG"
+```
+
+先做 64-state specificity smoke，不加载四个 policy 做动作推理：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero interventions run --config "$CONFIG" \
+  --max-states 64 --batch-size 16 --specificity-only
+```
+
+检查：
+
+```bash
+.venv-lerobot/bin/python - <<'PY'
+import json
+from pathlib import Path
+p = Path("outputs/representation_study/libero_smolvla/protocol_v3/recruitment/stable_grasp/n_0064/specificity.json")
+j = json.loads(p.read_text())
+print({"passed": j["passed"], "conditions": {k: v["passed"] for k, v in j["conditions"].items()}})
+PY
+```
+
+任一 condition 失败就停止并保留报告。全部通过后才运行 1,600-state formal offline experiment：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero interventions run --config "$CONFIG" \
+  --max-states 1600 --batch-size 16
+```
+
+输出位于 `protocol_v3/recruitment/stable_grasp/n_1600/`。重跑同一 profile 会复用 specificity 和已完成 action report；64-state smoke 不会覆盖 formal profile。该命令仍不运行 LIBERO closed-loop rollout。
 
 ## 6. 正式实验
 
@@ -614,10 +655,9 @@ Protocol v3 的 primary 只使用 linear probe；MLP capacity check 仍属于 pr
 
 分类指标始终使用训练分区的完整类别全集。二元事件的 bootstrap 若有效重采样比例低于 `minimum_bootstrap_valid_rate`，该区间和对应 accessibility/stage-delta gate 会失败，不能从剩余条件样本推断。阶段报告分别给出 `delta_low/high` 和按指标方向转换后的 `improvement_low/high`；Geometry 不要把 raw delta 区间直接画成 improvement 区间。
 
-在 probe gate 得到可解释结果前，不运行：
+在 StableGrasp specificity 与 offline action-sensitivity gate 得到可解释结果前，不运行：
 
 ```text
-libero interventions run
 libero evaluate paired
 recovery RL / PPO / SAC
 ```

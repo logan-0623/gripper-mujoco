@@ -268,3 +268,57 @@ Create the new `interaction_vla/representation_study/libero/` package and matchi
 There is no scientifically valid way to recover privileged contacts, object poses, or exact simulator replay from the public LeRobot video/state/action columns alone. A formal State Bank therefore requires the matching original LIBERO HDF5 demonstrations containing simulator states, actions, and model XML. The implementation must fail clearly if that source is absent. It must not approximate privileged labels from RGB and call them ground truth.
 
 The initial formal annotation scope is LIBERO Spatial and Object. Goal and Long support is an explicit extension gate because their articulation and multi-goal task plans require reviewed semantics. This limitation is reported as coverage, not hidden by default labels.
+
+## 2026-08-31 longitudinal functional-recruitment audit
+
+### Scientific boundary
+
+Protocol-v3 accessibility is frozen formal evidence. The next question is narrower than generic VLA probing or intervention: for the same simulator-grounded factor, when does accessibility emerge and when does the downstream policy begin to rely on it? Probing, interpretable feature discovery, activation steering, causal ablation, observability-versus-controllability, rollout tracing, and broad checkpoint evolution are prior-art boundaries rather than standalone novelty claims. This boundary is informed by *Mechanistic Interpretability for Steering Vision-Language-Action Models* (CoRL 2025) and arXiv:2603.05487, 2603.19233, 2603.19183, 2605.17204, 2605.30117, 2605.28527, 2606.08653, and 2608.13474.
+
+The preregistered target is therefore the trajectory of `RawDrift(t)`, frozen cross-fit `Accessibility(t)`, and held-out `FunctionalRecruitment(t)` for `StableGrasp` at `action_expert_input`. No claim generalizes beyond expert-only adaptation with a frozen upstream vision encoder.
+
+### Four frozen conditions
+
+| Condition | Checkpoint | SHA-256 | Fraction | Update |
+|---|---|---|---:|---:|
+| `pretrained` | `stages/pretrained/checkpoint` | `bd8a2c55d285972df7cf3e87af2be93f503380e5088db90671f109135140e182` | 0 | 0 |
+| `d25_u16070` | `stages/sft_25/run/checkpoints/016070/pretrained_model` | `87eb73e69e199f067932be03069e4ebdb9d2d24fc8d828968dfc2dff762c591a` | .25 | 16,070 |
+| `d100_u16617` | `stages/sft_100/run/checkpoints/016617/pretrained_model` | `47f950a43fbe5fb8edb8a8230450ccd7143e0123947822deea15e1c9bf47edae` | 1.0 | 16,617 |
+| `d100_u66470` | `stages/sft_100/run/checkpoints/066470/pretrained_model` | `da3e1a69697710fb4f7de238eb06f54797df81ae73f0184dccd94724de8e15f9` | 1.0 | 66,470 |
+
+For `d25_u16070` versus `d100_u16617`, the base model/revision, dataset revision, seed, batch size 8, optimizer and scheduler settings, policy configuration, code hash, and config hash match. Update budgets differ by 547 steps (3.4%). Dataset coverage and sample repetition do not match: D25 completes five passes over its nested quarter subset, while D100@16,617 is an early checkpoint of the full-data run. This is an approximately matched-update coverage contrast, not perfect causal isolation.
+
+### Frozen StableGrasp accessibility
+
+At `action_expert_input`, episode-group StableGrasp AUPRC/utility relative to the strongest preregistered shortcut are: pretrained `.7813 / -.0753`, D25@16k `.9371 / +.0806`, D100@16k `.9390 / +.0825`, and D100@66k `.9408 / +.0843`. Task-group values are `.7267 / -.0923`, `.9037 / +.0847`, `.9045 / +.0855`, and `.8820 / +.0630`; the late task-group utility CI crosses zero. These values are read from the immutable Protocol-v3 report and will not be recomputed by the intervention runner.
+
+No policy-success report exists for these four checkpoints. Baseline closed-loop success is `not_run`; floor/ceiling eligibility cannot yet be inferred.
+
+### Intervention binding and identifiability
+
+The exact tensor is the output of `model.action_time_mlp_out`, shape `[batch, 50, 720]`, on the final of ten denoising evaluations. Protocol-v3 pooled it by the mean over all 50 action-token positions. The intervention must therefore use the same module, final-call selection, and token positions; the older generic `model.action_in_proj` intervention is incompatible.
+
+Protocol-v3 cell artifacts do not store probe weights. Fold-specific probes will be deterministically reconstructed with the frozen fold manifest, seeds, solver, hyperparameters, labels, and caches. Reconstruction must reproduce the archived held-out predictions and scores before a weight is accepted. Each seed direction is converted from standardized to raw feature coordinates; the three normalized directions are sign-aligned and reduced to one consensus SVD direction. A held-out state only receives the direction trained without its episode group.
+
+StableGrasp is strongly phase-coupled in the State Bank: transport/lift are positive, approach/align/contact/release are negative, and only `place` contains both labels (315 positive, 168 negative; both classes within task × phase for 14 tasks). Consequently, Phase and Contact are mandatory non-target probes and a `place`-only diagnostic is mandatory. If StableGrasp disruption does not exceed Phase disruption and same-rank matched-random disruption, the specificity gate fails and no StableGrasp action-use claim is permitted.
+
+### Preregistered offline gate
+
+The targeted intervention moves the pooled final-call representation along the fold-specific StableGrasp consensus direction toward the probe decision boundary, caps displacement at the training-fold natural-difference P95, and broadcasts the resulting feature delta over all 50 action tokens. The matched-random control uses a deterministic orthogonal rank-one direction, identical token positions, and exactly the same per-state L2 displacement. Matched-mean is secondary; full zeroing is OOD sanity only.
+
+Specificity reports StableGrasp, Phase, Contact, and Geometry probe disruption; target-minus-random effects; activation norm ratio; displacement percentile; and the `place`-only result. It passes only if probe reconstruction is exact, StableGrasp disruption exceeds matched random, StableGrasp exceeds mandatory non-target disruption in aggregate or the preregistered `place` conditional supports specificity, and activation support does not fail.
+
+If specificity passes, first-action sensitivity reports translation L2 (indices 0–2), rotation L2 (3–5), gripper absolute delta and command-flip rate (index 6), with full-chunk effects secondary. `U_SG(t)` is targeted displacement minus matched-random displacement. Episode-clustered bootstrap is primary and task-clustered bootstrap is a robustness analysis. Results are stratified into pre-contact, contact/grasp, post-grasp, and place/release.
+
+The offline primary grid is four checkpoints × original/target/matched-random = 12 condition cells. Matched-mean and zero add eight secondary cells. The formal cap is 1,600 stratified State Bank states; smoke mode uses 64. Closed-loop remains conditional: a later baseline screen would require 240 original rollouts (four checkpoints × 20 tasks × three seeds), followed only for non-floor/non-ceiling checkpoints by paired original/target/random runs. No rollout is authorized by the current gate.
+
+### CCFA gates
+
+1. `probe_reconstruction_exact`: frozen out-of-fold predictions/scores reproduced.
+2. `stablegrasp_factor_specificity`: target disruption exceeds same-rank random and Phase/Contact controls without gross OOD shift.
+3. `stablegrasp_longitudinal_action_sensitivity_vs_matched_random`: clustered CI for targeted-minus-random first-action displacement is reported at each checkpoint.
+4. `baseline_floor_ceiling`: not run.
+5. `paired_closed_loop_dependence`: not run.
+6. `rl_plasticity`: frozen and non-blocking.
+
+The current checkpoints identify an associational training trajectory under a controlled training recipe. They do not identify end-to-end VLA dynamics, and D25@16k versus D100@16k does not isolate coverage from data-repetition differences. The main temporal-dissociation hypothesis remains testable because accessibility is frozen on the same states/folds and functional sensitivity can be measured with fold-held-out bases at all four conditions.
