@@ -1,0 +1,214 @@
+{
+  "completed_conditions": 8,
+  "identical_cache_pairs": [
+    {
+      "left": "pretrained",
+      "right": "d25_u16070",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "pretrained",
+      "right": "d50_u16324",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "pretrained",
+      "right": "d100_u16617",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "pretrained",
+      "right": "d50_u32650",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "pretrained",
+      "right": "d100_u33234",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "pretrained",
+      "right": "d100_u49851",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "pretrained",
+      "right": "d100_u66470",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d25_u16070",
+      "right": "d50_u16324",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d25_u16070",
+      "right": "d100_u16617",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d25_u16070",
+      "right": "d50_u32650",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d25_u16070",
+      "right": "d100_u33234",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d25_u16070",
+      "right": "d100_u49851",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d25_u16070",
+      "right": "d100_u66470",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d50_u16324",
+      "right": "d100_u16617",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d50_u16324",
+      "right": "d50_u32650",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d50_u16324",
+      "right": "d100_u33234",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d50_u16324",
+      "right": "d100_u49851",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d50_u16324",
+      "right": "d100_u66470",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d100_u16617",
+      "right": "d50_u32650",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d100_u16617",
+      "right": "d100_u33234",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d100_u16617",
+      "right": "d100_u49851",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d100_u16617",
+      "right": "d100_u66470",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d50_u32650",
+      "right": "d100_u33234",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d50_u32650",
+      "right": "d100_u49851",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d50_u32650",
+      "right": "d100_u66470",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d100_u33234",
+      "right": "d100_u49851",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d100_u33234",
+      "right": "d100_u66470",
+      "taps": [
+        "vision_output"
+      ]
+    },
+    {
+      "left": "d100_u49851",
+      "right": "d100_u66470",
+      "taps": [
+        "vision_output"
+      ]
+    }
+  ],
+  "missing_conditions": [],
+  "note": "identical tap caches are reported diagnostically and are not automatically invalid",
+  "passed": true,
+  "planned_conditions": 8,
+  "runtime_gate": {
+    "implementations": 1,
+    "invalid_bindings": 0,
+    "passed": true,
+    "reports": 8,
+    "runtime_fingerprints": 1,
+    "state_banks": 1
+  },
+  "schema_version": "libero_smolvla_longitudinal_latent_gate_v3"
+}

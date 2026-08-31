@@ -1,0 +1,61 @@
+{
+  "image_thumbnails": true,
+  "manual_review_assertion": "reviewer inspected every registered timeline and accepted the annotation semantics",
+  "manual_review_passed": true,
+  "manual_review_required": true,
+  "note": "passed means artifacts are complete; a human must still inspect the sampled timelines",
+  "passed": true,
+  "schema_version": "libero_annotation_timeline_report_v1",
+  "state_bank_manifest_sha256": "a645164cea60d674b4edf72b1f65b1d168c0498944789c6e2910ac9813117d41",
+  "states": 13603,
+  "timelines": [
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_00.png",
+      "sha256": "1e4796e0e7dbe4e112610b660005bc36a620b53dd8d52c913ab0a8193abb9b93"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_01.png",
+      "sha256": "9f8e09b14113ba0f8950d178b6a5146e50372b1134ebf8b08b92babcaca24f24"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_02.png",
+      "sha256": "aa3639048f5581eab546af917a11b8f912043f85969c14a8aa2f92c32e2f3694"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_03.png",
+      "sha256": "03f7cf12590a084137a2d6799b0dc22069bc0b3b1b05d833be748b8f0206b665"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_04.png",
+      "sha256": "63c389c9c5f6ad45f4f13b946d007fb31b52217036e9ee1cd76cbdab4f66a485"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_05.png",
+      "sha256": "332bf3c5bd96897e3a563e98dfe05a5b9cefe04d1a16a4ea3cb785ec06576845"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_06.png",
+      "sha256": "238bb1dc61be20ee27d08508363f4ed0a2f1aa74c3d15697aa8835ee9aa0f59d"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_07.png",
+      "sha256": "ca0ff67e1d5c355d3186e531794398256732ad9796de2b6dfae99cea53e5b5b4"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_08.png",
+      "sha256": "738af1660859c11cceace404744dd5662faaf67590028f8390fcdabbafd5cd32"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_09.png",
+      "sha256": "7858fb87f35748bd9424fcb9b5d90bc73046f28d3b08091d03a9b5febfbe0f43"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_10.png",
+      "sha256": "3bf5f2a84efb79b9fb87d4a11a449f9a9b71db2148840f633e049c9cdd8fca2a"
+    },
+    {
+      "path": "outputs/representation_study/libero_smolvla/timelines/timeline_11.png",
+      "sha256": "ab5f5dd3df03d02425197fa44ec7b1a34a9b349ff96a3e47300ae068afad9dfe"
+    }
+  ]
+}

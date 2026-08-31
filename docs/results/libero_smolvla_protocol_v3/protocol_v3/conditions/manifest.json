@@ -1,0 +1,97 @@
+{
+  "conditions": [
+    {
+      "checkpoint": "outputs/representation_study/libero_smolvla/stages/pretrained/checkpoint",
+      "checkpoint_sha256": "bd8a2c55d285972df7cf3e87af2be93f503380e5088db90671f109135140e182",
+      "condition": "pretrained",
+      "data_fraction": 0.0,
+      "stage": "pretrained",
+      "step": 0,
+      "training_binding_sha256": null
+    },
+    {
+      "checkpoint": "outputs/representation_study/libero_smolvla/stages/sft_25/run/checkpoints/016070/pretrained_model",
+      "checkpoint_sha256": "87eb73e69e199f067932be03069e4ebdb9d2d24fc8d828968dfc2dff762c591a",
+      "condition": "d25_u16070",
+      "data_fraction": 0.25,
+      "stage": "sft_25",
+      "step": 16070,
+      "training_binding_sha256": "5a0409c8beca17b23d7ab9123cb9927764d1dca952bd2502f1fb2147f66b6d32"
+    },
+    {
+      "checkpoint": "outputs/representation_study/libero_smolvla/stages/sft_50/run/checkpoints/016324/pretrained_model",
+      "checkpoint_sha256": "cfc717da19bf8b1f5d4b6e34857b0ab25568c1dfa63175fd1b5ff148bf5a03f9",
+      "condition": "d50_u16324",
+      "data_fraction": 0.5,
+      "stage": "sft_50",
+      "step": 16324,
+      "training_binding_sha256": "8d62b88fa872d026316b75c691464eec8c4edb3d8ccfa71cfe81bd4290527d88"
+    },
+    {
+      "checkpoint": "outputs/representation_study/libero_smolvla/stages/sft_100/run/checkpoints/016617/pretrained_model",
+      "checkpoint_sha256": "47f950a43fbe5fb8edb8a8230450ccd7143e0123947822deea15e1c9bf47edae",
+      "condition": "d100_u16617",
+      "data_fraction": 1.0,
+      "stage": "sft_100",
+      "step": 16617,
+      "training_binding_sha256": "557a5a5cc4dd2d399bee0e689d587278362b9ec09df4a309a9afb8896f8a0261"
+    },
+    {
+      "checkpoint": "outputs/representation_study/libero_smolvla/stages/sft_50/run/checkpoints/032650/pretrained_model",
+      "checkpoint_sha256": "586cb080112ef29d3964d8e51c5daa42fd3506a1c49938c7deeaa699258c1911",
+      "condition": "d50_u32650",
+      "data_fraction": 0.5,
+      "stage": "sft_50",
+      "step": 32650,
+      "training_binding_sha256": "8d62b88fa872d026316b75c691464eec8c4edb3d8ccfa71cfe81bd4290527d88"
+    },
+    {
+      "checkpoint": "outputs/representation_study/libero_smolvla/stages/sft_100/run/checkpoints/033234/pretrained_model",
+      "checkpoint_sha256": "88d52e7cda7f1a8af7510b9f779bc052d3eb862ad28aa83c82b6304d64e950b3",
+      "condition": "d100_u33234",
+      "data_fraction": 1.0,
+      "stage": "sft_100",
+      "step": 33234,
+      "training_binding_sha256": "557a5a5cc4dd2d399bee0e689d587278362b9ec09df4a309a9afb8896f8a0261"
+    },
+    {
+      "checkpoint": "outputs/representation_study/libero_smolvla/stages/sft_100/run/checkpoints/049851/pretrained_model",
+      "checkpoint_sha256": "7ae7501f1ad077e2aeaae9fbf2a1d789bcb256a45cfded2a3af154a033a25ce6",
+      "condition": "d100_u49851",
+      "data_fraction": 1.0,
+      "stage": "sft_100",
+      "step": 49851,
+      "training_binding_sha256": "557a5a5cc4dd2d399bee0e689d587278362b9ec09df4a309a9afb8896f8a0261"
+    },
+    {
+      "checkpoint": "outputs/representation_study/libero_smolvla/stages/sft_100/run/checkpoints/066470/pretrained_model",
+      "checkpoint_sha256": "da3e1a69697710fb4f7de238eb06f54797df81ae73f0184dccd94724de8e15f9",
+      "condition": "d100_u66470",
+      "data_fraction": 1.0,
+      "stage": "sft_100",
+      "step": 66470,
+      "training_binding_sha256": "557a5a5cc4dd2d399bee0e689d587278362b9ec09df4a309a9afb8896f8a0261"
+    }
+  ],
+  "contrasts": {
+    "d100_optimization_trajectory": [
+      "pretrained",
+      "d100_u16617",
+      "d100_u33234",
+      "d100_u49851",
+      "d100_u66470"
+    ],
+    "matched_update_16k": [
+      "d25_u16070",
+      "d50_u16324",
+      "d100_u16617"
+    ],
+    "matched_update_32k": [
+      "d50_u32650",
+      "d100_u33234"
+    ]
+  },
+  "note": "matched-update groups are approximate; recorded steps remain explicit",
+  "passed": true,
+  "schema_version": "libero_smolvla_longitudinal_plan_v3"
+}

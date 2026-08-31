@@ -1,0 +1,16 @@
+{
+  "alignment_sha256": "d30a9fa6c8e76936869bf5e72d481fc5e2e319a90930648b275d96c69408040c",
+  "audit_passed": true,
+  "audit_sha256": "4d969ee0b5c0136baf8f3e93f987a93efbfdb42273e70eabdcef0eba48e9d6af",
+  "config_sha256": "d0f0bf0a1d2ce9867c5d41e4ea6c231b1e3061d83cf6576f63f82d06bd7849af",
+  "episode_group_split_sha256": "b9fb9bb7d2043420140e5255a706137d8036e145f1d3bc7621563983c5178757",
+  "episodes": 100,
+  "ontology_sha256": "a44252a85ded64decb1e33db478d922f9f13dd100f6ec4de88c67ac69ee9c33d",
+  "record_schema_version": "libero_interaction_state_bank_v1",
+  "records_sha256": "89ba2cf3b460c20ef1b64de3895497fee4720041ab5c94c7294cd830fcbc5a0d",
+  "schema_version": "libero_interaction_state_bank_manifest_v1",
+  "source_binding_sha256": "d44babd62dc8c49a453812306ceffbe9fcd46d4fdfc11a35bfbe69d79af79a91",
+  "states": 13603,
+  "task_group_split_sha256": "9b91f0ca81399e6590b2d2b6f25819b26873789c4db25198ce78025845d06d51",
+  "tasks": 20
+}
