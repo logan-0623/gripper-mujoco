@@ -73,6 +73,7 @@ def test_linear_probe_is_deterministic_and_beats_majority_on_separable_data() ->
         seed=11,
         l2_grid=(0.0, 1e-3),
         epochs=100,
+        selection_metric="auprc",
     )
     second = run_linear_probe(
         x,
@@ -84,8 +85,11 @@ def test_linear_probe_is_deterministic_and_beats_majority_on_separable_data() ->
         seed=11,
         l2_grid=(0.0, 1e-3),
         epochs=100,
+        selection_metric="auprc",
     )
     assert first["test_metrics"] == second["test_metrics"]
+    assert first["selection_metric"] == "auprc"
+    assert first["device"] == "cpu"
     assert first["test_metrics"]["balanced_accuracy"] > first["baseline_metrics"]["balanced_accuracy"]
 
 
@@ -121,6 +125,24 @@ def test_linear_probe_macro_f1_uses_the_complete_training_class_universe() -> No
 
     assert result["test_metrics"]["accuracy"] == 1.0
     assert result["test_metrics"]["macro_f1"] == pytest.approx(1.0 / 3.0)
+
+
+def test_linear_geometry_probe_selects_on_normalized_mae() -> None:
+    x = np.arange(36, dtype=np.float32).reshape(12, 3)
+    y = np.stack((x[:, 0], 100.0 * x[:, 1]), axis=1)
+    result = run_linear_probe(
+        x,
+        y,
+        train_indices=np.arange(0, 6),
+        validation_indices=np.arange(6, 9),
+        test_indices=np.arange(9, 12),
+        task="regression",
+        seed=3,
+        l2_grid=(0.0, 1e-3),
+        selection_metric="normalized_mae",
+    )
+
+    assert result["selection_metric"] == "normalized_mae"
 
 
 def test_report_grid_never_confuses_missing_experiments_with_results() -> None:

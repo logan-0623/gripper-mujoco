@@ -118,6 +118,7 @@ class ProbeConfig:
     bootstrap_samples: int
     confidence_level: float
     minimum_bootstrap_valid_rate: float
+    crossfit_folds: int
     matched_seed_offsets: tuple[int, ...]
     linear_l2: tuple[float, ...]
     mlp_hidden_dim: int
@@ -309,6 +310,7 @@ def load_libero_study_config(path: str | Path) -> LiberoStudyConfig:
             minimum_bootstrap_valid_rate=float(
                 probes.get("minimum_bootstrap_valid_rate", 0.9)
             ),
+            crossfit_folds=int(probes.get("crossfit_folds", 5)),
             matched_seed_offsets=tuple(
                 int(item) for item in probes.get("matched_seed_offsets", (0,))
             ),
@@ -356,6 +358,8 @@ def load_libero_study_config(path: str | Path) -> LiberoStudyConfig:
         raise ValueError("probes.confidence_level must be in (0, 1)")
     if not 0.0 < result.probes.minimum_bootstrap_valid_rate <= 1.0:
         raise ValueError("probes.minimum_bootstrap_valid_rate must be in (0, 1]")
+    if result.probes.crossfit_folds < 3:
+        raise ValueError("probes.crossfit_folds must be at least three")
     if (
         not result.probes.matched_seed_offsets
         or any(value < 0 for value in result.probes.matched_seed_offsets)

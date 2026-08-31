@@ -8,9 +8,9 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "smolvla_probe_v2_pilot_complete"
-  gate: "protocol_v3_same_runtime_latent_execution_pending"
-  updated_at: "2026-08-28"
+  current: "smolvla_protocol_v3_crossfit_implementation"
+  gate: "protocol_v3_crossfit_execution_and_archive_pending"
+  updated_at: "2026-08-31"
 
 artifacts:
   scientific_audit: "docs/research/2026-08-23-libero-vla-representation-audit.md"
@@ -170,7 +170,7 @@ dependency_graph:
     name: "same-runtime matched-update longitudinal latent gate"
     status: implementation_only
     requires: [P0_F]
-    gate: "8 checkpoint conditions; one runtime fingerprint, State Bank, and latent implementation"
+    gate: "8 checkpoint conditions; one runtime fingerprint, State Bank, and latent implementation; passing report must be archived before evidence promotion"
   - id: P1_A
     name: "linear probes, baselines, and group-bootstrap intervals"
     status: pilot_complete
@@ -183,7 +183,7 @@ dependency_graph:
     name: "Stage × Tap × Factor report"
     status: pilot_complete
     requires: [P1_A, P1_B]
-    limitation: "Single task-group holdout has only two test task groups for many factors; formal v3 report requires task-group cross-fitting after P0_G."
+    limitation: "Protocol-v2 remains pilot evidence. Protocol-v3 5-fold task/episode group cross-fit is implemented under protocol_v3/probes/crossfit_v1 but is not evidence until its report is run and archived."
   - id: P1_D
     name: "factor-aligned intervention execution"
     status: implementation_only

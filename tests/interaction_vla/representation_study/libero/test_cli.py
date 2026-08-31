@@ -1,5 +1,6 @@
 import interaction_vla.representation_study.libero.probe_runner as probe_runner
 import interaction_vla.representation_study.libero.probe_transitions as probe_transitions
+import interaction_vla.representation_study.libero.crossfit_probes as crossfit_probes
 from interaction_vla.representation_study.cli import build_parser
 from interaction_vla.representation_study.libero.cli import dispatch
 
@@ -58,6 +59,14 @@ def test_libero_cli_has_required_ordered_families() -> None:
         ]
     )
     assert longitudinal_extract.condition == "d25_u16070"
+    for command in ("probes", "probe-report"):
+        longitudinal_probe = parser.parse_args(
+            [
+                "libero", "longitudinal", command, "--config",
+                "configs/representation_study/libero_smolvla_linux_cuda.yaml",
+            ]
+        )
+        assert longitudinal_probe.libero_command == command
 
     train = parser.parse_args(
         [
@@ -125,3 +134,29 @@ def test_probe_commands_automatically_enrich_adjacent_stage_deltas(
     )
     assert dispatch(report_args) == {"probe": "enriched"}
     assert calls == ["enrich"]
+
+
+def test_longitudinal_crossfit_probe_cli_routes_without_loading_models(monkeypatch) -> None:
+    parser = build_parser()
+    config = "configs/representation_study/libero_smolvla_linux_cuda.yaml"
+    calls: list[str] = []
+    monkeypatch.setattr(
+        crossfit_probes,
+        "run_crossfit_probe_study",
+        lambda _config: calls.append("run") or {"passed": True},
+    )
+    monkeypatch.setattr(
+        crossfit_probes,
+        "inspect_crossfit_probe_report",
+        lambda _config: calls.append("inspect") or {"passed": True},
+    )
+
+    run_args = parser.parse_args(
+        ["libero", "longitudinal", "probes", "--config", config]
+    )
+    assert dispatch(run_args) == {"passed": True}
+    report_args = parser.parse_args(
+        ["libero", "longitudinal", "probe-report", "--config", config]
+    )
+    assert dispatch(report_args) == {"passed": True}
+    assert calls == ["run", "inspect"]

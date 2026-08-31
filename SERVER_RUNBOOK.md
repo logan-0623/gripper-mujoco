@@ -370,7 +370,21 @@ done
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
   libero longitudinal inspect --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero longitudinal probes --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero longitudinal probe-report --config "$CONFIG"
 ```
+
+`longitudinal probes` 不需要 Hugging Face 网络，也不会再次加载 SmolVLA；
+classification 自动使用 CUDA，Geometry ridge 使用 CPU。它对
+8 conditions × 4 taps × 6 factors 分别执行 5-fold task-group 与
+task-blocked episode-group cross-fit，并保存 OOF cell；命令中断后直接重跑即可续用
+binding 相同的 `protocol_v3/probes/crossfit_v1/cells/*.json.gz`。runtime fingerprint
+进入 binding，所以不要在 CPU/CUDA 或不同 Torch/CUDA runtime 间混合续跑；不要
+并行启动两个相同 probe runner。
 
 最终 gate 必须满足：`passed: true`、`missing_conditions: []`、
 `runtime_gate.runtime_fingerprints: 1`、`state_banks: 1`、`implementations: 1`。
@@ -570,6 +584,8 @@ latents/<stage>/report.json
 probes/protocol_v2/report.json
 protocol_v3/conditions/manifest.json
 protocol_v3/latent_gate/report.json
+protocol_v3/probes/crossfit_v1/folds.json
+protocol_v3/probes/crossfit_v1/report.json
 ```
 
 快速检查：
@@ -583,17 +599,18 @@ find outputs/representation_study/libero_smolvla \
 
 ## 9. 当前停止线
 
-完成 `probes report` 后先分析 `Stage × Tap × Factor`：
+Protocol v2 的 `probes report` 只保留为 pilot。正式结论读取
+`protocol_v3/probes/crossfit_v1/report.json`，先分析 `Condition × Tap × Factor`：
 
 - 哪些信息在 pretrained 已可解码；
 - 哪些因素随 SFT 增强、减弱或向 action-proximal tap 移动；
 - Contact、StableGrasp、NextRelation 是否仍然薄弱；
-- 线性 probe 与 MLP capacity check 是否一致。
-- `stage_deltas` / `secondary_stage_deltas` 的 paired `destination_minus_reference` 与置信区间；
-- `adjacent_stage_deltas` / `secondary_adjacent_stage_deltas` 的相邻阶段 paired CI；区间跨零只能记为 inconclusive，不能写成精确饱和；
+- task-group 与 task-blocked episode-group 是否一致；
+- `paired_deltas` 的 `destination_minus_reference`、`improvement` 与 paired CI；区间跨零只能记为 inconclusive；
 - `identical_latent_sanity.passed` 是否为 `true`。相同 latent 若产生不同 probe 结果会直接失败，不能解释为训练阶段变化。
 
-`primary_metric` 是 matched probe seeds 的均值，`probe_metric_std` 只描述 probe 优化敏感性，不是机器人任务的独立重复。阶段变化应读取 paired stage delta，不能通过两个独立 accessibility 区间是否重叠来推断。
+Protocol v3 的 primary 只使用 linear probe；MLP capacity check 仍属于 protocol v2 pilot。
+`primary_metric` 是 matched probe seeds 的 cluster-macro 均值，`probe_metric_std` 只描述 probe 优化敏感性，不是机器人任务的独立重复。条件变化应读取 paired delta，不能通过两个独立 accessibility 区间是否重叠来推断。
 
 分类指标始终使用训练分区的完整类别全集。二元事件的 bootstrap 若有效重采样比例低于 `minimum_bootstrap_valid_rate`，该区间和对应 accessibility/stage-delta gate 会失败，不能从剩余条件样本推断。阶段报告分别给出 `delta_low/high` 和按指标方向转换后的 `improvement_low/high`；Geometry 不要把 raw delta 区间直接画成 improvement 区间。
 

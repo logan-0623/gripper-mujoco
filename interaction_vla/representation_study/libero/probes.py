@@ -167,6 +167,8 @@ def run_linear_probe(
     seed: int,
     l2_grid: tuple[float, ...],
     epochs: int = 300,
+    selection_metric: str | None = None,
+    device: str = "cpu",
 ) -> dict[str, object]:
     x = np.asarray(features, dtype=np.float32)
     y = np.asarray(targets)
@@ -179,6 +181,9 @@ def run_linear_probe(
         raise ValueError("probe partitions must be non-empty")
     standardized, x_mean, x_scale = _standardize(x[train], x)
     torch.manual_seed(seed)
+    torch_device = torch.device(device)
+    if torch_device.type == "cuda" and not torch.cuda.is_available():
+        raise ValueError("CUDA probe device requested but CUDA is unavailable")
     best: tuple[float, float, dict[str, torch.Tensor]] | None = None
     if task == "classification":
         classes = np.unique(y[train])
@@ -188,31 +193,49 @@ def run_linear_probe(
         encoded = np.asarray([class_to_index.get(value, -1) for value in y], dtype=np.int64)
         if np.any(encoded[validation] < 0) or np.any(encoded[test] < 0):
             raise ValueError("validation/test contains classes absent from training")
-        x_tensor = torch.from_numpy(standardized)
-        y_tensor = torch.from_numpy(encoded)
+        binary = len(classes) == 2
+        metric_name = selection_metric or "balanced_accuracy"
+        allowed = {"accuracy", "macro_f1", "balanced_accuracy"}
+        if binary:
+            allowed.add("auprc")
+        if metric_name not in allowed:
+            raise ValueError(f"unsupported classification selection metric: {metric_name}")
+        label_universe = np.arange(len(classes), dtype=np.int64)
+        x_tensor = torch.from_numpy(standardized).to(torch_device)
+        y_tensor = torch.from_numpy(encoded).to(torch_device)
+        train_tensor = torch.as_tensor(train, device=torch_device)
+        validation_tensor = torch.as_tensor(validation, device=torch_device)
+        test_tensor = torch.as_tensor(test, device=torch_device)
         for l2 in l2_grid:
             torch.manual_seed(seed)
-            model = nn.Linear(x.shape[1], len(classes))
+            model = nn.Linear(x.shape[1], len(classes)).to(torch_device)
             optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
             best_validation = -float("inf")
             best_l2_state: dict[str, torch.Tensor] | None = None
             stale_epochs = 0
             for _ in range(epochs):
-                logits = model(x_tensor[train])
-                loss = nn.functional.cross_entropy(logits, y_tensor[train])
+                logits = model(x_tensor[train_tensor])
+                loss = nn.functional.cross_entropy(logits, y_tensor[train_tensor])
                 loss = loss + float(l2) * sum((parameter**2).sum() for parameter in model.parameters())
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 with torch.no_grad():
-                    validation_prediction = model(x_tensor[validation]).argmax(dim=1).numpy()
+                    validation_logits = model(x_tensor[validation_tensor])
+                    validation_prediction = validation_logits.argmax(dim=1).cpu().numpy()
+                    validation_probability = torch.softmax(validation_logits, dim=1).cpu().numpy()
                 validation_metric = classification_metrics(
-                    encoded[validation], validation_prediction
-                )["balanced_accuracy"]
+                    encoded[validation],
+                    validation_prediction,
+                    score=validation_probability[:, 1] if binary else None,
+                    binary=binary,
+                    labels=label_universe,
+                )[metric_name]
                 if validation_metric > best_validation + 1e-8:
                     best_validation = validation_metric
                     best_l2_state = {
-                        key: value.detach().clone() for key, value in model.state_dict().items()
+                        key: value.detach().cpu().clone()
+                        for key, value in model.state_dict().items()
                     }
                     stale_epochs = 0
                 else:
@@ -224,14 +247,12 @@ def run_linear_probe(
             if best is None or candidate[:2] > best[:2]:
                 best = candidate
         assert best is not None
-        model = nn.Linear(x.shape[1], len(classes))
+        model = nn.Linear(x.shape[1], len(classes)).to(torch_device)
         model.load_state_dict(best[2])
         with torch.no_grad():
-            test_logits = model(torch.from_numpy(standardized[test]))
-            prediction = test_logits.argmax(dim=1).numpy()
-            probability = torch.softmax(test_logits, dim=1).numpy()
-        binary = len(classes) == 2
-        label_universe = np.arange(len(classes), dtype=np.int64)
+            test_logits = model(x_tensor[test_tensor])
+            prediction = test_logits.argmax(dim=1).cpu().numpy()
+            probability = torch.softmax(test_logits, dim=1).cpu().numpy()
         test_metrics = classification_metrics(
             encoded[test],
             prediction,
@@ -242,7 +263,7 @@ def run_linear_probe(
         baseline_prediction = constant_classification_baseline(encoded[train])
         majority = int(baseline_prediction[0])
         baseline_test = np.full(len(test), majority, dtype=np.int64)
-        prevalence = float(np.mean(encoded[test] == 1)) if binary else None
+        prevalence = float(np.mean(encoded[train] == 1)) if binary else None
         baseline_metrics = classification_metrics(
             encoded[test],
             baseline_test,
@@ -253,6 +274,8 @@ def run_linear_probe(
         return {
             "model": "linear",
             "task": task,
+            "selection_metric": metric_name,
+            "device": torch_device.type,
             "selected_l2": -best[1],
             "test_metrics": test_metrics,
             "baseline_metrics": baseline_metrics,
@@ -271,25 +294,46 @@ def run_linear_probe(
     if y_regression.ndim == 1:
         y_regression = y_regression[:, None]
     best_regression: tuple[float, float, np.ndarray] | None = None
+    metric_name = selection_metric or "mae"
+    if metric_name not in {"mae", "normalized_mae"}:
+        raise ValueError(f"unsupported regression selection metric: {metric_name}")
+    scale = np.ptp(y_regression[train], axis=0)
+    scale = np.where(scale > 1e-8, scale, 1.0)
     train_x = np.concatenate((standardized[train], np.ones((len(train), 1))), axis=1)
+    gram = train_x.T @ train_x
+    rhs = train_x.T @ y_regression[train]
     for l2 in l2_grid:
         regularizer = np.eye(train_x.shape[1]) * float(l2)
         regularizer[-1, -1] = 0.0
-        weight = np.linalg.pinv(train_x.T @ train_x + regularizer) @ train_x.T @ y_regression[train]
+        system = gram + regularizer
+        weight = (
+            np.linalg.pinv(system) @ rhs
+            if float(l2) == 0.0
+            else np.linalg.solve(system, rhs)
+        )
         validation_x = np.concatenate((standardized[validation], np.ones((len(validation), 1))), axis=1)
-        validation_error = float(np.mean(np.abs(validation_x @ weight - y_regression[validation])))
+        validation_prediction = validation_x @ weight
+        validation_error = (
+            geometry_metrics(
+                y_regression[validation],
+                validation_prediction,
+                normalization_scale=scale,
+            )["normalized_mae"]
+            if metric_name == "normalized_mae"
+            else float(np.mean(np.abs(validation_prediction - y_regression[validation])))
+        )
         candidate = (-validation_error, -float(l2), weight)
         if best_regression is None or candidate[:2] > best_regression[:2]:
             best_regression = candidate
     assert best_regression is not None
     test_x = np.concatenate((standardized[test], np.ones((len(test), 1))), axis=1)
     prediction = test_x @ best_regression[2]
-    scale = np.ptp(y_regression[train], axis=0)
-    scale = np.where(scale > 1e-8, scale, 1.0)
     baseline = np.broadcast_to(y_regression[train].mean(axis=0), prediction.shape)
     return {
         "model": "linear",
         "task": task,
+        "selection_metric": metric_name,
+        "device": "cpu",
         "selected_l2": -best_regression[1],
         "test_metrics": geometry_metrics(y_regression[test], prediction, normalization_scale=scale),
         "baseline_metrics": geometry_metrics(y_regression[test], baseline, normalization_scale=scale),

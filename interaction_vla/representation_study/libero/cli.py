@@ -62,7 +62,7 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
     longitudinal_commands = longitudinal.add_subparsers(
         dest="libero_command", required=True
     )
-    for name in ("plan", "inspect"):
+    for name in ("plan", "inspect", "probes", "probe-report"):
         command = longitudinal_commands.add_parser(name)
         command.add_argument("--config", type=Path, required=True)
     longitudinal_extract = longitudinal_commands.add_parser("extract")
@@ -379,6 +379,15 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
             )
         if args.libero_command == "inspect":
             return inspect_longitudinal_latents(config)
+        if args.libero_command in {"probes", "probe-report"}:
+            from .crossfit_probes import (
+                inspect_crossfit_probe_report,
+                run_crossfit_probe_study,
+            )
+
+            if args.libero_command == "probes":
+                return run_crossfit_probe_study(config)
+            return inspect_crossfit_probe_report(config)
     if args.libero_family == "probes":
         from .probe_runner import run_probe_study
         from .probe_transitions import enrich_adjacent_stage_deltas

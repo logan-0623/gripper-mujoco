@@ -19,7 +19,7 @@ Interaction Graph 是 privileged annotation / measurement vocabulary，不是必
 | Recovery RL v2 calibration | `failed_gate` | SFT recovery success 未进入 30–50% 目标区间 |
 | LIBERO State Bank | `formal_evidence` | 20 tasks、100 episodes、13,603 states；自动审计与 12 张 timeline 人工审批通过 |
 | SmolVLA protocol v2 stages / latent / probes | `pilot_complete` | 80/96 cells 完成；存在跨服务器 latent confound，只作 pilot |
-| SmolVLA longitudinal protocol v3 | `implementation_only` | 等待同机重提取 8 个已有 checkpoint，通过后运行 cross-fit probe |
+| SmolVLA longitudinal protocol v3 | `implementation_only` | 8-condition latent gate 已在服务器执行；正式 cross-fit report 尚未运行/归档 |
 
 旧 ACT 成功率为 Flat 30.0%、Teacher Graph 35.0%、Predicted Random 40.0%、Predicted Reflect 41.7%。它说明 graph correctness 不能直接当作 control utility，但不回答新的 SmolVLA longitudinal question。
 
@@ -161,11 +161,27 @@ done
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
   libero longitudinal inspect --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero longitudinal probes --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero longitudinal probe-report --config "$CONFIG"
 ```
 
 `inspect` 必须报告 `passed: true` 且 `runtime_fingerprints: 1`。它同时形成约
 16k/32k updates 的 matched-update 比较和 D100 optimization trajectory；旧
-`latents/` 与 `probes/protocol_v2/` 不会被覆盖。
+`latents/` 与 `probes/protocol_v2/` 不会被覆盖。`longitudinal probes` 只读取
+State Bank 与本地 latent cache，不加载 SmolVLA、不访问 Hugging Face；正式配置使用
+5-fold task/episode group cross-fit，输出到
+`protocol_v3/probes/crossfit_v1/`，中断后会复用 scientific binding 相同的压缩 cell。
+`probe-report` 只校验并汇总现有结果，不重新拟合。Classification probe 在 CUDA
+可用时使用 GPU，Geometry ridge 使用 CPU；probe runtime fingerprint 属于 cell
+binding，因此不要把同一输出目录在 CPU 与 CUDA 机器之间混合续跑。
+
+Protocol v3 primary 仅使用 linear probe。`accessible` 表示 cross-fit probe 的
+cluster-macro utility 置信区间高于最强的 task/instruction/time shortcut；它不表示
+policy functionally used 该因素，更不表示 closed-loop useful。
 
 ## Intervention 与 RL 边界
 

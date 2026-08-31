@@ -34,6 +34,7 @@ def test_smoke_config_is_isolated_deterministic_and_rl_free() -> None:
     )
     assert config.taps.pooling == "valid_token_mean"
     assert config.probes.matched_seed_offsets == (0,)
+    assert config.probes.crossfit_folds == 3
     assert config.probes.minimum_bootstrap_valid_rate == 0.9
     assert not hasattr(config, "rl")
 
@@ -44,6 +45,7 @@ def test_formal_probe_config_uses_three_matched_seed_offsets() -> None:
     )
 
     assert config.probes.matched_seed_offsets == (0, 1, 2)
+    assert config.probes.crossfit_folds == 5
 
 
 def test_config_rejects_non_nested_fraction_order(tmp_path: Path) -> None:
@@ -132,6 +134,7 @@ def test_config_rejects_invalid_gate_and_probe_parameters(tmp_path: Path) -> Non
         ("denoising_call: final", "denoising_call: first"),
         ("matched_seed_offsets: [0]", "matched_seed_offsets: [0, 0]"),
         ("minimum_bootstrap_valid_rate: 0.90", "minimum_bootstrap_valid_rate: 1.1"),
+        ("crossfit_folds: 3", "crossfit_folds: 2"),
     )
     for index, (original, changed) in enumerate(replacements):
         path = tmp_path / f"bad-parameter-{index}.yaml"
