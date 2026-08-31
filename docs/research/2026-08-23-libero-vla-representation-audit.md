@@ -306,7 +306,7 @@ StableGrasp is strongly phase-coupled in the State Bank: transport/lift are posi
 
 The targeted intervention moves the pooled final-call representation along the fold-specific StableGrasp consensus direction toward the probe decision boundary, caps displacement at the training-fold natural-difference P95, and broadcasts the resulting feature delta over all 50 action tokens. The matched-random control uses a deterministic orthogonal rank-one direction, identical token positions, and exactly the same per-state L2 displacement. Matched-mean is secondary; full zeroing is OOD sanity only.
 
-Specificity reports StableGrasp, Phase, Contact, and Geometry probe disruption; target-minus-random effects; activation norm ratio; displacement percentile; and the `place`-only result. It passes only if probe reconstruction is exact, StableGrasp disruption exceeds matched random, StableGrasp exceeds mandatory non-target disruption in aggregate or the preregistered `place` conditional supports specificity, and activation support does not fail.
+Specificity reports StableGrasp, Phase, Contact, and Geometry probe disruption; target-minus-random effects; activation norm ratio; displacement percentile; and the `place`-only result. It passes only if categorical probe predictions/scores reconstruct exactly and continuous Geometry predictions reconstruct within absolute tolerance `1e-6`, StableGrasp disruption exceeds matched random, StableGrasp exceeds mandatory non-target disruption in aggregate or the preregistered `place` conditional supports specificity, and activation support does not fail.
 
 If specificity passes, first-action sensitivity reports translation L2 (indices 0–2), rotation L2 (3–5), gripper absolute delta and command-flip rate (index 6), with full-chunk effects secondary. `U_SG(t)` is targeted displacement minus matched-random displacement. Episode-clustered bootstrap is primary and task-clustered bootstrap is a robustness analysis. Results are stratified into pre-contact, contact/grasp, post-grasp, and place/release.
 
@@ -314,7 +314,7 @@ The offline primary grid is four checkpoints × original/target/matched-random =
 
 ### CCFA gates
 
-1. `probe_reconstruction_exact`: frozen out-of-fold predictions/scores reproduced.
+1. `probe_reconstruction_categorical_exact_continuous_atol_1e-6`: frozen out-of-fold categorical predictions/scores reproduce exactly and continuous predictions reproduce within numerical tolerance.
 2. `stablegrasp_factor_specificity`: target disruption exceeds same-rank random and Phase/Contact controls without gross OOD shift.
 3. `stablegrasp_longitudinal_action_sensitivity_vs_matched_random`: clustered CI for targeted-minus-random first-action displacement is reported at each checkpoint.
 4. `baseline_floor_ceiling`: not run.

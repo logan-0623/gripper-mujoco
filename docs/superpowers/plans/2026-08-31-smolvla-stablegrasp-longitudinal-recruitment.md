@@ -6,7 +6,7 @@
 
 ### Task 1: Bind the frozen evidence
 
-- Add tests for the exact four checkpoint IDs, episode-group StableGrasp cell mapping, and exact probe reconstruction rejection.
+- Add tests for the exact four checkpoint IDs, episode-group StableGrasp cell mapping, exact categorical reconstruction, and tolerance-bounded continuous reconstruction.
 - Implement a read-only audit/plan report below `protocol_v3/recruitment/stable_grasp/`.
 
 ### Task 2: Build the fold-specific intervention basis

@@ -89,6 +89,40 @@ def test_probe_reconstruction_rejects_changed_held_out_scores() -> None:
         )
 
 
+def test_probe_reconstruction_allows_roundoff_for_continuous_predictions() -> None:
+    archived = {
+        "paired_payload": {
+            "state_ids": ["a", "b"],
+            "replicates": [
+                {
+                    "seed_offset": 0,
+                    "prediction": [[0.1, 0.2], [0.3, 0.4]],
+                    "score": None,
+                }
+            ],
+        }
+    }
+    validate_probe_reconstruction(
+        result={
+            "test_prediction": [[0.1 + 2e-8, 0.2], [0.3, 0.4 - 2e-8]],
+            "test_score": None,
+        },
+        test_state_ids=("a", "b"),
+        archived_result=archived,
+        seed_offset=0,
+    )
+    with pytest.raises(ValueError, match="prediction"):
+        validate_probe_reconstruction(
+            result={
+                "test_prediction": [[0.1 + 2e-5, 0.2], [0.3, 0.4]],
+                "test_score": None,
+            },
+            test_state_ids=("a", "b"),
+            archived_result=archived,
+            seed_offset=0,
+        )
+
+
 def test_specificity_gate_fails_when_phase_changes_as_much_as_stable_grasp() -> None:
     failed = specificity_gate(
         target_minus_random={"estimate": 0.4, "ci_low": 0.2, "ci_high": 0.6},

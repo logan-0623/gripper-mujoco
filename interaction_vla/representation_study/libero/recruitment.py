@@ -254,9 +254,13 @@ def validate_probe_reconstruction(
     rows = np.asarray([index[value] for value in test_state_ids], dtype=np.int64)
     expected_prediction = np.asarray(replicates[0]["prediction"])[rows]
     prediction = np.asarray(result["test_prediction"])
-    if prediction.shape != expected_prediction.shape or not np.array_equal(
-        prediction, expected_prediction
-    ):
+    continuous = expected_prediction.ndim == 2
+    prediction_matches = (
+        np.allclose(prediction, expected_prediction, atol=atol, rtol=0)
+        if continuous and prediction.shape == expected_prediction.shape
+        else np.array_equal(prediction, expected_prediction)
+    )
+    if prediction.shape != expected_prediction.shape or not prediction_matches:
         raise ValueError("reconstructed held-out probe prediction changed")
     expected_score = replicates[0].get("score")
     score = result.get("test_score")
@@ -723,7 +727,7 @@ def audit_longitudinal_recruitment(config: LiberoStudyConfig) -> dict[str, objec
             "ccfa.yaml",
         ],
         "gates": [
-            "probe_reconstruction_exact",
+            "probe_reconstruction_categorical_exact_continuous_atol_1e-6",
             "stablegrasp_factor_specificity",
             "stablegrasp_longitudinal_action_sensitivity_vs_matched_random",
         ],
@@ -942,7 +946,7 @@ def _specificity(
             "failures": gate["failures"],
             "states": len(selected),
             "place_states": int(len(place_rows)),
-            "probe_reconstruction_exact": True,
+            "probe_reconstruction": "categorical_exact_continuous_atol_1e-6",
             "seed_direction_min_cosine": min(agreements),
             "natural_difference_p95_by_fold": support_caps,
             "decision_boundary_cap_rate_by_fold": capped_rates,
