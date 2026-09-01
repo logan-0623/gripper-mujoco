@@ -15,7 +15,9 @@ from interaction_vla.representation_study.libero.recruitment import (
     specificity_gate,
     validate_probe_reconstruction,
     _action_sensitivity,
+    _context_batch_plan,
     _matched_training_audit,
+    _migrate_specificity_binding,
 )
 from interaction_vla.representation_study.libero.config import load_libero_study_config
 
@@ -163,6 +165,30 @@ def test_failed_specificity_blocks_policy_and_dataset_loading(tmp_path) -> None:
     result = _action_sensitivity(config, max_states=64, batch_size=8)
 
     assert result["status"] == "blocked_by_specificity"
+
+
+def test_context_batch_plan_preserves_original_batches_and_selected_order() -> None:
+    plan = _context_batch_plan(
+        tuple(f"s{index}" for index in range(10)),
+        ("s9", "s1", "s6"),
+        batch_size=4,
+    )
+    assert plan == (
+        (0, 4, (1,), (1,)),
+        (4, 8, (2,), (2,)),
+        (8, 10, (1,), (0,)),
+    )
+
+
+def test_specificity_binding_migration_only_accepts_the_known_action_revision() -> None:
+    existing = {"binding_sha256": "legacy", "passed": True}
+    migrated = _migrate_specificity_binding(
+        existing, current="current", legacy="legacy"
+    )
+    assert migrated["binding_sha256"] == "current"
+    assert migrated["binding_migration"]["previous_binding_sha256"] == "legacy"
+    with pytest.raises(FileExistsError, match="different binding"):
+        _migrate_specificity_binding(existing, current="current", legacy="other")
 
 
 def test_matched_training_audit_allows_only_nested_coverage_and_step_differences() -> None:

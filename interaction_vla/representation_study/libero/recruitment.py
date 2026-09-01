@@ -47,6 +47,9 @@ PRIMARY_FACTOR = "stable_grasp"
 PRIMARY_TAP = "action_expert_input"
 CONTROL_FACTORS = ("contact", "phase", "geometry")
 RECRUITMENT_SCHEMA = "libero_stablegrasp_recruitment_v1"
+LEGACY_SPECIFICITY_IMPLEMENTATION_SHA256 = (
+    "33eb757ae83083ed6dc65318284abadd12e996cbb717019fcc4b745a1fa2ba0c"
+)
 
 
 def _profile_root(protocol_root: Path, max_states: int) -> Path:
@@ -497,6 +500,39 @@ def _select_records(records: Sequence[StateRecord], max_states: int) -> tuple[in
     return tuple(selected)
 
 
+def _context_batch_plan(
+    all_state_ids: Sequence[str],
+    selected_state_ids: Sequence[str],
+    *,
+    batch_size: int,
+) -> tuple[tuple[int, int, tuple[int, ...], tuple[int, ...]], ...]:
+    if batch_size <= 0:
+        raise ValueError("context batch size must be positive")
+    index = {state_id: row for row, state_id in enumerate(all_state_ids)}
+    if len(index) != len(all_state_ids) or len(set(selected_state_ids)) != len(
+        selected_state_ids
+    ):
+        raise ValueError("context batching requires unique state IDs")
+    buckets: dict[int, tuple[list[int], list[int]]] = {}
+    for output_row, state_id in enumerate(selected_state_ids):
+        source_row = index.get(state_id)
+        if source_row is None:
+            raise ValueError(f"selected state is absent from the State Bank: {state_id}")
+        batch = source_row // batch_size
+        local_rows, output_rows = buckets.setdefault(batch, ([], []))
+        local_rows.append(source_row - batch * batch_size)
+        output_rows.append(output_row)
+    return tuple(
+        (
+            batch * batch_size,
+            min((batch + 1) * batch_size, len(all_state_ids)),
+            tuple(buckets[batch][0]),
+            tuple(buckets[batch][1]),
+        )
+        for batch in sorted(buckets)
+    )
+
+
 def _cluster_interval(
     values: np.ndarray,
     records: Sequence[StateRecord],
@@ -524,6 +560,24 @@ def _atomic_npz(path: Path, **arrays: np.ndarray) -> None:
         temporary = Path(handle.name)
         np.savez_compressed(handle, **arrays)
     temporary.replace(path)
+
+
+def _migrate_specificity_binding(
+    existing: Mapping[str, object], *, current: str, legacy: str
+) -> dict[str, object]:
+    previous = existing.get("binding_sha256")
+    if previous == current:
+        return dict(existing)
+    if previous != legacy:
+        raise FileExistsError("specificity profile has a different binding")
+    return {
+        **dict(existing),
+        "binding_sha256": current,
+        "binding_migration": {
+            "reason": "action_batch_context_fix_only",
+            "previous_binding_sha256": previous,
+        },
+    }
 
 
 def _fold_manifest(root: Path) -> CrossFitManifest:
@@ -764,14 +818,20 @@ def _specificity(
     root = Path(config.output_dir) / "protocol_v3"
     profile_root = _profile_root(root, max_states)
     report_path = profile_root / "specificity.json"
+    binding_fields = {
+        "audit_sha256": _file_sha256(
+            root / "recruitment" / PRIMARY_FACTOR / "audit.json"
+        ),
+        "config_sha256": _file_sha256(config.source_path),
+        "max_states": max_states,
+    }
     binding = _canonical_sha256(
+        {**binding_fields, "implementation_sha256": _implementation_sha256()}
+    )
+    legacy_binding = _canonical_sha256(
         {
-            "audit_sha256": _file_sha256(
-                root / "recruitment" / PRIMARY_FACTOR / "audit.json"
-            ),
-            "config_sha256": _file_sha256(config.source_path),
-            "implementation_sha256": _implementation_sha256(),
-            "max_states": max_states,
+            **binding_fields,
+            "implementation_sha256": LEGACY_SPECIFICITY_IMPLEMENTATION_SHA256,
         }
     )
     if report_path.is_file():
@@ -779,14 +839,18 @@ def _specificity(
         if (
             existing.get("schema_version") != RECRUITMENT_SCHEMA
             or existing.get("max_states") != max_states
-            or existing.get("binding_sha256") != binding
         ):
             raise FileExistsError(f"specificity profile has a different binding: {report_path}")
-        for row in existing.get("conditions", {}).values():
+        migrated = _migrate_specificity_binding(
+            existing, current=binding, legacy=legacy_binding
+        )
+        for row in migrated.get("conditions", {}).values():
             artifact = Path(str(row["intervention_artifact"]))
             if _file_sha256(artifact) != row["intervention_sha256"]:
                 raise ValueError(f"specificity intervention artifact changed: {artifact}")
-        return existing
+        if migrated != existing:
+            write_json_atomic(report_path, migrated)
+        return migrated
     records, _, _, _ = load_state_bank(Path(config.output_dir) / "state_bank")
     selected = _select_records(records, max_states)
     manifest = _fold_manifest(root)
@@ -1126,59 +1190,65 @@ def _action_sensitivity(
         artifact = np.load(profile_root / "interventions" / f"{condition}.npz")
         state_ids = tuple(str(value) for value in artifact["state_ids"])
         selected = tuple(by_id[value] for value in state_ids)
-        modes = {name: [] for name in ("original", "target", "random", "mean", "zero")}
-        for start in tqdm(
-            range(0, len(selected), batch_size),
+        selected_indices = np.asarray(
+            [record_index[state_id] for state_id in state_ids], dtype=np.int64
+        )
+        latent_state_ids, latent_features, _ = load_latent_cache(
+            root / "latents" / condition / PRIMARY_TAP
+        )
+        all_state_ids = tuple(record.state_id for record in records)
+        if latent_state_ids != all_state_ids:
+            raise ValueError(f"action latent rows differ from State Bank: {condition}")
+        if not np.array_equal(artifact["source"], latent_features[selected_indices]):
+            raise ValueError(f"specificity source differs from latent cache: {condition}")
+        context_plan = _context_batch_plan(
+            all_state_ids, state_ids, batch_size=batch_size
+        )
+        modes: dict[str, np.ndarray | None] = {
+            name: None for name in ("original", "target", "random", "mean", "zero")
+        }
+        checkpoint_id = f"{condition}:{str(condition_row['checkpoint_sha256'])[:16]}"
+        for context_start, context_stop, context_rows, output_rows in tqdm(
+            context_plan,
             desc=f"StableGrasp actions {condition}",
-            unit="batch",
+            unit="context",
         ):
-            stop = min(start + batch_size, len(selected))
-            batch_records = selected[start:stop]
+            batch_records = records[context_start:context_stop]
             batch = collate_state_bank_observations(batch_records, dataset)
-            expected = artifact["source"][start:stop]
-            checkpoint_id = f"{condition}:{str(condition_row['checkpoint_sha256'])[:16]}"
-            zero_delta = np.zeros_like(expected)
-            original = _predict(
-                policy=policy,
-                preprocessor=preprocessor,
-                postprocessor=postprocessor,
-                backend=backend,
-                batch=batch,
-                state_ids=state_ids[start:stop],
-                checkpoint_id=checkpoint_id,
-                delta=zero_delta,
-                expected=expected,
-            )
-            modes["original"].append(original)
-            for mode, key in (("target", "target_delta"), ("random", "random_delta"), ("mean", "mean_delta")):
-                modes[mode].append(
-                    _predict(
-                        policy=policy,
-                        preprocessor=preprocessor,
-                        postprocessor=postprocessor,
-                        backend=backend,
-                        batch=batch,
-                        state_ids=state_ids[start:stop],
-                        checkpoint_id=checkpoint_id,
-                        delta=artifact[key][start:stop],
-                        expected=expected,
-                    )
-                )
-            modes["zero"].append(
-                _predict(
+            context_state_ids = all_state_ids[context_start:context_stop]
+            expected = latent_features[context_start:context_stop]
+            local = np.asarray(context_rows, dtype=np.int64)
+            output = np.asarray(output_rows, dtype=np.int64)
+            for mode, key, zero in (
+                ("original", None, False),
+                ("target", "target_delta", False),
+                ("random", "random_delta", False),
+                ("mean", "mean_delta", False),
+                ("zero", None, True),
+            ):
+                delta = np.zeros_like(expected)
+                if key is not None:
+                    delta[local] = artifact[key][output]
+                predicted = _predict(
                     policy=policy,
                     preprocessor=preprocessor,
                     postprocessor=postprocessor,
                     backend=backend,
                     batch=batch,
-                    state_ids=state_ids[start:stop],
+                    state_ids=context_state_ids,
                     checkpoint_id=checkpoint_id,
-                    delta=zero_delta,
+                    delta=delta,
                     expected=expected,
-                    zero=True,
+                    zero=zero,
                 )
-            )
-        actions = {name: np.concatenate(values) for name, values in modes.items()}
+                if modes[mode] is None:
+                    modes[mode] = np.empty(
+                        (len(selected), *predicted.shape[1:]), dtype=predicted.dtype
+                    )
+                modes[mode][output] = predicted[local]
+        if any(value is None for value in modes.values()):
+            raise ValueError(f"action context batching produced no outputs: {condition}")
+        actions = {name: value for name, value in modes.items() if value is not None}
         target = _action_effect(actions["original"], actions["target"])
         random = _action_effect(actions["original"], actions["random"])
         mean = _action_effect(actions["original"], actions["mean"])
@@ -1247,6 +1317,8 @@ def _action_sensitivity(
         )
         condition_reports[condition] = {
             "states": len(selected),
+            "context_batches": len(context_plan),
+            "context_batch_size": batch_size,
             "functionally_recruited": functionally_recruited,
             "metrics": metrics,
             "rows": str(rows_path),

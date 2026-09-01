@@ -453,7 +453,7 @@ PY
   --max-states 1600 --batch-size 32
 ```
 
-`batch-size 32` 不是吞吐调优项，而是 frozen Protocol-v3 latent runtime binding；改为 16 会使 BF16 live action-expert tensor 与 cache 不一致。输出位于 `protocol_v3/recruitment/stable_grasp/n_1600/`。重跑同一 profile 会复用 specificity 和已完成 action report；64-state smoke 不会覆盖 formal profile。该命令仍不运行 LIBERO closed-loop rollout。
+`batch-size 32` 不是吞吐调优项，而是 frozen Protocol-v3 latent runtime binding。程序按原始连续 State Bank batches 恢复相同的语言 padding 和 BF16 kernel context，包括最后不足 32 states 的 batch；因此 formal 进度约为 408 contexts/checkpoint，当前 4080 SUPER 预计总计约 2 小时。首次升级会验证并保留已有 specificity/intervention artifacts，在报告中记录 `action_batch_context_fix_only` binding migration。输出位于 `protocol_v3/recruitment/stable_grasp/n_1600/`。重跑同一 profile 会复用 specificity 和已完成 action report；64-state smoke 不会覆盖 formal profile。该命令仍不运行 LIBERO closed-loop rollout。
 
 ## 6. 正式实验
 

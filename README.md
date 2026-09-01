@@ -228,7 +228,7 @@ CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
   --max-states 1600 --batch-size 32
 ```
 
-`batch-size 32` 必须与 frozen Protocol-v3 latent runtime 相同，否则 BF16 GPU kernel 变化会破坏 live-tensor 对齐。64 与 1600 states 写入不同 profile 目录；相同 profile 可直接重跑续用。动作变化只叫 action-sensitive，只有未来 paired rollout 的任务结果变化才叫 closed-loop useful。Phase 是强制 specificity 对照；若它与 StableGrasp 同时被同等破坏，代码会停止在 specificity gate。
+`batch-size 32` 必须与 frozen Protocol-v3 latent runtime 相同。Action evaluation 会恢复 latent extraction 使用的连续 State Bank batch context，包括最后不足 32 states 的 batch；因此 formal 进度约为 408 contexts/checkpoint，而不是把 1,600 个抽样状态重新拼成 50 batches。首次升级会保留已验证的 specificity/intervention artifacts，并记录一次仅针对 action batching 的 binding migration。64 与 1600 states 写入不同 profile 目录；相同 profile 可直接重跑续用。动作变化只叫 action-sensitive，只有未来 paired rollout 的任务结果变化才叫 closed-loop useful。Phase 是强制 specificity 对照；若它与 StableGrasp 同时被同等破坏，代码会停止在 specificity gate。
 
 当前不要运行或调优 PPO/SAC，不要从 nominal demonstration 制造 Recovery label。RL 只有在离线 probe、closed-loop intervention、非饱和 perturbation distribution、Oracle-State residual recovery 四个前置 gate 都通过后才恢复。
 
