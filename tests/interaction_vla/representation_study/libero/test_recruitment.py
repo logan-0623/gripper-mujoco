@@ -19,6 +19,9 @@ from interaction_vla.representation_study.libero.recruitment import (
     _matched_training_audit,
     _migrate_specificity_binding,
 )
+from interaction_vla.representation_study.libero.recruitment_analysis import (
+    _summarize_cached_recruitment_rows,
+)
 from interaction_vla.representation_study.libero.config import load_libero_study_config
 
 
@@ -189,6 +192,91 @@ def test_specificity_binding_migration_only_accepts_the_known_action_revision() 
     assert migrated["binding_migration"]["previous_binding_sha256"] == "legacy"
     with pytest.raises(FileExistsError, match="different binding"):
         _migrate_specificity_binding(existing, current="current", legacy="other")
+
+
+def test_cached_recruitment_analysis_pairs_checkpoints_and_reports_requested_slices() -> None:
+    config = load_libero_study_config(
+        "configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml"
+    )
+    metrics = (
+        "first_action_l2",
+        "translation_l2",
+        "rotation_l2",
+        "gripper_abs",
+        "gripper_flip",
+        "chunk_l2",
+    )
+
+    def rows(first: tuple[float, float]) -> list[dict[str, object]]:
+        result = []
+        for index, value in enumerate(first):
+            effects = {
+                metric: {
+                    "target": value + index + offset,
+                    "random": index + offset,
+                    "target_minus_random": value,
+                }
+                for offset, metric in enumerate(metrics)
+            }
+            result.append(
+                {
+                    "state_id": f"state-{index}",
+                    "episode": f"episode-{index}",
+                    "task": "task-0",
+                    "phase": "approach" if index == 0 else "transport",
+                    "stratum": "pre_contact" if index == 0 else "post_grasp",
+                    "stable_grasp": bool(index),
+                    "effects": effects,
+                }
+            )
+        return result
+
+    report = _summarize_cached_recruitment_rows(
+        {
+            "pretrained": rows((0.0, 0.0)),
+            "d25_u16070": rows((1.0, 3.0)),
+            "d100_u16617": rows((2.0, 4.0)),
+            "d100_u66470": rows((3.0, 5.0)),
+        },
+        config=config,
+    )
+
+    emergence = report["paired_checkpoint_deltas"]["emergence"]
+    assert emergence["metrics"]["first_action_l2"]["episode_ci"]["estimate"] == 2.0
+    assert (
+        report["conditions"]["d25_u16070"]["state_conditioned_u"]
+        ["stable_grasp"]["true"]["first_action_l2"]["episode_ci"]["estimate"]
+        == 3.0
+    )
+    assert (
+        report["conditions"]["d25_u16070"]["action_component_conditioned_u"]
+        ["translation_l2"]["episode_ci"]["estimate"]
+        == 2.0
+    )
+    assert (
+        report["conditions"]["d25_u16070"]["full_chunk_secondary"]
+        ["episode_ci"]["estimate"]
+        == 2.0
+    )
+
+
+def test_cached_recruitment_analysis_rejects_unpaired_states() -> None:
+    config = load_libero_study_config(
+        "configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml"
+    )
+    row = {
+        "state_id": "state-0",
+        "episode": "episode-0",
+        "task": "task-0",
+        "phase": "approach",
+        "stratum": "pre_contact",
+        "stable_grasp": False,
+        "effects": {},
+    }
+    conditions = {condition: [dict(row)] for condition in PRIMARY_CONDITIONS}
+    conditions["d100_u66470"][0]["state_id"] = "different"
+    with pytest.raises(ValueError, match="identical state IDs"):
+        _summarize_cached_recruitment_rows(conditions, config=config)
 
 
 def test_matched_training_audit_allows_only_nested_coverage_and_step_differences() -> None:

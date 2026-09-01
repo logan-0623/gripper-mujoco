@@ -98,6 +98,9 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
     intervention_run.add_argument("--batch-size", type=int, default=32)
     intervention_run.add_argument("--specificity-only", action="store_true")
     intervention_run.add_argument("--dry-run", action="store_true")
+    intervention_analyze = intervention_commands.add_parser("analyze")
+    intervention_analyze.add_argument("--config", type=Path, required=True)
+    intervention_analyze.add_argument("--max-states", type=int, default=1600)
 
     evaluate = commands.add_parser("evaluate", help="paired LIBERO closed-loop utility")
     evaluate_commands = evaluate.add_subparsers(dest="libero_command", required=True)
@@ -451,6 +454,12 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
                 batch_size=args.batch_size,
                 specificity_only=args.specificity_only,
                 dry_run=args.dry_run,
+            )
+        if args.libero_command == "analyze":
+            from .recruitment_analysis import analyze_cached_longitudinal_recruitment
+
+            return analyze_cached_longitudinal_recruitment(
+                config, max_states=args.max_states
             )
     raise ValueError(
         f"{args.libero_family} {args.libero_command} is implementation-only until its prerequisite gate passes"

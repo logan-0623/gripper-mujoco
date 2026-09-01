@@ -455,6 +455,13 @@ PY
 
 `batch-size 32` 不是吞吐调优项，而是 frozen Protocol-v3 latent runtime binding。程序按原始连续 State Bank batches 恢复相同的语言 padding 和 BF16 kernel context，包括最后不足 32 states 的 batch；因此 formal 进度约为 408 contexts/checkpoint，当前 4080 SUPER 预计总计约 2 小时。首次升级会验证并保留已有 specificity/intervention artifacts，在报告中记录 `action_batch_context_fix_only` binding migration。输出位于 `protocol_v3/recruitment/stable_grasp/n_1600/`。重跑同一 profile 会复用 specificity 和已完成 action report；64-state smoke 不会覆盖 formal profile。该命令仍不运行 LIBERO closed-loop rollout。
 
+完成后直接分析已有 gzip 行缓存；该命令仅使用 CPU，输出 `n_1600/cached_analysis.json`：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero interventions analyze --config "$CONFIG" --max-states 1600
+```
+
 ## 6. 正式实验
 
 正式实验使用隔离的输出目录，不覆盖 smoke：
