@@ -1,0 +1,1257 @@
+{
+  "closed_loop_useful": "not_measured",
+  "conditions": {
+    "d100_u16617": {
+      "context_batch_size": 32,
+      "context_batches": 408,
+      "functionally_recruited": false,
+      "metrics": {
+        "chunk_l2": {
+          "matched_mean_effect": 0.0006739111267961562,
+          "matched_random_effect": 0.0007395834545604885,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -3.368623947721048e-05,
+              "ci_low": -5.517740917121263e-05,
+              "clusters": 96,
+              "estimate": -4.3873218164662834e-05
+            },
+            "place_release": {
+              "ci_high": -7.466984075414179e-06,
+              "ci_low": -2.2124680693642108e-05,
+              "clusters": 99,
+              "estimate": -1.4946920346119442e-05
+            },
+            "post_grasp": {
+              "ci_high": -4.519878410772861e-05,
+              "ci_low": -8.797683596778863e-05,
+              "clusters": 100,
+              "estimate": -6.611204553337302e-05
+            },
+            "pre_contact": {
+              "ci_high": -0.0001513095650905211,
+              "ci_low": -0.00023662825857405834,
+              "clusters": 100,
+              "estimate": -0.00019413498899666592
+            }
+          },
+          "target_effect": 0.0006598166655749083,
+          "target_minus_random_episode_ci": {
+            "ci_high": -6.32892696656227e-05,
+            "ci_low": -9.625809181001377e-05,
+            "clusters": 100,
+            "estimate": -7.976679326020531e-05
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -6.857443844273803e-05,
+            "ci_low": -9.165702661539399e-05,
+            "clusters": 20,
+            "estimate": -7.976679326020531e-05
+          },
+          "zero_ood_effect": 0.1900757998228073
+        },
+        "first_action_l2": {
+          "matched_mean_effect": 0.0006366835441440344,
+          "matched_random_effect": 0.000768347003031522,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -0.00010457434999729549,
+              "ci_low": -0.00021826931227385512,
+              "clusters": 96,
+              "estimate": -0.00016083742088085273
+            },
+            "place_release": {
+              "ci_high": 3.2539556474758405e-05,
+              "ci_low": -2.9554360583579273e-05,
+              "clusters": 99,
+              "estimate": 2.295264075655723e-06
+            },
+            "post_grasp": {
+              "ci_high": -0.0001197769722359461,
+              "ci_low": -0.0002612789923037513,
+              "clusters": 100,
+              "estimate": -0.0001884864240855677
+            },
+            "pre_contact": {
+              "ci_high": -8.642172984582514e-05,
+              "ci_low": -0.0003012289747030908,
+              "clusters": 100,
+              "estimate": -0.00019385013947612607
+            }
+          },
+          "target_effect": 0.0006331272888928652,
+          "target_minus_random_episode_ci": {
+            "ci_high": -9.87338101015533e-05,
+            "ci_low": -0.00017148566720998843,
+            "clusters": 100,
+            "estimate": -0.0001352196800917227
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -0.00010891164836198188,
+            "ci_low": -0.00016094856768177125,
+            "clusters": 20,
+            "estimate": -0.0001352196800917227
+          },
+          "zero_ood_effect": 0.13974140584468842
+        },
+        "gripper_abs": {
+          "matched_mean_effect": 0.0005292279529385269,
+          "matched_random_effect": 0.000669243629090488,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -0.00012345069748467596,
+              "ci_low": -0.0002489710039575284,
+              "clusters": 96,
+              "estimate": -0.00018503338098526
+            },
+            "place_release": {
+              "ci_high": 4.193784948804914e-05,
+              "ci_low": -3.0782518400466676e-05,
+              "clusters": 99,
+              "estimate": 5.506128072738647e-06
+            },
+            "post_grasp": {
+              "ci_high": -0.00012157132538848461,
+              "ci_low": -0.00027530954785682447,
+              "clusters": 100,
+              "estimate": -0.00019735485315322876
+            },
+            "pre_contact": {
+              "ci_high": -6.216021691636576e-05,
+              "ci_low": -0.0003004044826062358,
+              "clusters": 100,
+              "estimate": -0.0001817689836025238
+            }
+          },
+          "target_effect": 0.0005295808659866452,
+          "target_minus_random_episode_ci": {
+            "ci_high": -0.00010104973496655112,
+            "ci_low": -0.00017906453069543187,
+            "clusters": 100,
+            "estimate": -0.0001396627724170685
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -0.00011118425615131857,
+            "ci_low": -0.0001671273000538349,
+            "clusters": 20,
+            "estimate": -0.0001396627724170685
+          },
+          "zero_ood_effect": 0.1282840520143509
+        },
+        "gripper_flip": {
+          "matched_mean_effect": 0.0,
+          "matched_random_effect": 0.0,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 96,
+              "estimate": 0.0
+            },
+            "place_release": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 99,
+              "estimate": 0.0
+            },
+            "post_grasp": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 100,
+              "estimate": 0.0
+            },
+            "pre_contact": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 100,
+              "estimate": 0.0
+            }
+          },
+          "target_effect": 0.0,
+          "target_minus_random_episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 100,
+            "estimate": 0.0
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 20,
+            "estimate": 0.0
+          },
+          "zero_ood_effect": 0.0
+        },
+        "rotation_l2": {
+          "matched_mean_effect": 3.845653554890305e-05,
+          "matched_random_effect": 4.0186998376157135e-05,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 2.292679656373365e-06,
+              "ci_low": -2.1041451570461105e-06,
+              "clusters": 96,
+              "estimate": 1.1665331385302125e-07
+            },
+            "place_release": {
+              "ci_high": 2.0941309664624265e-06,
+              "ci_low": -1.7090185440839346e-06,
+              "clusters": 99,
+              "estimate": 2.911225237767212e-07
+            },
+            "post_grasp": {
+              "ci_high": 1.0679206932743607e-06,
+              "ci_low": -4.177138966224001e-06,
+              "clusters": 100,
+              "estimate": -1.5732228223441779e-06
+            },
+            "pre_contact": {
+              "ci_high": -1.564649329850454e-06,
+              "ci_low": -8.047611871442108e-06,
+              "clusters": 100,
+              "estimate": -4.908181274458912e-06
+            }
+          },
+          "target_effect": 3.8668593333568424e-05,
+          "target_minus_random_episode_ci": {
+            "ci_high": -1.880191149047549e-07,
+            "ci_low": -2.8354116860951885e-06,
+            "clusters": 100,
+            "estimate": -1.5184070647933367e-06
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 7.817497547078647e-09,
+            "ci_low": -2.988957601893105e-06,
+            "clusters": 20,
+            "estimate": -1.5184070647933367e-06
+          },
+          "zero_ood_effect": 0.005493747070431709
+        },
+        "translation_l2": {
+          "matched_mean_effect": 0.0002735520829446614,
+          "matched_random_effect": 0.000277982180705294,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 1.8965502799896067e-05,
+              "ci_low": -9.69637977884006e-06,
+              "clusters": 96,
+              "estimate": 4.547988755803089e-06
+            },
+            "place_release": {
+              "ci_high": 4.249033943476993e-06,
+              "ci_low": -1.9716445297008843e-05,
+              "clusters": 99,
+              "estimate": -7.986975624589832e-06
+            },
+            "post_grasp": {
+              "ci_high": 5.255582536272269e-06,
+              "ci_low": -2.81325858428084e-05,
+              "clusters": 100,
+              "estimate": -1.1470288081909529e-05
+            },
+            "pre_contact": {
+              "ci_high": -1.499158633224989e-06,
+              "ci_low": -5.249425805148344e-05,
+              "clusters": 100,
+              "estimate": -2.681711808691034e-05
+            }
+          },
+          "target_effect": 0.0002675505820661783,
+          "target_minus_random_episode_ci": {
+            "ci_high": -1.2537677283215875e-06,
+            "ci_low": -1.943435158243686e-05,
+            "clusters": 100,
+            "estimate": -1.0431598259401653e-05
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -1.2507672477113428e-06,
+            "ci_low": -1.8870599287254208e-05,
+            "clusters": 20,
+            "estimate": -1.0431598259401653e-05
+          },
+          "zero_ood_effect": 0.03943678364157677
+        }
+      },
+      "rows": "outputs/representation_study/libero_smolvla/protocol_v3/recruitment/stable_grasp/n_1600/actions/d100_u16617.json.gz",
+      "rows_sha256": "88f2fbd80291d0444c30603b494f579c56d82dc52ff03b3ab438d08697e79833",
+      "states": 1600
+    },
+    "d100_u66470": {
+      "context_batch_size": 32,
+      "context_batches": 408,
+      "functionally_recruited": false,
+      "metrics": {
+        "chunk_l2": {
+          "matched_mean_effect": 0.0007964086253196001,
+          "matched_random_effect": 0.0009246263070963323,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -6.0833758720557964e-05,
+              "ci_low": -0.00010129826872688567,
+              "clusters": 96,
+              "estimate": -7.979871028510388e-05
+            },
+            "place_release": {
+              "ci_high": -3.1856150557108774e-05,
+              "ci_low": -9.099503051230283e-05,
+              "clusters": 99,
+              "estimate": -6.043470784788951e-05
+            },
+            "post_grasp": {
+              "ci_high": -9.361890691346575e-05,
+              "ci_low": -0.00018295335708341077,
+              "clusters": 100,
+              "estimate": -0.00013760704918240661
+            },
+            "pre_contact": {
+              "ci_high": -0.00022112525086218226,
+              "ci_low": -0.0003601306792106442,
+              "clusters": 100,
+              "estimate": -0.0002901947087229928
+            }
+          },
+          "target_effect": 0.0007826174842193723,
+          "target_minus_random_episode_ci": {
+            "ci_high": -0.00010937869492120036,
+            "ci_low": -0.00017509473563605298,
+            "clusters": 100,
+            "estimate": -0.0001420087940095982
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -0.00012497540644017138,
+            "ci_low": -0.00015882608685706146,
+            "clusters": 20,
+            "estimate": -0.0001420087940095982
+          },
+          "zero_ood_effect": 0.19191695749759674
+        },
+        "first_action_l2": {
+          "matched_mean_effect": 0.0007883128710091114,
+          "matched_random_effect": 0.0009826432215049863,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -0.00012227851474530128,
+              "ci_low": -0.000241630508748234,
+              "clusters": 96,
+              "estimate": -0.00017849340783868684
+            },
+            "place_release": {
+              "ci_high": 2.6089070998115976e-05,
+              "ci_low": -8.982732203213962e-05,
+              "clusters": 99,
+              "estimate": -3.0293237687146755e-05
+            },
+            "post_grasp": {
+              "ci_high": -0.00020734864734115913,
+              "ci_low": -0.00039408385368566804,
+              "clusters": 100,
+              "estimate": -0.0002970634577832243
+            },
+            "pre_contact": {
+              "ci_high": -1.7825763486789266e-05,
+              "ci_low": -0.0004097623238026016,
+              "clusters": 100,
+              "estimate": -0.00022225424301723252
+            }
+          },
+          "target_effect": 0.0008006172138266265,
+          "target_minus_random_episode_ci": {
+            "ci_high": -0.00011715824562257414,
+            "ci_low": -0.0002466479055141988,
+            "clusters": 100,
+            "estimate": -0.0001820260865815726
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -0.0001411880868899971,
+            "ci_low": -0.00022137520712908553,
+            "clusters": 20,
+            "estimate": -0.0001820260865815726
+          },
+          "zero_ood_effect": 0.17288276553153992
+        },
+        "gripper_abs": {
+          "matched_mean_effect": 0.0006628668052144349,
+          "matched_random_effect": 0.0008742164354771376,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -0.00014186493386098042,
+              "ci_low": -0.00026963251242059436,
+              "clusters": 96,
+              "estimate": -0.0002030596137046814
+            },
+            "place_release": {
+              "ci_high": 2.3571130395110405e-05,
+              "ci_low": -0.0001044660030302752,
+              "clusters": 99,
+              "estimate": -3.963455557823181e-05
+            },
+            "post_grasp": {
+              "ci_high": -0.0002325121318465152,
+              "ci_low": -0.00043374595116219407,
+              "clusters": 100,
+              "estimate": -0.0003324776887893677
+            },
+            "pre_contact": {
+              "ci_high": 1.539485203376962e-05,
+              "ci_low": -0.00041640290418978437,
+              "clusters": 100,
+              "estimate": -0.00020970910787582398
+            }
+          },
+          "target_effect": 0.0006779961404390633,
+          "target_minus_random_episode_ci": {
+            "ci_high": -0.000123249801437747,
+            "ci_low": -0.00026724498733657917,
+            "clusters": 100,
+            "estimate": -0.00019622024148702622
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -0.00015342233143746854,
+            "ci_low": -0.00023590146005153656,
+            "clusters": 20,
+            "estimate": -0.00019622024148702622
+          },
+          "zero_ood_effect": 0.16113953292369843
+        },
+        "gripper_flip": {
+          "matched_mean_effect": 0.0,
+          "matched_random_effect": 0.0,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 96,
+              "estimate": 0.0
+            },
+            "place_release": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 99,
+              "estimate": 0.0
+            },
+            "post_grasp": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 100,
+              "estimate": 0.0
+            },
+            "pre_contact": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 100,
+              "estimate": 0.0
+            }
+          },
+          "target_effect": 0.0,
+          "target_minus_random_episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 100,
+            "estimate": 0.0
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 20,
+            "estimate": 0.0
+          },
+          "zero_ood_effect": 0.0
+        },
+        "rotation_l2": {
+          "matched_mean_effect": 4.6045654016779736e-05,
+          "matched_random_effect": 4.6918972657294944e-05,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 1.0939970488096834e-06,
+              "ci_low": -3.1499514273640895e-06,
+              "clusters": 96,
+              "estimate": -1.0350901652600443e-06
+            },
+            "place_release": {
+              "ci_high": 7.646876268509898e-07,
+              "ci_low": -3.4821947456881603e-06,
+              "clusters": 99,
+              "estimate": -1.365915726410094e-06
+            },
+            "post_grasp": {
+              "ci_high": 6.796864977383952e-07,
+              "ci_low": -5.556246247471402e-06,
+              "clusters": 100,
+              "estimate": -2.485120464825741e-06
+            },
+            "pre_contact": {
+              "ci_high": 1.9420655750052323e-06,
+              "ci_low": -6.622082266790133e-06,
+              "clusters": 100,
+              "estimate": -2.423306634682376e-06
+            }
+          },
+          "target_effect": 4.509161226451397e-05,
+          "target_minus_random_episode_ci": {
+            "ci_high": -1.9977462644490217e-07,
+            "ci_low": -3.4371464415951625e-06,
+            "clusters": 100,
+            "estimate": -1.8273582477945638e-06
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -3.6190671723801535e-07,
+            "ci_low": -3.361578960479505e-06,
+            "clusters": 20,
+            "estimate": -1.8273582477945638e-06
+          },
+          "zero_ood_effect": 0.005595790222287178
+        },
+        "translation_l2": {
+          "matched_mean_effect": 0.00032799632754176855,
+          "matched_random_effect": 0.0003232600574847311,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 2.124274534320887e-05,
+              "ci_low": -2.059416636749844e-05,
+              "clusters": 96,
+              "estimate": -1.6006786609068514e-07
+            },
+            "place_release": {
+              "ci_high": 2.269326586235869e-05,
+              "ci_low": -5.507575404282615e-06,
+              "clusters": 99,
+              "estimate": 8.721734657228808e-06
+            },
+            "post_grasp": {
+              "ci_high": 1.0677735080396415e-05,
+              "ci_low": -4.222330627730534e-05,
+              "clusters": 100,
+              "estimate": -1.4373547292052536e-05
+            },
+            "pre_contact": {
+              "ci_high": 3.6957662211565726e-05,
+              "ci_low": -3.603539591663488e-05,
+              "clusters": 100,
+              "estimate": 1.3672646218765295e-06
+            }
+          },
+          "target_effect": 0.00032214896054938436,
+          "target_minus_random_episode_ci": {
+            "ci_high": 1.1122252835520388e-05,
+            "ci_low": -1.3218922451223479e-05,
+            "clusters": 100,
+            "estimate": -1.1111539697594707e-06
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 1.1064953064305867e-05,
+            "ci_low": -1.283082479682207e-05,
+            "clusters": 20,
+            "estimate": -1.1111539697594707e-06
+          },
+          "zero_ood_effect": 0.044577956199645996
+        }
+      },
+      "rows": "outputs/representation_study/libero_smolvla/protocol_v3/recruitment/stable_grasp/n_1600/actions/d100_u66470.json.gz",
+      "rows_sha256": "51931bb48a43fbdde113a207c9f1da7fa1ad5a2a9c22ea14a8e7063929e63144",
+      "states": 1600
+    },
+    "d25_u16070": {
+      "context_batch_size": 32,
+      "context_batches": 408,
+      "functionally_recruited": false,
+      "metrics": {
+        "chunk_l2": {
+          "matched_mean_effect": 0.0009122390765696764,
+          "matched_random_effect": 0.0010776000563055277,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -3.5010602681370425e-05,
+              "ci_low": -8.831648487737122e-05,
+              "clusters": 96,
+              "estimate": -6.0642394528258594e-05
+            },
+            "place_release": {
+              "ci_high": -5.486361107967907e-05,
+              "ci_low": -0.0001243068777373699,
+              "clusters": 99,
+              "estimate": -8.612913094111718e-05
+            },
+            "post_grasp": {
+              "ci_high": -0.00014278362081103862,
+              "ci_low": -0.00022701702043222504,
+              "clusters": 100,
+              "estimate": -0.0001812922915269155
+            },
+            "pre_contact": {
+              "ci_high": -0.0002888974572078172,
+              "ci_low": -0.0003947693120458224,
+              "clusters": 100,
+              "estimate": -0.00034181418697698974
+            }
+          },
+          "target_effect": 0.000910130562260747,
+          "target_minus_random_episode_ci": {
+            "ci_high": -0.0001450187105507888,
+            "ci_low": -0.00019273615860334635,
+            "clusters": 100,
+            "estimate": -0.00016746950099332024
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -0.00014999678342519473,
+            "ci_low": -0.00018724381017091218,
+            "clusters": 20,
+            "estimate": -0.00016746950099332024
+          },
+          "zero_ood_effect": 0.1762789487838745
+        },
+        "first_action_l2": {
+          "matched_mean_effect": 0.0009201701614074409,
+          "matched_random_effect": 0.0011339670745655894,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -5.579588390433201e-05,
+              "ci_low": -0.00017446350923274806,
+              "clusters": 96,
+              "estimate": -0.00011417358247854281
+            },
+            "place_release": {
+              "ci_high": -2.864856288386397e-05,
+              "ci_low": -0.00014684531903125586,
+              "clusters": 99,
+              "estimate": -8.461447789159137e-05
+            },
+            "post_grasp": {
+              "ci_high": -3.804544653721636e-05,
+              "ci_low": -0.0002883640704522416,
+              "clusters": 100,
+              "estimate": -0.00016532279343664413
+            },
+            "pre_contact": {
+              "ci_high": -0.00037426920500594553,
+              "ci_low": -0.0006151555437999384,
+              "clusters": 100,
+              "estimate": -0.0004941033156501362
+            }
+          },
+          "target_effect": 0.0009194135200232267,
+          "target_minus_random_episode_ci": {
+            "ci_high": -0.00016540791077740663,
+            "ci_low": -0.0002620047628895552,
+            "clusters": 100,
+            "estimate": -0.00021455354236422865
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -0.0001766370439911498,
+            "ci_low": -0.0002551192583564443,
+            "clusters": 20,
+            "estimate": -0.00021455354236422865
+          },
+          "zero_ood_effect": 0.22279120981693268
+        },
+        "gripper_abs": {
+          "matched_mean_effect": 0.0007178946398198605,
+          "matched_random_effect": 0.0009716774802654982,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -0.00010344284879984872,
+              "ci_low": -0.00024187654308082274,
+              "clusters": 96,
+              "estimate": -0.00016994044184684754
+            },
+            "place_release": {
+              "ci_high": -2.3800879527775865e-05,
+              "ci_low": -0.00016288238052789328,
+              "clusters": 99,
+              "estimate": -9.152427315711975e-05
+            },
+            "post_grasp": {
+              "ci_high": -0.00011147178873223231,
+              "ci_low": -0.0003551104225817701,
+              "clusters": 100,
+              "estimate": -0.0002343370020389557
+            },
+            "pre_contact": {
+              "ci_high": -0.0003937906926583531,
+              "ci_low": -0.0006595783737516894,
+              "clusters": 100,
+              "estimate": -0.0005263644456863403
+            }
+          },
+          "target_effect": 0.000716135953553021,
+          "target_minus_random_episode_ci": {
+            "ci_high": -0.0002048322653088177,
+            "ci_low": -0.00030631018828352464,
+            "clusters": 100,
+            "estimate": -0.00025554154068231584
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -0.00021429450530558824,
+            "ci_low": -0.00029970157146453854,
+            "clusters": 20,
+            "estimate": -0.00025554154068231584
+          },
+          "zero_ood_effect": 0.21287694573402405
+        },
+        "gripper_flip": {
+          "matched_mean_effect": 0.0,
+          "matched_random_effect": 0.0,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 96,
+              "estimate": 0.0
+            },
+            "place_release": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 99,
+              "estimate": 0.0
+            },
+            "post_grasp": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 100,
+              "estimate": 0.0
+            },
+            "pre_contact": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 100,
+              "estimate": 0.0
+            }
+          },
+          "target_effect": 0.0,
+          "target_minus_random_episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 100,
+            "estimate": 0.0
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 20,
+            "estimate": 0.0
+          },
+          "zero_ood_effect": 0.00125
+        },
+        "rotation_l2": {
+          "matched_mean_effect": 6.148034299258143e-05,
+          "matched_random_effect": 6.38471101410687e-05,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 2.485108098300397e-06,
+              "ci_low": -4.956070672684284e-06,
+              "clusters": 96,
+              "estimate": -1.2976073503523368e-06
+            },
+            "place_release": {
+              "ci_high": 3.6114038725956686e-06,
+              "ci_low": -2.3805499437489325e-06,
+              "clusters": 99,
+              "estimate": 6.020553837515763e-07
+            },
+            "post_grasp": {
+              "ci_high": -2.9773399166152515e-06,
+              "ci_low": -1.2430331044055857e-05,
+              "clusters": 100,
+              "estimate": -7.568599723981606e-06
+            },
+            "pre_contact": {
+              "ci_high": -4.959468859696527e-07,
+              "ci_low": -1.163942708789996e-05,
+              "clusters": 100,
+              "estimate": -5.9731597821155445e-06
+            }
+          },
+          "target_effect": 6.02877807978075e-05,
+          "target_minus_random_episode_ci": {
+            "ci_high": -1.3148384575169374e-06,
+            "ci_low": -5.746008669989189e-06,
+            "clusters": 100,
+            "estimate": -3.5593278681744776e-06
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -9.193706886350148e-07,
+            "ci_low": -5.974858049484055e-06,
+            "clusters": 20,
+            "estimate": -3.5593278681744776e-06
+          },
+          "zero_ood_effect": 0.0065761711448431015
+        },
+        "translation_l2": {
+          "matched_mean_effect": 0.00046068793744780123,
+          "matched_random_effect": 0.00044511788291856647,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 6.708875607378876e-05,
+              "ci_low": -7.649331491076561e-06,
+              "clusters": 96,
+              "estimate": 2.8545971599669428e-05
+            },
+            "place_release": {
+              "ci_high": 1.5109834936139331e-05,
+              "ci_low": -1.9735428774590106e-05,
+              "clusters": 99,
+              "estimate": -2.014582069023163e-06
+            },
+            "post_grasp": {
+              "ci_high": 0.00012026181529388336,
+              "ci_low": 6.825645030532958e-06,
+              "clusters": 100,
+              "estimate": 6.120555752204383e-05
+            },
+            "pre_contact": {
+              "ci_high": 1.3591322472302815e-05,
+              "ci_low": -5.762064301359279e-05,
+              "clusters": 100,
+              "estimate": -2.302837727256701e-05
+            }
+          },
+          "target_effect": 0.00046129507245495915,
+          "target_minus_random_episode_ci": {
+            "ci_high": 4.207394178535737e-05,
+            "ci_low": -6.495999214130861e-06,
+            "clusters": 100,
+            "estimate": 1.6177142445030768e-05
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 3.326736605214363e-05,
+            "ci_low": -3.8835283868365816e-07,
+            "clusters": 20,
+            "estimate": 1.6177142445030768e-05
+          },
+          "zero_ood_effect": 0.04682259261608124
+        }
+      },
+      "rows": "outputs/representation_study/libero_smolvla/protocol_v3/recruitment/stable_grasp/n_1600/actions/d25_u16070.json.gz",
+      "rows_sha256": "7c5c462f0b459706127b9e37501b073f8a145c1e1313875fc21a8e9c60f3a337",
+      "states": 1600
+    },
+    "pretrained": {
+      "context_batch_size": 32,
+      "context_batches": 408,
+      "functionally_recruited": false,
+      "metrics": {
+        "chunk_l2": {
+          "matched_mean_effect": 0.0012629132252186537,
+          "matched_random_effect": 0.0011716661974787712,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 0.00021314837073542784,
+              "ci_low": 5.463673526909864e-05,
+              "clusters": 96,
+              "estimate": 0.00012381972206640057
+            },
+            "place_release": {
+              "ci_high": 6.779030566349992e-05,
+              "ci_low": 4.409870311998042e-06,
+              "clusters": 99,
+              "estimate": 3.6311669973656535e-05
+            },
+            "post_grasp": {
+              "ci_high": 8.171874801689118e-05,
+              "ci_low": 8.843057770094764e-06,
+              "clusters": 100,
+              "estimate": 4.603932873578742e-05
+            },
+            "pre_contact": {
+              "ci_high": 0.00027304602134058586,
+              "ci_low": 6.269256971884895e-05,
+              "clusters": 100,
+              "estimate": 0.00016269755229586736
+            }
+          },
+          "target_effect": 0.0012638833140954375,
+          "target_minus_random_episode_ci": {
+            "ci_high": 0.0001454811320714736,
+            "ci_low": 4.152777090238793e-05,
+            "clusters": 100,
+            "estimate": 9.221706826792797e-05
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 0.00011713102676549169,
+            "ci_low": 6.915340968316743e-05,
+            "clusters": 20,
+            "estimate": 9.221706826792797e-05
+          },
+          "zero_ood_effect": 0.14372652769088745
+        },
+        "first_action_l2": {
+          "matched_mean_effect": 0.001360850059427321,
+          "matched_random_effect": 0.0012989823007956147,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 0.0002094445401062614,
+              "ci_low": -7.046757963342772e-05,
+              "clusters": 96,
+              "estimate": 6.110678557888605e-05
+            },
+            "place_release": {
+              "ci_high": 7.985101685836017e-05,
+              "ci_low": -6.0567098955316324e-05,
+              "clusters": 99,
+              "estimate": 7.40905394195579e-06
+            },
+            "post_grasp": {
+              "ci_high": 3.26006761402755e-05,
+              "ci_low": -0.00012898699798028903,
+              "clusters": 100,
+              "estimate": -4.61496031130082e-05
+            },
+            "pre_contact": {
+              "ci_high": 0.0003313106888955471,
+              "ci_low": -2.5709205801475244e-05,
+              "clusters": 100,
+              "estimate": 0.00014597598914406262
+            }
+          },
+          "target_effect": 0.0013410679530352354,
+          "target_minus_random_episode_ci": {
+            "ci_high": 0.00012826612533064084,
+            "ci_low": -4.0527704264555805e-05,
+            "clusters": 100,
+            "estimate": 4.2085556387974065e-05
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 9.644029738046807e-05,
+            "ci_low": -8.129609655497914e-06,
+            "clusters": 20,
+            "estimate": 4.2085556387974065e-05
+          },
+          "zero_ood_effect": 0.14089222252368927
+        },
+        "gripper_abs": {
+          "matched_mean_effect": 0.0009803160792216659,
+          "matched_random_effect": 0.0008496238151565194,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 0.0003123262421462051,
+              "ci_low": 1.5089118437050165e-05,
+              "clusters": 96,
+              "estimate": 0.00015414451714605094
+            },
+            "place_release": {
+              "ci_high": 0.00010941238507653585,
+              "ci_low": -6.366513620473835e-05,
+              "clusters": 99,
+              "estimate": 2.1223630756139756e-05
+            },
+            "post_grasp": {
+              "ci_high": 0.0001302505655414187,
+              "ci_low": -5.794196796250488e-05,
+              "clusters": 100,
+              "estimate": 3.8317847065627574e-05
+            },
+            "pre_contact": {
+              "ci_high": 0.0004594935278394157,
+              "ci_low": 9.184660803507962e-05,
+              "clusters": 100,
+              "estimate": 0.00027014145627617835
+            }
+          },
+          "target_effect": 0.0009705807315185666,
+          "target_minus_random_episode_ci": {
+            "ci_high": 0.00021633413782351122,
+            "ci_low": 3.243509171005126e-05,
+            "clusters": 100,
+            "estimate": 0.00012095686281099916
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 0.0001806767349189613,
+            "ci_low": 6.539278154377828e-05,
+            "clusters": 20,
+            "estimate": 0.00012095686281099916
+          },
+          "zero_ood_effect": 0.08436135947704315
+        },
+        "gripper_flip": {
+          "matched_mean_effect": 0.0,
+          "matched_random_effect": 0.000625,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 96,
+              "estimate": 0.0
+            },
+            "place_release": {
+              "ci_high": 0.0,
+              "ci_low": -0.0076928020565552695,
+              "clusters": 99,
+              "estimate": -0.0025
+            },
+            "post_grasp": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 100,
+              "estimate": 0.0
+            },
+            "pre_contact": {
+              "ci_high": 0.0,
+              "ci_low": 0.0,
+              "clusters": 100,
+              "estimate": 0.0
+            }
+          },
+          "target_effect": 0.0,
+          "target_minus_random_episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": -0.0018987943398950761,
+            "clusters": 100,
+            "estimate": -0.000625
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": 0.0,
+            "ci_low": -0.001875,
+            "clusters": 20,
+            "estimate": -0.000625
+          },
+          "zero_ood_effect": 0.25125
+        },
+        "rotation_l2": {
+          "matched_mean_effect": 0.0001237081887666136,
+          "matched_random_effect": 0.00013117292837705463,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -2.7125620270600594e-06,
+              "ci_low": -1.839236621802006e-05,
+              "clusters": 96,
+              "estimate": -1.0126123565896706e-05
+            },
+            "place_release": {
+              "ci_high": 5.41905320373566e-06,
+              "ci_low": -1.0063334716729678e-05,
+              "clusters": 99,
+              "estimate": -2.4065984189292065e-06
+            },
+            "post_grasp": {
+              "ci_high": 6.676027034753378e-06,
+              "ci_low": -8.491361807286392e-06,
+              "clusters": 100,
+              "estimate": -1.0277015326209948e-06
+            },
+            "pre_contact": {
+              "ci_high": 2.4955691382215274e-06,
+              "ci_low": -1.5176791515936832e-05,
+              "clusters": 100,
+              "estimate": -6.094410409787088e-06
+            }
+          },
+          "target_effect": 0.00012625921226572245,
+          "target_minus_random_episode_ci": {
+            "ci_high": -6.890719488335707e-07,
+            "ci_low": -9.431300605968525e-06,
+            "clusters": 100,
+            "estimate": -4.913708481808499e-06
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -1.0611971999310302e-06,
+            "ci_low": -9.87612371116597e-06,
+            "clusters": 20,
+            "estimate": -4.913708481808499e-06
+          },
+          "zero_ood_effect": 0.01176549680531025
+        },
+        "translation_l2": {
+          "matched_mean_effect": 0.0007785709458403289,
+          "matched_random_effect": 0.0008406465640291572,
+          "strata": {
+            "contact_grasp": {
+              "ci_high": -3.084725353829858e-05,
+              "ci_low": -0.00013623696795767257,
+              "clusters": 96,
+              "estimate": -8.080766892817337e-05
+            },
+            "place_release": {
+              "ci_high": 6.706087351181308e-06,
+              "ci_low": -6.602579327562636e-05,
+              "clusters": 99,
+              "estimate": -2.925443845015252e-05
+            },
+            "post_grasp": {
+              "ci_high": -6.553778133086757e-05,
+              "ci_low": -0.00014050591792082135,
+              "clusters": 100,
+              "estimate": -0.00010335317016142653
+            },
+            "pre_contact": {
+              "ci_high": -5.00022360469998e-05,
+              "ci_low": -0.0002099899588049496,
+              "clusters": 100,
+              "estimate": -0.00012724666099529715
+            }
+          },
+          "target_effect": 0.0007554810727015138,
+          "target_minus_random_episode_ci": {
+            "ci_high": -5.608904696978227e-05,
+            "ci_low": -0.00011568088010571014,
+            "clusters": 100,
+            "estimate": -8.516548463376239e-05
+          },
+          "target_minus_random_task_ci": {
+            "ci_high": -5.4399639421944814e-05,
+            "ci_low": -0.00011736744548761635,
+            "clusters": 20,
+            "estimate": -8.516548463376239e-05
+          },
+          "zero_ood_effect": 0.09829308837652206
+        }
+      },
+      "rows": "outputs/representation_study/libero_smolvla/protocol_v3/recruitment/stable_grasp/n_1600/actions/pretrained.json.gz",
+      "rows_sha256": "536cf2d01c559802653443a170830add3b847b27785cad08b4db801c7be0e7ee",
+      "states": 1600
+    }
+  },
+  "functionally_recruited_conditions": [],
+  "gate": "stablegrasp_longitudinal_action_sensitivity_vs_matched_random",
+  "integrity_passed": true,
+  "passed": false,
+  "primary_cluster": "episode",
+  "primary_metric": "first_action_l2_target_minus_matched_random",
+  "robustness_cluster": "task",
+  "schema_version": "libero_stablegrasp_recruitment_v1",
+  "specificity_sha256": "30d6d25ac8baef0cc2b52e4eae6582fda3f9c594e1cbc89a63f7ebc2e8cc5f8c",
+  "status": "complete",
+  "trajectory_R_A_U": {
+    "d100_u16617": {
+      "accessibility": {
+        "accessible": true,
+        "auprc": 0.9390464007882625,
+        "utility": 0.08248623095781842,
+        "utility_ci": {
+          "baseline_points": {
+            "instruction": 0.30812390781794163,
+            "majority_or_mean": 0.30812390781794163,
+            "normalized_time_bin": 0.8565601698304437,
+            "task_id": 0.30812390781794163
+          },
+          "confidence_level": 0.95,
+          "groups": 100,
+          "high": 0.1130228209000791,
+          "low": 0.055509360490793885,
+          "minimum_valid_rate": 0.9,
+          "point": 0.08248623095781842,
+          "requested_samples": 2000,
+          "samples": 2000,
+          "unit": "group",
+          "valid_groups": 100,
+          "valid_rate": 1.0
+        }
+      },
+      "functional_recruitment": {
+        "ci_high": -9.87338101015533e-05,
+        "ci_low": -0.00017148566720998843,
+        "clusters": 100,
+        "estimate": -0.0001352196800917227
+      },
+      "raw_drift": {
+        "mean_cosine_distance": 0.36719897389411926,
+        "mean_relative_l2": 1.3422654867172241
+      }
+    },
+    "d100_u66470": {
+      "accessibility": {
+        "accessible": true,
+        "auprc": 0.9408175583753448,
+        "utility": 0.08425738854490097,
+        "utility_ci": {
+          "baseline_points": {
+            "instruction": 0.30812390781794163,
+            "majority_or_mean": 0.30812390781794163,
+            "normalized_time_bin": 0.8565601698304437,
+            "task_id": 0.30812390781794163
+          },
+          "confidence_level": 0.95,
+          "groups": 100,
+          "high": 0.11565884445844112,
+          "low": 0.057069178315611015,
+          "minimum_valid_rate": 0.9,
+          "point": 0.08425738854490097,
+          "requested_samples": 2000,
+          "samples": 2000,
+          "unit": "group",
+          "valid_groups": 100,
+          "valid_rate": 1.0
+        }
+      },
+      "functional_recruitment": {
+        "ci_high": -0.00011715824562257414,
+        "ci_low": -0.0002466479055141988,
+        "clusters": 100,
+        "estimate": -0.0001820260865815726
+      },
+      "raw_drift": {
+        "mean_cosine_distance": 0.3703843057155609,
+        "mean_relative_l2": 1.2253472805023193
+      }
+    },
+    "d25_u16070": {
+      "accessibility": {
+        "accessible": true,
+        "auprc": 0.9371343200224252,
+        "utility": 0.08057415019198137,
+        "utility_ci": {
+          "baseline_points": {
+            "instruction": 0.30812390781794163,
+            "majority_or_mean": 0.30812390781794163,
+            "normalized_time_bin": 0.8565601698304437,
+            "task_id": 0.30812390781794163
+          },
+          "confidence_level": 0.95,
+          "groups": 100,
+          "high": 0.11129057915799763,
+          "low": 0.05222277257393538,
+          "minimum_valid_rate": 0.9,
+          "point": 0.08057415019198137,
+          "requested_samples": 2000,
+          "samples": 2000,
+          "unit": "group",
+          "valid_groups": 100,
+          "valid_rate": 1.0
+        }
+      },
+      "functional_recruitment": {
+        "ci_high": -0.00016540791077740663,
+        "ci_low": -0.0002620047628895552,
+        "clusters": 100,
+        "estimate": -0.00021455354236422865
+      },
+      "raw_drift": {
+        "mean_cosine_distance": 0.3304782807826996,
+        "mean_relative_l2": 0.8771161437034607
+      }
+    },
+    "pretrained": {
+      "accessibility": {
+        "accessible": false,
+        "auprc": 0.7812664200945902,
+        "utility": -0.07529374973585366,
+        "utility_ci": {
+          "baseline_points": {
+            "instruction": 0.30812390781794163,
+            "majority_or_mean": 0.30812390781794163,
+            "normalized_time_bin": 0.8565601698304437,
+            "task_id": 0.30812390781794163
+          },
+          "confidence_level": 0.95,
+          "groups": 100,
+          "high": -0.05043917958652888,
+          "low": -0.09729482330460534,
+          "minimum_valid_rate": 0.9,
+          "point": -0.07529374973585366,
+          "requested_samples": 2000,
+          "samples": 2000,
+          "unit": "group",
+          "valid_groups": 100,
+          "valid_rate": 1.0
+        }
+      },
+      "functional_recruitment": {
+        "ci_high": 0.00012826612533064084,
+        "ci_low": -4.0527704264555805e-05,
+        "clusters": 100,
+        "estimate": 4.2085556387974065e-05
+      },
+      "raw_drift": {
+        "mean_cosine_distance": -1.3000586385203405e-08,
+        "mean_relative_l2": 0.0
+      }
+    }
+  }
+}

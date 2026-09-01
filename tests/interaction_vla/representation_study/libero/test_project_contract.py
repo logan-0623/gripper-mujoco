@@ -18,9 +18,14 @@ def test_ccfa_registry_preserves_evidence_and_stops_before_rl() -> None:
     assert longitudinal["status"] == "formal_evidence"
     formal_artifact = Path(longitudinal["evidence"]["artifact"])
     assert (formal_artifact / "protocol_v3/probes/crossfit_v1/report.json").is_file()
-    assert registry["SMOLVLA_FACTOR_INTERVENTION"]["status"] == "implementation_only"
-    assert registry["SMOLVLA_FUNCTIONAL_RECRUITMENT"]["status"] == "not_run"
-    assert registry["SMOLVLA_PAIRED_CLOSED_LOOP"]["status"] == "not_run"
+    intervention = registry["SMOLVLA_FACTOR_INTERVENTION"]
+    assert intervention["status"] == "formal_evidence"
+    recruitment_root = formal_artifact / "protocol_v3/recruitment/stable_grasp/n_1600"
+    assert (recruitment_root / "specificity.json").is_file()
+    assert (recruitment_root / "action_sensitivity.json").is_file()
+    assert (recruitment_root / "cached_analysis.json").is_file()
+    assert registry["SMOLVLA_FUNCTIONAL_RECRUITMENT"]["status"] == "failed_gate"
+    assert registry["SMOLVLA_PAIRED_CLOSED_LOOP"]["status"] == "not_started"
     assert config["scientific_contract"]["rl_scope"] == "conditional_future_work"
     graph = {row["id"]: row for row in config["dependency_graph"]}
     assert graph["P0_G"]["status"] == "formal_evidence"

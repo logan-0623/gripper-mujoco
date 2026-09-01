@@ -8,9 +8,9 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "smolvla_longitudinal_functional_recruitment"
-  gate: "stablegrasp_longitudinal_action_sensitivity_vs_matched_random"
-  updated_at: "2026-08-31"
+  current: "smolvla_functional_recruitment_reassessment"
+  gate: "stablegrasp_action_sensitivity_failed_stop_before_closed_loop"
+  updated_at: "2026-09-01"
 
 artifacts:
   scientific_audit: "docs/research/2026-08-23-libero-vla-representation-audit.md"
@@ -129,24 +129,41 @@ experiment_registry:
       identical_latent_sanity_passed: true
       paired_delta_gate_passed: true
     limitation: "Expert-only SFT freezes the upstream vision pathway; results describe trainable downstream action-pathway dynamics. Entity has task/instruction shortcuts, NextRelation lacks held-out class support, and task-group support is limited."
-    next_gate: "StableGrasp factor-specificity and longitudinal action sensitivity at action_expert_input"
+    next_gate: "Completed; StableGrasp action-sensitivity evidence is registered separately."
   - id: SMOLVLA_FACTOR_INTERVENTION
-    name: "Factor-aligned SmolVLA action and closed-loop intervention"
-    status: implementation_only
+    name: "Factor-aligned SmolVLA offline action intervention"
+    status: formal_evidence
     role: main_functional_evidence
-    blocked_by: null
-    limitation: "No intervention result exists until the specificity and action-sensitivity reports pass."
+    evidence:
+      artifact: "docs/results/libero_smolvla_protocol_v3/protocol_v3/recruitment/stable_grasp/n_1600/"
+      states: 1600
+      factor_specificity_passed: true
+      action_sensitivity_integrity_passed: true
+      functionally_recruited_conditions: 0
+      action_sensitivity_sha256: "87c9fc9e47860caa5b1bea5a894dc37b694fec0f48a93399faf23002abc46119"
+      cached_analysis_sha256: "bc462bbd9ad394df917d4e0c97d75add12d5f563462064aff787be0fe9a6278b"
+    limitation: "The matched-random basis is checkpoint-specific. Offline action displacement is not closed-loop utility, and the StableGrasp direction overlaps Contact and Phase despite passing the preregistered relative-specificity gate."
   - id: SMOLVLA_FUNCTIONAL_RECRUITMENT
     name: "StableGrasp longitudinal functional recruitment"
-    status: not_run
+    status: failed_gate
     role: main_functional_evidence
     requires: [SMOLVLA_LONGITUDINAL, SMOLVLA_FACTOR_INTERVENTION]
     gate: "StableGrasp-targeted action displacement exceeds same-rank matched-random under fold-held-out intervention bases"
+    finding: "StableGrasp accessibility emerged during early SFT, but targeted first-action displacement did not exceed matched-random at any checkpoint."
+    evidence:
+      emergence_delta_u: -0.0002566390987522027
+      emergence_delta_u_ci: [-0.0003531822271523714, -0.0001679521597645534]
+      data_coverage_delta_u: 0.00007933386227250594
+      data_coverage_delta_u_ci: [0.000015746929801958383, 0.00014105104173029424]
+      optimization_time_delta_u: -0.0000468064064898499
+      optimization_time_delta_u_ci: [-0.0001016827080622865, 0.000006151432151965114]
+      primary_cluster: episode
+      paired_states: 1600
   - id: SMOLVLA_PAIRED_CLOSED_LOOP
     name: "StableGrasp paired closed-loop dependence"
-    status: not_run
+    status: not_started
     role: conditional_closed_loop_evidence
-    blocked_by: "factor-specificity and longitudinal action-sensitivity gates"
+    blocked_by: "StableGrasp longitudinal action-sensitivity gate failed; closed-loop execution is not authorized."
   - id: SECOND_VLA_REPLICATION
     name: "Targeted second-VLA replication"
     status: not_started
@@ -204,12 +221,14 @@ dependency_graph:
     limitation: "Entity task-group and NextRelation cells remain not estimable; accessibility is not functional use."
   - id: P1_D
     name: "factor-aligned intervention execution"
-    status: implementation_only
+    status: formal_evidence
     requires: [P1_C]
+    gate: "factor specificity passed; longitudinal action-sensitivity gate failed"
   - id: P1_E
     name: "paired closed-loop utility evaluation"
-    status: not_run
+    status: not_started
     requires: [P1_D]
+    blocked_by: "P1_D action-sensitivity gate"
   - id: RL_EXTENSION
     name: "online adaptation and RL plasticity"
     status: frozen_not_blocking

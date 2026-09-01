@@ -1,0 +1,1489 @@
+{
+  "binding_sha256": "f459f86895538c7bd98a175ae281f6568e65412669f4ebd92225370be08a1811",
+  "closed_loop_authorized": false,
+  "conditions": {
+    "d100_u16617": {
+      "action_component_conditioned_u": {
+        "gripper_abs": {
+          "episode_ci": {
+            "ci_high": -0.00010104973496655112,
+            "ci_low": -0.00017906453069543187,
+            "clusters": 100,
+            "estimate": -0.0001396627724170685
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -0.00011118425615131857,
+            "ci_low": -0.0001671273000538349,
+            "clusters": 20,
+            "estimate": -0.0001396627724170685
+          }
+        },
+        "gripper_flip": {
+          "episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 100,
+            "estimate": 0.0
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 20,
+            "estimate": 0.0
+          }
+        },
+        "rotation_l2": {
+          "episode_ci": {
+            "ci_high": -1.880191149047549e-07,
+            "ci_low": -2.8354116860951885e-06,
+            "clusters": 100,
+            "estimate": -1.5184070647933367e-06
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 7.817497547078647e-09,
+            "ci_low": -2.988957601893105e-06,
+            "clusters": 20,
+            "estimate": -1.5184070647933367e-06
+          }
+        },
+        "translation_l2": {
+          "episode_ci": {
+            "ci_high": -1.2537677283215875e-06,
+            "ci_low": -1.943435158243686e-05,
+            "clusters": 100,
+            "estimate": -1.0431598259401653e-05
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -1.2507672477113428e-06,
+            "ci_low": -1.8870599287254208e-05,
+            "clusters": 20,
+            "estimate": -1.0431598259401653e-05
+          }
+        }
+      },
+      "full_chunk_secondary": {
+        "episode_ci": {
+          "ci_high": -6.32892696656227e-05,
+          "ci_low": -9.625809181001377e-05,
+          "clusters": 100,
+          "estimate": -7.976679326020531e-05
+        },
+        "states": 1600,
+        "task_ci": {
+          "ci_high": -6.857443844273803e-05,
+          "ci_low": -9.165702661539399e-05,
+          "clusters": 20,
+          "estimate": -7.976679326020531e-05
+        }
+      },
+      "primary_u": {
+        "episode_ci": {
+          "ci_high": -9.87338101015533e-05,
+          "ci_low": -0.00017148566720998843,
+          "clusters": 100,
+          "estimate": -0.0001352196800917227
+        },
+        "states": 1600,
+        "task_ci": {
+          "ci_high": -0.00010891164836198188,
+          "ci_low": -0.00016094856768177125,
+          "clusters": 20,
+          "estimate": -0.0001352196800917227
+        }
+      },
+      "state_conditioned_u": {
+        "phase_stratum": {
+          "contact_grasp": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -3.368623947721048e-05,
+                "ci_low": -5.517740917121263e-05,
+                "clusters": 96,
+                "estimate": -4.3873218164662834e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -3.395222900689988e-05,
+                "ci_low": -5.420459766173735e-05,
+                "clusters": 20,
+                "estimate": -4.3873218164662834e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -0.00010457434999729549,
+                "ci_low": -0.00021826931227385512,
+                "clusters": 96,
+                "estimate": -0.00016083742088085273
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.00010269594762849014,
+                "ci_low": -0.00021651512190965148,
+                "clusters": 20,
+                "estimate": -0.00016083742088085273
+              }
+            }
+          },
+          "place_release": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -7.466984075414179e-06,
+                "ci_low": -2.2124680693642108e-05,
+                "clusters": 99,
+                "estimate": -1.4946920346119442e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -9.462424606681453e-06,
+                "ci_low": -2.021123652411916e-05,
+                "clusters": 20,
+                "estimate": -1.4946920346119442e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": 3.2539556474758405e-05,
+                "ci_low": -2.9554360583579273e-05,
+                "clusters": 99,
+                "estimate": 2.295264075655723e-06
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 3.242396123323485e-05,
+                "ci_low": -2.5143737140751898e-05,
+                "clusters": 20,
+                "estimate": 2.295264075655723e-06
+              }
+            }
+          },
+          "post_grasp": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -4.519878410772861e-05,
+                "ci_low": -8.797683596778863e-05,
+                "clusters": 100,
+                "estimate": -6.611204553337302e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -5.0710897301542e-05,
+                "ci_low": -8.130420338420663e-05,
+                "clusters": 20,
+                "estimate": -6.611204553337302e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -0.0001197769722359461,
+                "ci_low": -0.0002612789923037513,
+                "clusters": 100,
+                "estimate": -0.0001884864240855677
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.00014273444004811613,
+                "ci_low": -0.0002358926510960373,
+                "clusters": 20,
+                "estimate": -0.0001884864240855677
+              }
+            }
+          },
+          "pre_contact": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -0.0001513095650905211,
+                "ci_low": -0.00023662825857405834,
+                "clusters": 100,
+                "estimate": -0.00019413498899666592
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.0001603419030543592,
+                "ci_low": -0.0002330397828573041,
+                "clusters": 20,
+                "estimate": -0.00019413498899666592
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -8.642172984582514e-05,
+                "ci_low": -0.0003012289747030908,
+                "clusters": 100,
+                "estimate": -0.00019385013947612607
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.00011307938775098592,
+                "ci_low": -0.00027176282388973046,
+                "clusters": 20,
+                "estimate": -0.00019385013947612607
+              }
+            }
+          }
+        },
+        "stable_grasp": {
+          "false": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -7.048921749169929e-05,
+                "ci_low": -0.00010972353311587513,
+                "clusters": 100,
+                "estimate": -8.971776561177348e-05
+              },
+              "states": 1094,
+              "task_ci": {
+                "ci_high": -7.589169262733154e-05,
+                "ci_low": -0.00010571329486297843,
+                "clusters": 20,
+                "estimate": -8.971776561177348e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -8.452094164614983e-05,
+                "ci_low": -0.00017982451502330314,
+                "clusters": 100,
+                "estimate": -0.00013186045105037427
+              },
+              "states": 1094,
+              "task_ci": {
+                "ci_high": -9.471989540836952e-05,
+                "ci_low": -0.00016917692425607954,
+                "clusters": 20,
+                "estimate": -0.00013186045105037427
+              }
+            }
+          },
+          "true": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -4.151598962731711e-05,
+                "ci_low": -7.607097159530024e-05,
+                "clusters": 100,
+                "estimate": -5.825224038942353e-05
+              },
+              "states": 506,
+              "task_ci": {
+                "ci_high": -4.56221860936364e-05,
+                "ci_low": -7.108156905881578e-05,
+                "clusters": 20,
+                "estimate": -5.825224038942353e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -8.320018611754381e-05,
+                "ci_low": -0.0002043215465854117,
+                "clusters": 100,
+                "estimate": -0.00014248251916530998
+              },
+              "states": 506,
+              "task_ci": {
+                "ci_high": -0.00010239978148839668,
+                "ci_low": -0.00018583272655057307,
+                "clusters": 20,
+                "estimate": -0.00014248251916530998
+              }
+            }
+          }
+        }
+      }
+    },
+    "d100_u66470": {
+      "action_component_conditioned_u": {
+        "gripper_abs": {
+          "episode_ci": {
+            "ci_high": -0.000123249801437747,
+            "ci_low": -0.00026724498733657917,
+            "clusters": 100,
+            "estimate": -0.00019622024148702622
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -0.00015342233143746854,
+            "ci_low": -0.00023590146005153656,
+            "clusters": 20,
+            "estimate": -0.00019622024148702622
+          }
+        },
+        "gripper_flip": {
+          "episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 100,
+            "estimate": 0.0
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 20,
+            "estimate": 0.0
+          }
+        },
+        "rotation_l2": {
+          "episode_ci": {
+            "ci_high": -1.9977462644490217e-07,
+            "ci_low": -3.4371464415951625e-06,
+            "clusters": 100,
+            "estimate": -1.8273582477945638e-06
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -3.6190671723801535e-07,
+            "ci_low": -3.361578960479505e-06,
+            "clusters": 20,
+            "estimate": -1.8273582477945638e-06
+          }
+        },
+        "translation_l2": {
+          "episode_ci": {
+            "ci_high": 1.1122252835520388e-05,
+            "ci_low": -1.3218922451223479e-05,
+            "clusters": 100,
+            "estimate": -1.1111539697594707e-06
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 1.1064953064305867e-05,
+            "ci_low": -1.283082479682207e-05,
+            "clusters": 20,
+            "estimate": -1.1111539697594707e-06
+          }
+        }
+      },
+      "full_chunk_secondary": {
+        "episode_ci": {
+          "ci_high": -0.00010937869492120036,
+          "ci_low": -0.00017509473563605298,
+          "clusters": 100,
+          "estimate": -0.0001420087940095982
+        },
+        "states": 1600,
+        "task_ci": {
+          "ci_high": -0.00012497540644017138,
+          "ci_low": -0.00015882608685706146,
+          "clusters": 20,
+          "estimate": -0.0001420087940095982
+        }
+      },
+      "primary_u": {
+        "episode_ci": {
+          "ci_high": -0.00011715824562257414,
+          "ci_low": -0.0002466479055141988,
+          "clusters": 100,
+          "estimate": -0.0001820260865815726
+        },
+        "states": 1600,
+        "task_ci": {
+          "ci_high": -0.0001411880868899971,
+          "ci_low": -0.00022137520712908553,
+          "clusters": 20,
+          "estimate": -0.0001820260865815726
+        }
+      },
+      "state_conditioned_u": {
+        "phase_stratum": {
+          "contact_grasp": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -6.0833758720557964e-05,
+                "ci_low": -0.00010129826872688567,
+                "clusters": 96,
+                "estimate": -7.979871028510388e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -6.331042412602983e-05,
+                "ci_low": -9.612708689746796e-05,
+                "clusters": 20,
+                "estimate": -7.979871028510388e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -0.00012227851474530128,
+                "ci_low": -0.000241630508748234,
+                "clusters": 96,
+                "estimate": -0.00017849340783868684
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.00011789086553562811,
+                "ci_low": -0.00023788091461437942,
+                "clusters": 20,
+                "estimate": -0.00017849340783868684
+              }
+            }
+          },
+          "place_release": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -3.1856150557108774e-05,
+                "ci_low": -9.099503051230283e-05,
+                "clusters": 99,
+                "estimate": -6.043470784788951e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -4.296877411252353e-05,
+                "ci_low": -7.916708866105182e-05,
+                "clusters": 20,
+                "estimate": -6.043470784788951e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": 2.6089070998115976e-05,
+                "ci_low": -8.982732203213962e-05,
+                "clusters": 99,
+                "estimate": -3.0293237687146755e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 2.6961086858136696e-05,
+                "ci_low": -8.0501041134994e-05,
+                "clusters": 20,
+                "estimate": -3.0293237687146755e-05
+              }
+            }
+          },
+          "post_grasp": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -9.361890691346575e-05,
+                "ci_low": -0.00018295335708341077,
+                "clusters": 100,
+                "estimate": -0.00013760704918240661
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.00010853810357730256,
+                "ci_low": -0.00016669719991477906,
+                "clusters": 20,
+                "estimate": -0.00013760704918240661
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -0.00020734864734115913,
+                "ci_low": -0.00039408385368566804,
+                "clusters": 100,
+                "estimate": -0.0002970634577832243
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.00024104171992485137,
+                "ci_low": -0.00035226390404841367,
+                "clusters": 20,
+                "estimate": -0.0002970634577832243
+              }
+            }
+          },
+          "pre_contact": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -0.00022112525086218226,
+                "ci_low": -0.0003601306792106442,
+                "clusters": 100,
+                "estimate": -0.0002901947087229928
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.000236196917223424,
+                "ci_low": -0.00035016464345608256,
+                "clusters": 20,
+                "estimate": -0.0002901947087229928
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -1.7825763486789266e-05,
+                "ci_low": -0.0004097623238026016,
+                "clusters": 100,
+                "estimate": -0.00022225424301723252
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.0001381320031141513,
+                "ci_low": -0.0003135344899965276,
+                "clusters": 20,
+                "estimate": -0.00022225424301723252
+              }
+            }
+          }
+        },
+        "stable_grasp": {
+          "false": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -0.00011419060928433092,
+                "ci_low": -0.00018462975755539467,
+                "clusters": 100,
+                "estimate": -0.00014790202507692163
+              },
+              "states": 1094,
+              "task_ci": {
+                "ci_high": -0.00012499590596335073,
+                "ci_low": -0.00017275295644244342,
+                "clusters": 20,
+                "estimate": -0.00014790202507692163
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -6.422322255897864e-05,
+                "ci_low": -0.00023246536487380858,
+                "clusters": 100,
+                "estimate": -0.00014908987799126458
+              },
+              "states": 1094,
+              "task_ci": {
+                "ci_high": -0.0001039372190321391,
+                "ci_low": -0.00019404827397133138,
+                "clusters": 20,
+                "estimate": -0.00014908987799126458
+              }
+            }
+          },
+          "true": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -8.781603374556315e-05,
+                "ci_low": -0.0001722994942752018,
+                "clusters": 100,
+                "estimate": -0.00012926730233439696
+              },
+              "states": 506,
+              "task_ci": {
+                "ci_high": -0.00010270849772086358,
+                "ci_low": -0.00015494241065005217,
+                "clusters": 20,
+                "estimate": -0.00012926730233439696
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -0.00017600463378910153,
+                "ci_low": -0.00033507079637122236,
+                "clusters": 100,
+                "estimate": -0.00025323599211081563
+              },
+              "states": 506,
+              "task_ci": {
+                "ci_high": -0.00019994140339529934,
+                "ci_low": -0.0003012257116852727,
+                "clusters": 20,
+                "estimate": -0.00025323599211081563
+              }
+            }
+          }
+        }
+      }
+    },
+    "d25_u16070": {
+      "action_component_conditioned_u": {
+        "gripper_abs": {
+          "episode_ci": {
+            "ci_high": -0.0002048322653088177,
+            "ci_low": -0.00030631018828352464,
+            "clusters": 100,
+            "estimate": -0.00025554154068231584
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -0.00021429450530558824,
+            "ci_low": -0.00029970157146453854,
+            "clusters": 20,
+            "estimate": -0.00025554154068231584
+          }
+        },
+        "gripper_flip": {
+          "episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 100,
+            "estimate": 0.0
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 20,
+            "estimate": 0.0
+          }
+        },
+        "rotation_l2": {
+          "episode_ci": {
+            "ci_high": -1.3148384575169374e-06,
+            "ci_low": -5.746008669989189e-06,
+            "clusters": 100,
+            "estimate": -3.5593278681744776e-06
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -9.193706886350148e-07,
+            "ci_low": -5.974858049484055e-06,
+            "clusters": 20,
+            "estimate": -3.5593278681744776e-06
+          }
+        },
+        "translation_l2": {
+          "episode_ci": {
+            "ci_high": 4.207394178535737e-05,
+            "ci_low": -6.495999214130861e-06,
+            "clusters": 100,
+            "estimate": 1.6177142445030768e-05
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 3.326736605214363e-05,
+            "ci_low": -3.8835283868365816e-07,
+            "clusters": 20,
+            "estimate": 1.6177142445030768e-05
+          }
+        }
+      },
+      "full_chunk_secondary": {
+        "episode_ci": {
+          "ci_high": -0.0001450187105507888,
+          "ci_low": -0.00019273615860334635,
+          "clusters": 100,
+          "estimate": -0.00016746950099332024
+        },
+        "states": 1600,
+        "task_ci": {
+          "ci_high": -0.00014999678342519473,
+          "ci_low": -0.00018724381017091218,
+          "clusters": 20,
+          "estimate": -0.00016746950099332024
+        }
+      },
+      "primary_u": {
+        "episode_ci": {
+          "ci_high": -0.00016540791077740663,
+          "ci_low": -0.0002620047628895552,
+          "clusters": 100,
+          "estimate": -0.00021455354236422865
+        },
+        "states": 1600,
+        "task_ci": {
+          "ci_high": -0.0001766370439911498,
+          "ci_low": -0.0002551192583564443,
+          "clusters": 20,
+          "estimate": -0.00021455354236422865
+        }
+      },
+      "state_conditioned_u": {
+        "phase_stratum": {
+          "contact_grasp": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -3.5010602681370425e-05,
+                "ci_low": -8.831648487737122e-05,
+                "clusters": 96,
+                "estimate": -6.0642394528258594e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -4.027440585196019e-05,
+                "ci_low": -8.333432030121911e-05,
+                "clusters": 20,
+                "estimate": -6.0642394528258594e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -5.579588390433201e-05,
+                "ci_low": -0.00017446350923274806,
+                "clusters": 96,
+                "estimate": -0.00011417358247854281
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -6.096184772104612e-05,
+                "ci_low": -0.00017030780497861997,
+                "clusters": 20,
+                "estimate": -0.00011417358247854281
+              }
+            }
+          },
+          "place_release": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -5.486361107967907e-05,
+                "ci_low": -0.0001243068777373699,
+                "clusters": 99,
+                "estimate": -8.612913094111718e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -6.677104378468358e-05,
+                "ci_low": -0.00010783664375048829,
+                "clusters": 20,
+                "estimate": -8.612913094111718e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -2.864856288386397e-05,
+                "ci_low": -0.00014684531903125586,
+                "clusters": 99,
+                "estimate": -8.461447789159137e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -3.7766913198538534e-05,
+                "ci_low": -0.0001323191363526348,
+                "clusters": 20,
+                "estimate": -8.461447789159137e-05
+              }
+            }
+          },
+          "post_grasp": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -0.00014278362081103862,
+                "ci_low": -0.00022701702043222504,
+                "clusters": 100,
+                "estimate": -0.0001812922915269155
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.00015140251484262993,
+                "ci_low": -0.00020995962468441573,
+                "clusters": 20,
+                "estimate": -0.0001812922915269155
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -3.804544653721636e-05,
+                "ci_low": -0.0002883640704522416,
+                "clusters": 100,
+                "estimate": -0.00016532279343664413
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -7.66202965096454e-05,
+                "ci_low": -0.00025176862461012207,
+                "clusters": 20,
+                "estimate": -0.00016532279343664413
+              }
+            }
+          },
+          "pre_contact": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -0.0002888974572078172,
+                "ci_low": -0.0003947693120458224,
+                "clusters": 100,
+                "estimate": -0.00034181418697698974
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.0002907728084101109,
+                "ci_low": -0.0003970471809298033,
+                "clusters": 20,
+                "estimate": -0.00034181418697698974
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -0.00037426920500594553,
+                "ci_low": -0.0006151555437999384,
+                "clusters": 100,
+                "estimate": -0.0004941033156501362
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": -0.00039241625012437,
+                "ci_low": -0.0006061572427588544,
+                "clusters": 20,
+                "estimate": -0.0004941033156501362
+              }
+            }
+          }
+        },
+        "stable_grasp": {
+          "false": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -0.00014089783139135132,
+                "ci_low": -0.00019307023463300928,
+                "clusters": 100,
+                "estimate": -0.00016553105900942653
+              },
+              "states": 1094,
+              "task_ci": {
+                "ci_high": -0.00014437051964836397,
+                "ci_low": -0.0001886831466320397,
+                "clusters": 20,
+                "estimate": -0.00016553105900942653
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -0.0001884050274377174,
+                "ci_low": -0.00029552448496890306,
+                "clusters": 100,
+                "estimate": -0.0002421363353254861
+              },
+              "states": 1094,
+              "task_ci": {
+                "ci_high": -0.00020210245082101313,
+                "ci_low": -0.0002802120116610756,
+                "clusters": 20,
+                "estimate": -0.0002421363353254861
+              }
+            }
+          },
+          "true": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": -0.0001340343228208113,
+                "ci_low": -0.0002151554572726429,
+                "clusters": 100,
+                "estimate": -0.0001716605198280628
+              },
+              "states": 506,
+              "task_ci": {
+                "ci_high": -0.0001414565934043028,
+                "ci_low": -0.00020240891192635055,
+                "clusters": 20,
+                "estimate": -0.0001716605198280628
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": -5.751437288578154e-05,
+                "ci_low": -0.0002496116980099422,
+                "clusters": 100,
+                "estimate": -0.0001549180176614309
+              },
+              "states": 506,
+              "task_ci": {
+                "ci_high": -7.9673704809596e-05,
+                "ci_low": -0.0002330314102031284,
+                "clusters": 20,
+                "estimate": -0.0001549180176614309
+              }
+            }
+          }
+        }
+      }
+    },
+    "pretrained": {
+      "action_component_conditioned_u": {
+        "gripper_abs": {
+          "episode_ci": {
+            "ci_high": 0.00021633413782351122,
+            "ci_low": 3.243509171005126e-05,
+            "clusters": 100,
+            "estimate": 0.00012095686281099916
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.0001806767349189613,
+            "ci_low": 6.539278154377828e-05,
+            "clusters": 20,
+            "estimate": 0.00012095686281099916
+          }
+        },
+        "gripper_flip": {
+          "episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": -0.0018987943398950761,
+            "clusters": 100,
+            "estimate": -0.000625
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.0,
+            "ci_low": -0.001875,
+            "clusters": 20,
+            "estimate": -0.000625
+          }
+        },
+        "rotation_l2": {
+          "episode_ci": {
+            "ci_high": -6.890719488335707e-07,
+            "ci_low": -9.431300605968525e-06,
+            "clusters": 100,
+            "estimate": -4.913708481808499e-06
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -1.0611971999310302e-06,
+            "ci_low": -9.87612371116597e-06,
+            "clusters": 20,
+            "estimate": -4.913708481808499e-06
+          }
+        },
+        "translation_l2": {
+          "episode_ci": {
+            "ci_high": -5.608904696978227e-05,
+            "ci_low": -0.00011568088010571014,
+            "clusters": 100,
+            "estimate": -8.516548463376239e-05
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -5.4399639421944814e-05,
+            "ci_low": -0.00011736744548761635,
+            "clusters": 20,
+            "estimate": -8.516548463376239e-05
+          }
+        }
+      },
+      "full_chunk_secondary": {
+        "episode_ci": {
+          "ci_high": 0.0001454811320714736,
+          "ci_low": 4.152777090238793e-05,
+          "clusters": 100,
+          "estimate": 9.221706826792797e-05
+        },
+        "states": 1600,
+        "task_ci": {
+          "ci_high": 0.00011713102676549169,
+          "ci_low": 6.915340968316743e-05,
+          "clusters": 20,
+          "estimate": 9.221706826792797e-05
+        }
+      },
+      "primary_u": {
+        "episode_ci": {
+          "ci_high": 0.00012826612533064084,
+          "ci_low": -4.0527704264555805e-05,
+          "clusters": 100,
+          "estimate": 4.2085556387974065e-05
+        },
+        "states": 1600,
+        "task_ci": {
+          "ci_high": 9.644029738046807e-05,
+          "ci_low": -8.129609655497914e-06,
+          "clusters": 20,
+          "estimate": 4.2085556387974065e-05
+        }
+      },
+      "state_conditioned_u": {
+        "phase_stratum": {
+          "contact_grasp": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": 0.00021314837073542784,
+                "ci_low": 5.463673526909864e-05,
+                "clusters": 96,
+                "estimate": 0.00012381972206640057
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 0.00019084857250345512,
+                "ci_low": 6.945943359096419e-05,
+                "clusters": 20,
+                "estimate": 0.00012381972206640057
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": 0.0002094445401062614,
+                "ci_low": -7.046757963342772e-05,
+                "clusters": 96,
+                "estimate": 6.110678557888605e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 0.00017048146297020137,
+                "ci_low": -3.854440308714399e-05,
+                "clusters": 20,
+                "estimate": 6.110678557888605e-05
+              }
+            }
+          },
+          "place_release": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": 6.779030566349992e-05,
+                "ci_low": 4.409870311998042e-06,
+                "clusters": 99,
+                "estimate": 3.6311669973656535e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 5.494830862880916e-05,
+                "ci_low": 1.6997472244838724e-05,
+                "clusters": 20,
+                "estimate": 3.6311669973656535e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": 7.985101685836017e-05,
+                "ci_low": -6.0567098955316324e-05,
+                "clusters": 99,
+                "estimate": 7.40905394195579e-06
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 8.0990647600629e-05,
+                "ci_low": -7.053777872897626e-05,
+                "clusters": 20,
+                "estimate": 7.40905394195579e-06
+              }
+            }
+          },
+          "post_grasp": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": 8.171874801689118e-05,
+                "ci_low": 8.843057770094764e-06,
+                "clusters": 100,
+                "estimate": 4.603932873578742e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 6.531757626726174e-05,
+                "ci_low": 2.6084818891831673e-05,
+                "clusters": 20,
+                "estimate": 4.603932873578742e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": 3.26006761402755e-05,
+                "ci_low": -0.00012898699798028903,
+                "clusters": 100,
+                "estimate": -4.61496031130082e-05
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 2.432711262099473e-05,
+                "ci_low": -0.00011319513877879216,
+                "clusters": 20,
+                "estimate": -4.61496031130082e-05
+              }
+            }
+          },
+          "pre_contact": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": 0.00027304602134058586,
+                "ci_low": 6.269256971884895e-05,
+                "clusters": 100,
+                "estimate": 0.00016269755229586736
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 0.00021602903723396587,
+                "ci_low": 0.00011489993391296594,
+                "clusters": 20,
+                "estimate": 0.00016269755229586736
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": 0.0003313106888955471,
+                "ci_low": -2.5709205801475244e-05,
+                "clusters": 100,
+                "estimate": 0.00014597598914406262
+              },
+              "states": 400,
+              "task_ci": {
+                "ci_high": 0.0002645137842700933,
+                "ci_low": 3.234187604903128e-05,
+                "clusters": 20,
+                "estimate": 0.00014597598914406262
+              }
+            }
+          }
+        },
+        "stable_grasp": {
+          "false": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": 0.00017590862603255344,
+                "ci_low": 5.2429567769393596e-05,
+                "clusters": 100,
+                "estimate": 0.0001109057509700446
+              },
+              "states": 1094,
+              "task_ci": {
+                "ci_high": 0.00014564446369161226,
+                "ci_low": 8.027331862363527e-05,
+                "clusters": 20,
+                "estimate": 0.0001109057509700446
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": 0.00017577934109785676,
+                "ci_low": -2.637035654102478e-05,
+                "clusters": 100,
+                "estimate": 7.128101067832064e-05
+              },
+              "states": 1094,
+              "task_ci": {
+                "ci_high": 0.00013815004154901786,
+                "ci_low": 8.026206835492099e-06,
+                "clusters": 20,
+                "estimate": 7.128101067832064e-05
+              }
+            }
+          },
+          "true": {
+            "chunk_l2": {
+              "episode_ci": {
+                "ci_high": 9.108613135071178e-05,
+                "ci_low": 1.3171026501747879e-05,
+                "clusters": 100,
+                "estimate": 5.181110210959678e-05
+              },
+              "states": 506,
+              "task_ci": {
+                "ci_high": 7.070454397045191e-05,
+                "ci_low": 3.1460553288111304e-05,
+                "clusters": 20,
+                "estimate": 5.181110210959678e-05
+              }
+            },
+            "first_action_l2": {
+              "episode_ci": {
+                "ci_high": 5.6166492603130355e-05,
+                "ci_low": -9.775031195215172e-05,
+                "clusters": 100,
+                "estimate": -2.1036631346490648e-05
+              },
+              "states": 506,
+              "task_ci": {
+                "ci_high": 4.383166521098401e-05,
+                "ci_low": -8.413093532694432e-05,
+                "clusters": 20,
+                "estimate": -2.1036631346490648e-05
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "factor": "stable_grasp",
+  "full_chunk_role": "secondary",
+  "functional_recruitment_gate_passed": false,
+  "integrity_passed": true,
+  "matched_random_basis": "checkpoint_specific_fold_held_out",
+  "no_model_loading": true,
+  "no_new_inference": true,
+  "paired_checkpoint_deltas": {
+    "data_coverage": {
+      "after": "d100_u16617",
+      "before": "d25_u16070",
+      "metrics": {
+        "chunk_l2": {
+          "episode_ci": {
+            "ci_high": 0.00010661976337243006,
+            "ci_low": 7.055820091312736e-05,
+            "clusters": 100,
+            "estimate": 8.770270773311495e-05
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.00010747817732863041,
+            "ci_low": 7.070582470805675e-05,
+            "clusters": 20,
+            "estimate": 8.770270773311495e-05
+          }
+        },
+        "first_action_l2": {
+          "episode_ci": {
+            "ci_high": 0.00014105104173029424,
+            "ci_low": 1.5746929801958383e-05,
+            "clusters": 100,
+            "estimate": 7.933386227250594e-05
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.00012590518827369117,
+            "ci_low": 2.9440758151622526e-05,
+            "clusters": 20,
+            "estimate": 7.933386227250594e-05
+          }
+        },
+        "gripper_abs": {
+          "episode_ci": {
+            "ci_high": 0.00018035640616567797,
+            "ci_low": 5.067559882171003e-05,
+            "clusters": 100,
+            "estimate": 0.00011587876826524735
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.00016773684974759814,
+            "ci_low": 6.234285794198514e-05,
+            "clusters": 20,
+            "estimate": 0.00011587876826524735
+          }
+        },
+        "gripper_flip": {
+          "episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 100,
+            "estimate": 0.0
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 20,
+            "estimate": 0.0
+          }
+        },
+        "rotation_l2": {
+          "episode_ci": {
+            "ci_high": 4.574476902526602e-06,
+            "ci_low": -6.005783857488915e-07,
+            "clusters": 100,
+            "estimate": 2.040920803381141e-06
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 4.731337778487442e-06,
+            "ci_low": -9.120846853392092e-07,
+            "clusters": 20,
+            "estimate": 2.040920803381141e-06
+          }
+        },
+        "translation_l2": {
+          "episode_ci": {
+            "ci_high": -3.0859882115804085e-06,
+            "ci_low": -5.132451965972246e-05,
+            "clusters": 100,
+            "estimate": -2.660874070443242e-05
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -8.399587742644601e-06,
+            "ci_low": -4.555817896419966e-05,
+            "clusters": 20,
+            "estimate": -2.660874070443242e-05
+          }
+        }
+      },
+      "paired_states": 1600
+    },
+    "emergence": {
+      "after": "d25_u16070",
+      "before": "pretrained",
+      "metrics": {
+        "chunk_l2": {
+          "episode_ci": {
+            "ci_high": -0.00020998262414354972,
+            "ci_low": -0.0003115314016202327,
+            "clusters": 100,
+            "estimate": -0.00025968656926124824
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -0.00022800759937854315,
+            "ci_low": -0.00029681683851322303,
+            "clusters": 20,
+            "estimate": -0.00025968656926124824
+          }
+        },
+        "first_action_l2": {
+          "episode_ci": {
+            "ci_high": -0.0001679521597645534,
+            "ci_low": -0.0003531822271523714,
+            "clusters": 100,
+            "estimate": -0.0002566390987522027
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -0.00018891050797446957,
+            "ci_low": -0.00032808002255978863,
+            "clusters": 20,
+            "estimate": -0.0002566390987522027
+          }
+        },
+        "gripper_abs": {
+          "episode_ci": {
+            "ci_high": -0.00027662136386719495,
+            "ci_low": -0.00048423001131256925,
+            "clusters": 100,
+            "estimate": -0.000376498403493315
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -0.0002999575442518107,
+            "ci_low": -0.0004593069330148864,
+            "clusters": 20,
+            "estimate": -0.000376498403493315
+          }
+        },
+        "gripper_flip": {
+          "episode_ci": {
+            "ci_high": 0.001898794339895076,
+            "ci_low": 0.0,
+            "clusters": 100,
+            "estimate": 0.000625
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.001875,
+            "ci_low": 0.0,
+            "clusters": 20,
+            "estimate": 0.000625
+          }
+        },
+        "rotation_l2": {
+          "episode_ci": {
+            "ci_high": 6.2275333800107485e-06,
+            "ci_low": -3.3567953871225336e-06,
+            "clusters": 100,
+            "estimate": 1.3543806136340209e-06
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 7.91531124166056e-06,
+            "ci_low": -3.1480499682601244e-06,
+            "clusters": 20,
+            "estimate": 1.3543806136340209e-06
+          }
+        },
+        "translation_l2": {
+          "episode_ci": {
+            "ci_high": 0.00014096699487844142,
+            "ci_low": 6.217516869347121e-05,
+            "clusters": 100,
+            "estimate": 0.00010134262707879315
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.0001369605560528271,
+            "ci_low": 6.652933070046174e-05,
+            "clusters": 20,
+            "estimate": 0.00010134262707879315
+          }
+        }
+      },
+      "paired_states": 1600
+    },
+    "optimization_time": {
+      "after": "d100_u66470",
+      "before": "d100_u16617",
+      "metrics": {
+        "chunk_l2": {
+          "episode_ci": {
+            "ci_high": -4.286433878248235e-05,
+            "ci_low": -8.326287821338842e-05,
+            "clusters": 100,
+            "estimate": -6.22420007493929e-05
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -5.262529808123873e-05,
+            "ci_low": -7.166885540891599e-05,
+            "clusters": 20,
+            "estimate": -6.22420007493929e-05
+          }
+        },
+        "first_action_l2": {
+          "episode_ci": {
+            "ci_high": 6.151432151965114e-06,
+            "ci_low": -0.0001016827080622865,
+            "clusters": 100,
+            "estimate": -4.68064064898499e-05
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -8.243027178309639e-06,
+            "ci_low": -8.6826036383286e-05,
+            "clusters": 20,
+            "estimate": -4.68064064898499e-05
+          }
+        },
+        "gripper_abs": {
+          "episode_ci": {
+            "ci_high": 2.234051896631797e-06,
+            "ci_low": -0.00011612888462290974,
+            "clusters": 100,
+            "estimate": -5.6557469069957736e-05
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": -1.5273483470082285e-05,
+            "ci_low": -9.84752019867301e-05,
+            "clusters": 20,
+            "estimate": -5.6557469069957736e-05
+          }
+        },
+        "gripper_flip": {
+          "episode_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 100,
+            "estimate": 0.0
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 20,
+            "estimate": 0.0
+          }
+        },
+        "rotation_l2": {
+          "episode_ci": {
+            "ci_high": 1.7711747072190373e-06,
+            "ci_low": -2.4414345122140858e-06,
+            "clusters": 100,
+            "estimate": -3.0895118300122706e-07
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 1.6308242774414308e-06,
+            "ci_low": -2.190389556481875e-06,
+            "clusters": 20,
+            "estimate": -3.0895118300122706e-07
+          }
+        },
+        "translation_l2": {
+          "episode_ci": {
+            "ci_high": 2.270297596106927e-05,
+            "ci_low": -3.855286570351807e-06,
+            "clusters": 100,
+            "estimate": 9.320444289642183e-06
+          },
+          "states": 1600,
+          "task_ci": {
+            "ci_high": 2.382669415288771e-05,
+            "ci_low": -4.859218403453258e-06,
+            "clusters": 20,
+            "estimate": 9.320444289642183e-06
+          }
+        }
+      },
+      "paired_states": 1600
+    }
+  },
+  "paired_delta_sign": "after_minus_before",
+  "primary_cluster": "episode",
+  "primary_metric": "first_action_l2",
+  "robustness_cluster": "task",
+  "schema_version": "libero_stablegrasp_cached_analysis_v1",
+  "source_action_sensitivity": "outputs/representation_study/libero_smolvla/protocol_v3/recruitment/stable_grasp/n_1600/action_sensitivity.json",
+  "source_action_sensitivity_sha256": "87c9fc9e47860caa5b1bea5a894dc37b694fec0f48a93399faf23002abc46119",
+  "source_rows_sha256": {
+    "d100_u16617": "88f2fbd80291d0444c30603b494f579c56d82dc52ff03b3ab438d08697e79833",
+    "d100_u66470": "51931bb48a43fbdde113a207c9f1da7fa1ad5a2a9c22ea14a8e7063929e63144",
+    "d25_u16070": "7c5c462f0b459706127b9e37501b073f8a145c1e1313875fc21a8e9c60f3a337",
+    "pretrained": "536cf2d01c559802653443a170830add3b847b27785cad08b4db801c7be0e7ee"
+  },
+  "status": "complete",
+  "tap": "action_expert_input"
+}
