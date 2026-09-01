@@ -23,6 +23,18 @@ from .taps import SEMANTIC_TAPS, SmolVLASemanticTapCapture
 LATENT_SCHEMA = "libero_semantic_latent_cache_v1"
 
 
+def validate_requested_taps(taps: Sequence[str] | None) -> tuple[str, ...]:
+    selected = tuple(SEMANTIC_TAPS if taps is None else taps)
+    if not selected:
+        raise ValueError("at least one semantic tap is required")
+    if len(set(selected)) != len(selected):
+        raise ValueError("duplicate semantic tap")
+    unknown = sorted(set(selected) - set(SEMANTIC_TAPS))
+    if unknown:
+        raise ValueError(f"unknown semantic tap: {unknown}")
+    return selected
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -209,9 +221,11 @@ def extract_smolvla_latents_from_checkpoint(
     runtime_binding: bool = False,
     report_schema: str = "libero_smolvla_latent_extraction_v1",
     report_fields: Mapping[str, object] | None = None,
+    taps: Sequence[str] | None = None,
 ) -> dict[str, object]:
     if batch_size <= 0:
         raise ValueError("latent batch size must be positive")
+    selected_taps = validate_requested_taps(taps)
     output_dir = Path(output_dir)
     bank_root = config.output_dir / "state_bank"
     records, bank_manifest, _, _ = load_state_bank(bank_root)
@@ -258,7 +272,7 @@ def extract_smolvla_latents_from_checkpoint(
             runtime_fingerprint_sha256=runtime_fingerprint,
             expected_state_ids=state_ids,
         )
-        for tap in SEMANTIC_TAPS
+        for tap in selected_taps
     }
     tap_metadata: dict[str, Mapping[str, object]] | None = None
     for start in tqdm(
@@ -292,11 +306,13 @@ def extract_smolvla_latents_from_checkpoint(
         capture = SmolVLASemanticTapCapture(policy)
         try:
             with torch.no_grad():
-                _, values, metadata = capture.capture(
+                _, captured_values, captured_metadata = capture.capture(
                     lambda: policy.predict_action_chunk(processed)
                 )
         finally:
             flow.sample_noise = original_sample_noise
+        values = {tap: captured_values[tap] for tap in selected_taps}
+        metadata = {tap: captured_metadata[tap] for tap in selected_taps}
         if tap_metadata is None:
             tap_metadata = metadata
         elif tap_metadata != metadata:
