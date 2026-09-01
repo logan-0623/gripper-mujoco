@@ -25,6 +25,7 @@ dist/
 # Local virtual environments and secrets
 .venv/
 .venv-*/
+.worktrees/
 .env
 .env.*
 !.env.example
