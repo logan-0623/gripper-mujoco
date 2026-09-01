@@ -395,6 +395,27 @@ Smoke 的 5.1–5.3 通过后才进入正式配置；5.4 是已有正式 checkpo
 
 ### 5.5 StableGrasp longitudinal recruitment（当前下一步）
 
+服务器重启或打开新 shell 后，先恢复数据盘缓存环境。下面的 symbolic link 只需成功创建一次；环境变量需要在每个新 shell 中重新设置：
+
+```bash
+export HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache
+export HF_LEROBOT_HOME="$HF_HOME/lerobot"
+
+DATASET_REV=a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4
+DATASET_SNAPSHOT="$HF_LEROBOT_HOME/hub/datasets--lerobot--libero/snapshots/$DATASET_REV"
+DATASET_ROOT="$HF_LEROBOT_HOME/lerobot/libero"
+
+mkdir -p "$HF_LEROBOT_HOME/lerobot"
+test -e "$DATASET_ROOT" || ln -s "$DATASET_SNAPSHOT" "$DATASET_ROOT"
+test -e "$DATASET_ROOT/meta/info.json" && echo "LOCAL DATASET READY"
+
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+```
+
+必须看到 `LOCAL DATASET READY`。该映射让 `LeRobotDataset` 直接读取固定 revision snapshot；否则即使 34.9 GB 文件已下载，`root=None` 仍可能访问 Hugging Face API，并在断网时抛出 `ConnectError`。不要修改 config 来绕过此问题，否则会改变已有 specificity artifact 的 scientific binding。
+
 先确认 frozen Protocol-v3 与四个 checkpoint 的只读绑定：
 
 ```bash
@@ -409,7 +430,7 @@ CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
 ```bash
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
   libero interventions run --config "$CONFIG" \
-  --max-states 64 --batch-size 16 --specificity-only
+  --max-states 64 --batch-size 32 --specificity-only
 ```
 
 检查：
@@ -429,10 +450,10 @@ PY
 ```bash
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
   libero interventions run --config "$CONFIG" \
-  --max-states 1600 --batch-size 16
+  --max-states 1600 --batch-size 32
 ```
 
-输出位于 `protocol_v3/recruitment/stable_grasp/n_1600/`。重跑同一 profile 会复用 specificity 和已完成 action report；64-state smoke 不会覆盖 formal profile。该命令仍不运行 LIBERO closed-loop rollout。
+`batch-size 32` 不是吞吐调优项，而是 frozen Protocol-v3 latent runtime binding；改为 16 会使 BF16 live action-expert tensor 与 cache 不一致。输出位于 `protocol_v3/recruitment/stable_grasp/n_1600/`。重跑同一 profile 会复用 specificity 和已完成 action report；64-state smoke 不会覆盖 formal profile。该命令仍不运行 LIBERO closed-loop rollout。
 
 ## 6. 正式实验
 

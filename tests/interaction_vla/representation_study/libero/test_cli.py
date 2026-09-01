@@ -2,7 +2,10 @@ import interaction_vla.representation_study.libero.probe_runner as probe_runner
 import interaction_vla.representation_study.libero.probe_transitions as probe_transitions
 import interaction_vla.representation_study.libero.crossfit_probes as crossfit_probes
 from interaction_vla.representation_study.cli import build_parser
-from interaction_vla.representation_study.libero.cli import dispatch
+from interaction_vla.representation_study.libero.cli import (
+    _required_intervention_batch_size,
+    dispatch,
+)
 
 
 def test_libero_cli_has_required_ordered_families() -> None:
@@ -178,3 +181,20 @@ def test_longitudinal_recruitment_cli_has_audit_and_gated_run() -> None:
     assert run.max_states == 64
     assert run.batch_size == 8
     assert run.specificity_only
+
+
+def test_intervention_batch_size_matches_frozen_latent_runtime(tmp_path) -> None:
+    for condition in ("pretrained", "d25_u16070", "d100_u16617", "d100_u66470"):
+        report = tmp_path / "latents" / condition / "report.json"
+        report.parent.mkdir(parents=True)
+        report.write_text('{"runtime":{"batch_size":32}}')
+    assert _required_intervention_batch_size(tmp_path) == 32
+
+    changed = tmp_path / "latents" / "d100_u66470" / "report.json"
+    changed.write_text('{"runtime":{"batch_size":16}}')
+    try:
+        _required_intervention_batch_size(tmp_path)
+    except ValueError as error:
+        assert "batch sizes differ" in str(error)
+    else:
+        raise AssertionError("mixed latent runtime batch sizes must fail")

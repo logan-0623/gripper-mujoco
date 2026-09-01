@@ -16,6 +16,14 @@ from .state_bank import load_state_bank
 from .visualize import approve_annotation_timelines, render_annotation_timelines
 
 
+INTERVENTION_CONDITIONS = (
+    "pretrained",
+    "d25_u16070",
+    "d100_u16617",
+    "d100_u66470",
+)
+
+
 def add_libero_parser(families: argparse._SubParsersAction) -> None:
     parser = families.add_parser(
         "libero", help="shared LIBERO State Bank and longitudinal SmolVLA study"
@@ -87,7 +95,7 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
     intervention_run = intervention_commands.add_parser("run")
     intervention_run.add_argument("--config", type=Path, required=True)
     intervention_run.add_argument("--max-states", type=int, default=1600)
-    intervention_run.add_argument("--batch-size", type=int, default=16)
+    intervention_run.add_argument("--batch-size", type=int, default=32)
     intervention_run.add_argument("--specificity-only", action="store_true")
     intervention_run.add_argument("--dry-run", action="store_true")
 
@@ -99,6 +107,21 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
 
 def _hash_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _required_intervention_batch_size(protocol_root: Path) -> int:
+    values = {}
+    for condition in INTERVENTION_CONDITIONS:
+        report = json.loads((protocol_root / "latents" / condition / "report.json").read_text())
+        runtime = report.get("runtime")
+        batch_size = runtime.get("batch_size") if isinstance(runtime, dict) else None
+        if not isinstance(batch_size, int) or batch_size <= 0:
+            raise ValueError(f"latent runtime batch size is invalid: {condition}")
+        values[condition] = batch_size
+    unique = set(values.values())
+    if len(unique) != 1:
+        raise ValueError(f"latent runtime batch sizes differ across checkpoints: {values}")
+    return unique.pop()
 
 
 def _hash_python_tree(path: Path) -> str:
@@ -413,6 +436,15 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
         if args.libero_command == "audit":
             return audit_longitudinal_recruitment(config)
         if args.libero_command == "run":
+            if not args.specificity_only and not args.dry_run:
+                required = _required_intervention_batch_size(
+                    config.output_dir / "protocol_v3"
+                )
+                if args.batch_size != required:
+                    raise ValueError(
+                        "action-sensitivity batch size must match the frozen Protocol-v3 "
+                        f"latent runtime: expected {required}, got {args.batch_size}"
+                    )
             return run_longitudinal_recruitment(
                 config,
                 max_states=args.max_states,

@@ -188,6 +188,27 @@ policy functionally used 该因素，更不表示 closed-loop useful。
 
 当前只执行 `StableGrasp × action_expert_input × 4 checkpoints`。先运行只读审计和 64-state specificity smoke：
 
+Linux 服务器每次打开新 shell 时先绑定数据盘缓存；`ln -s` 只会在首次缺少本地映射时执行：
+
+```bash
+export HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache
+export HF_LEROBOT_HOME="$HF_HOME/lerobot"
+
+DATASET_REV=a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4
+DATASET_SNAPSHOT="$HF_LEROBOT_HOME/hub/datasets--lerobot--libero/snapshots/$DATASET_REV"
+DATASET_ROOT="$HF_LEROBOT_HOME/lerobot/libero"
+
+mkdir -p "$HF_LEROBOT_HOME/lerobot"
+test -e "$DATASET_ROOT" || ln -s "$DATASET_SNAPSHOT" "$DATASET_ROOT"
+test -e "$DATASET_ROOT/meta/info.json" && echo "LOCAL DATASET READY"
+
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+```
+
+若未输出 `LOCAL DATASET READY`，不要启动正式 action-sensitivity。完整服务器说明见 `SERVER_RUNBOOK.md`。
+
 ```bash
 CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
 
@@ -196,7 +217,7 @@ CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
   libero interventions run --config "$CONFIG" \
-  --max-states 64 --batch-size 16 --specificity-only
+  --max-states 64 --batch-size 32 --specificity-only
 ```
 
 只有 `specificity.json` 的四个 checkpoint 全部 `passed: true`，才运行 formal offline action sensitivity：
@@ -204,10 +225,10 @@ CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
 ```bash
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
   libero interventions run --config "$CONFIG" \
-  --max-states 1600 --batch-size 16
+  --max-states 1600 --batch-size 32
 ```
 
-64 与 1600 states 写入不同 profile 目录；相同 profile 可直接重跑续用。动作变化只叫 action-sensitive，只有未来 paired rollout 的任务结果变化才叫 closed-loop useful。Phase 是强制 specificity 对照；若它与 StableGrasp 同时被同等破坏，代码会停止在 specificity gate。
+`batch-size 32` 必须与 frozen Protocol-v3 latent runtime 相同，否则 BF16 GPU kernel 变化会破坏 live-tensor 对齐。64 与 1600 states 写入不同 profile 目录；相同 profile 可直接重跑续用。动作变化只叫 action-sensitive，只有未来 paired rollout 的任务结果变化才叫 closed-loop useful。Phase 是强制 specificity 对照；若它与 StableGrasp 同时被同等破坏，代码会停止在 specificity gate。
 
 当前不要运行或调优 PPO/SAC，不要从 nominal demonstration 制造 Recovery label。RL 只有在离线 probe、closed-loop intervention、非饱和 perturbation distribution、Oracle-State residual recovery 四个前置 gate 都通过后才恢复。
 
