@@ -7,6 +7,7 @@ import pytest
 from interaction_vla.representation_study.libero.latents import validate_requested_taps
 from interaction_vla.representation_study.libero.positive_control import (
     extract_positive_control,
+    factor_specificity_gate,
     load_positive_control_plan,
     official_success_rate,
     plan_positive_control,
@@ -60,6 +61,68 @@ def test_floor_policy_stops_before_probe_claims() -> None:
         factor="stable_grasp",
     )
     assert result["decision"] == "failed_policy_floor"
+
+
+def test_positive_usage_authorizes_official_longitudinal_training() -> None:
+    result = positive_control_decision(
+        success_rate=0.70,
+        accessible=True,
+        specificity_passed=True,
+        usage_ci=(0.01, 0.03),
+        factor="stable_grasp",
+    )
+    assert result == {
+        "decision": "continue_official_longitudinal",
+        "authorize_longitudinal_training": True,
+    }
+
+
+def test_failed_factors_stop_after_one_contact_replication() -> None:
+    stable = positive_control_decision(
+        success_rate=0.70,
+        accessible=True,
+        specificity_passed=True,
+        usage_ci=(-0.01, 0.01),
+        factor="stable_grasp",
+    )
+    contact = positive_control_decision(
+        success_rate=0.70,
+        accessible=True,
+        specificity_passed=True,
+        usage_ci=(-0.01, 0.01),
+        factor="contact",
+    )
+    assert stable["decision"] == "replicate_contact_once"
+    assert contact["decision"] == "pivot_interaction_supervised_sft"
+
+
+def test_factor_specificity_gate_keeps_stablegrasp_place_control() -> None:
+    common = dict(
+        target_minus_random={"ci_low": 0.1},
+        target_effect=1.0,
+        non_target_effects={
+            "stable_grasp": 0.2,
+            "contact": 0.2,
+            "phase": 0.3,
+            "geometry": 0.1,
+        },
+        activation_norm_ratio=1.0,
+    )
+    assert factor_specificity_gate(
+        factor="stable_grasp",
+        place_target_minus_random={"ci_low": 0.1},
+        **common,
+    )["passed"]
+    assert not factor_specificity_gate(
+        factor="stable_grasp",
+        place_target_minus_random=None,
+        **common,
+    )["passed"]
+    assert factor_specificity_gate(
+        factor="contact",
+        place_target_minus_random=None,
+        **common,
+    )["passed"]
 
 
 def test_positive_control_plan_rejects_changed_evaluation(tmp_path: Path) -> None:

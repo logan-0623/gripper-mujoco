@@ -1,27 +1,48 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import asdict
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import numpy as np
+import torch
+from tqdm.auto import tqdm
 
 from ..state_bank.io import write_json_atomic
 from .config import LiberoStudyConfig
 from .crossfit_probes import (
+    CrossFitManifest,
     _read_gzip_json,
     _write_immutable_gzip_json,
     _write_immutable_json,
     build_crossfit_manifest,
     run_crossfit_cell,
 )
+from .feature_binding import LIBERO_SMOLVLA_RENAME_MAP
 from .latents import (
     _file_sha256,
     _tree_sha256,
+    collate_state_bank_observations,
     extract_smolvla_latents_from_checkpoint,
     load_latent_cache,
 )
+from .recruitment import (
+    _action_effect,
+    _atomic_npz,
+    _cluster_interval,
+    _context_batch_plan,
+    _episode_key,
+    _factor_data,
+    _predict,
+    _reconstruct_fold_probes,
+    _target_delta,
+    consensus_direction,
+    phase_stratum,
+    same_norm_random_delta,
+)
+from .schema import StateRecord
 from .state_bank import load_state_bank
 
 
@@ -34,6 +55,33 @@ MINIMUM_SUCCESS_RATE = 0.20
 
 def positive_control_root(output_dir: str | Path) -> Path:
     return Path(output_dir) / "protocol_v4" / "positive_control"
+
+
+def factor_specificity_gate(
+    *,
+    factor: str,
+    target_minus_random: Mapping[str, float],
+    target_effect: float,
+    non_target_effects: Mapping[str, float],
+    activation_norm_ratio: float,
+    place_target_minus_random: Mapping[str, float] | None,
+) -> dict[str, object]:
+    if factor not in SUPPORTED_FACTORS:
+        raise ValueError(f"unsupported positive-control factor: {factor}")
+    failures: list[str] = []
+    if float(target_minus_random.get("ci_low", -np.inf)) <= 0:
+        failures.append(f"{factor} disruption does not exceed matched random")
+    for control in (set(SUPPORTED_FACTORS) - {factor}) | {"phase"}:
+        if target_effect <= float(non_target_effects.get(control, np.inf)):
+            failures.append(f"{factor} disruption does not exceed {control}")
+    if factor == "stable_grasp" and (
+        place_target_minus_random is None
+        or float(place_target_minus_random.get("ci_low", -np.inf)) <= 0
+    ):
+        failures.append("place-only StableGrasp specificity is not supported")
+    if not 0.8 <= activation_norm_ratio <= 1.2:
+        failures.append("intervened activation norm is outside the support band")
+    return {"passed": not failures, "failures": sorted(failures)}
 
 
 def official_success_rate(path: Path) -> tuple[float, int]:
@@ -334,3 +382,537 @@ def run_positive_control_probe(config: LiberoStudyConfig) -> dict[str, object]:
     report_path = probe_root / "report.json"
     _write_immutable_json(report_path, report)
     return json.loads(report_path.read_text(encoding="utf-8"))
+
+
+def _probe_manifest(root: Path) -> CrossFitManifest:
+    payload = json.loads((root / "probe" / "folds.json").read_text(encoding="utf-8"))
+    row = payload["manifest"]
+    return CrossFitManifest(
+        split_name=str(row["split_name"]),
+        group_unit=str(row["group_unit"]),
+        folds=int(row["folds"]),
+        seed=int(row["seed"]),
+        group_folds={str(key): int(value) for key, value in row["group_folds"].items()},
+    )
+
+
+def _select_factor_records(
+    records: Sequence[StateRecord], *, factor: str, max_states: int
+) -> tuple[int, ...]:
+    if factor not in SUPPORTED_FACTORS or max_states <= 0:
+        raise ValueError("positive-control factor and max_states are invalid")
+    buckets: dict[str, list[int]] = {}
+    for index, record in enumerate(records):
+        if not getattr(record.labels.applicability, factor):
+            continue
+        key = f"{record.suite}:{record.task_id}:{phase_stratum(record.labels.phase)}"
+        buckets.setdefault(key, []).append(index)
+    for key, rows in buckets.items():
+        rows.sort(
+            key=lambda index: hashlib.sha256(
+                f"{key}:{records[index].state_id}".encode()
+            ).digest()
+        )
+    selected: list[int] = []
+    for cursor in range(max(map(len, buckets.values()), default=0)):
+        for key in sorted(buckets):
+            if cursor < len(buckets[key]):
+                selected.append(buckets[key][cursor])
+                if len(selected) == max_states:
+                    return tuple(selected)
+    return tuple(selected)
+
+
+def _positive_control_specificity(
+    config: LiberoStudyConfig, *, factor: str, max_states: int
+) -> dict[str, object]:
+    if factor not in SUPPORTED_FACTORS:
+        raise ValueError(f"unsupported positive-control factor: {factor}")
+    root = positive_control_root(config.output_dir)
+    plan = load_positive_control_plan(config)
+    probe_path = root / "probe" / "report.json"
+    probe_report = json.loads(probe_path.read_text(encoding="utf-8"))
+    if not probe_report.get("passed"):
+        raise ValueError("positive-control probes did not pass")
+    if probe_report["cells"][factor].get("accessible") is not True:
+        return {
+            "schema_version": "libero_smolvla_positive_control_specificity_v1",
+            "passed": False,
+            "status": "blocked_by_accessibility",
+            "factor": factor,
+        }
+    factor_root = root / "intervention" / factor
+    report_path = factor_root / "specificity.json"
+    binding = {
+        "plan_sha256": _file_sha256(root / "plan.json"),
+        "probe_sha256": _file_sha256(probe_path),
+        "factor": factor,
+        "max_states": max_states,
+        "implementation_sha256": _file_sha256(Path(__file__)),
+    }
+    if report_path.is_file():
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        if report.get("binding") != binding:
+            raise FileExistsError(f"specificity binding changed: {report_path}")
+        artifact = Path(str(report["intervention_artifact"]))
+        if _file_sha256(artifact) != report.get("intervention_sha256"):
+            raise ValueError("positive-control intervention artifact changed")
+        return report
+
+    records, _, _, _ = load_state_bank(Path(config.output_dir) / "state_bank")
+    state_ids, features, _ = load_latent_cache(root / "latents" / PRIMARY_TAP)
+    if state_ids != tuple(record.state_id for record in records):
+        raise ValueError("positive-control latent rows differ from the State Bank")
+    selected = _select_factor_records(records, factor=factor, max_states=max_states)
+    if not selected:
+        raise ValueError(f"no applicable states for {factor}")
+    manifest = _probe_manifest(root)
+    selected_folds = np.asarray(
+        [manifest.group_folds[_episode_key(records[index])] for index in selected]
+    )
+    cells = {
+        name: _read_gzip_json(root / "probe" / "cells" / f"{name}.json.gz")
+        for name in PROBE_FACTORS
+    }
+    probes = {name: {} for name in PROBE_FACTORS}
+    for name in PROBE_FACTORS:
+        offsets = (
+            config.probes.matched_seed_offsets
+            if name == factor
+            else (config.probes.matched_seed_offsets[0],)
+        )
+        for fold in range(manifest.folds):
+            probes[name][fold] = _reconstruct_fold_probes(
+                config=config,
+                records=records,
+                features=features,
+                manifest=manifest,
+                condition="official_smolvla_libero",
+                factor=name,
+                cell=cells[name],
+                fold=fold,
+                offsets=offsets,
+            )
+
+    source = features[np.asarray(selected)]
+    target_delta = np.zeros_like(source, dtype=np.float64)
+    random_delta = np.zeros_like(source, dtype=np.float64)
+    mean_delta = np.zeros_like(source, dtype=np.float64)
+    agreements: list[float] = []
+    support_caps: list[float] = []
+    capped_rates: list[float] = []
+    applicable, _, _ = _factor_data(records, factor)
+    for fold in range(manifest.folds):
+        rows = np.flatnonzero(selected_folds == fold)
+        if not len(rows):
+            continue
+        target_probes = list(probes[factor][fold].values())
+        directions = np.stack([probe.direction for probe in target_probes])
+        direction = consensus_direction(directions)
+        agreements.append(
+            float(
+                np.min(
+                    np.abs(directions @ direction)
+                    / np.linalg.norm(directions, axis=1)
+                )
+            )
+        )
+        from .crossfit_probes import crossfit_partition_indices
+
+        parts = crossfit_partition_indices(
+            records, manifest, fold=fold, applicable=applicable
+        )
+        train = features[np.asarray(parts["train"])]
+        cap = float(np.quantile(np.linalg.norm(train - np.roll(train, 1, axis=0), axis=1), 0.95))
+        local_target, capped = _target_delta(
+            source[rows], target_probes, direction, cap
+        )
+        target_delta[rows] = local_target
+        random_delta[rows] = same_norm_random_delta(
+            local_target, target_direction=direction, seed=config.seed + fold
+        )
+        mean_delta[rows] = (
+            ((target_probes[0].train_mean - source[rows]) @ direction)[:, None]
+            * direction[None, :]
+        )
+        support_caps.append(cap)
+        capped_rates.append(capped)
+
+    changed = source + target_delta
+    random_changed = source + random_delta
+    effects: dict[str, np.ndarray] = {}
+    random_effects: dict[str, np.ndarray] = {}
+    for name in PROBE_FACTORS:
+        effects[name] = np.zeros(len(selected))
+        random_effects[name] = np.zeros(len(selected))
+        for fold in range(manifest.folds):
+            rows = np.flatnonzero(selected_folds == fold)
+            if not len(rows):
+                continue
+            fold_probes = list(probes[name][fold].values())
+            effects[name][rows] = np.mean(
+                [probe.disruption(source[rows], changed[rows]) for probe in fold_probes],
+                axis=0,
+            )
+            random_effects[name][rows] = np.mean(
+                [
+                    probe.disruption(source[rows], random_changed[rows])
+                    for probe in fold_probes
+                ],
+                axis=0,
+            )
+    contrasts = {name: effects[name] - random_effects[name] for name in PROBE_FACTORS}
+    target_interval = _cluster_interval(
+        contrasts[factor], records, selected, config=config
+    )
+    place_rows = np.asarray(
+        [row for row, index in enumerate(selected) if records[index].labels.phase == "place"]
+    )
+    place_interval = (
+        _cluster_interval(
+            contrasts[factor][place_rows],
+            records,
+            [selected[row] for row in place_rows],
+            config=config,
+        )
+        if factor == "stable_grasp" and len(place_rows)
+        else None
+    )
+    activation_ratio = float(
+        np.mean(np.linalg.norm(changed, axis=1))
+        / max(np.mean(np.linalg.norm(source, axis=1)), 1e-12)
+    )
+    gate = factor_specificity_gate(
+        factor=factor,
+        target_minus_random=target_interval,
+        target_effect=float(np.mean(contrasts[factor])),
+        non_target_effects={
+            name: float(np.mean(contrasts[name]))
+            for name in PROBE_FACTORS
+            if name != factor
+        },
+        activation_norm_ratio=activation_ratio,
+        place_target_minus_random=place_interval,
+    )
+    artifact = factor_root / "intervention.npz"
+    _atomic_npz(
+        artifact,
+        state_ids=np.asarray([records[index].state_id for index in selected]),
+        source=source.astype(np.float32),
+        target_delta=target_delta.astype(np.float32),
+        random_delta=random_delta.astype(np.float32),
+        mean_delta=mean_delta.astype(np.float32),
+    )
+    report = {
+        "schema_version": "libero_smolvla_positive_control_specificity_v1",
+        **gate,
+        "status": "complete",
+        "factor": factor,
+        "tap": PRIMARY_TAP,
+        "states": len(selected),
+        "binding": binding,
+        "probe_reconstruction": "categorical_exact_continuous_atol_1e-6",
+        "seed_direction_min_cosine": min(agreements),
+        "natural_difference_p95_by_fold": support_caps,
+        "decision_boundary_cap_rate_by_fold": capped_rates,
+        "target_effect": float(np.mean(effects[factor])),
+        "matched_random_effect": float(np.mean(random_effects[factor])),
+        "target_minus_random_episode_ci": target_interval,
+        "target_minus_random_task_ci": _cluster_interval(
+            contrasts[factor], records, selected, config=config, task=True
+        ),
+        "place_target_minus_random_episode_ci": place_interval,
+        "non_target_target_minus_random_effects": {
+            name: float(np.mean(contrasts[name]))
+            for name in PROBE_FACTORS
+            if name != factor
+        },
+        "activation_norm_ratio": activation_ratio,
+        "same_norm_max_abs_error": float(
+            np.max(
+                np.abs(
+                    np.linalg.norm(target_delta, axis=1)
+                    - np.linalg.norm(random_delta, axis=1)
+                )
+            )
+        ),
+        "intervention_artifact": str(artifact),
+        "intervention_sha256": _file_sha256(artifact),
+        "checkpoint_sha256": plan["checkpoint_sha256"],
+    }
+    write_json_atomic(report_path, report)
+    return report
+
+
+def _positive_control_actions(
+    config: LiberoStudyConfig,
+    *,
+    factor: str,
+    batch_size: int,
+) -> dict[str, object]:
+    root = positive_control_root(config.output_dir)
+    plan = load_positive_control_plan(config)
+    factor_root = root / "intervention" / factor
+    specificity_path = factor_root / "specificity.json"
+    specificity = json.loads(specificity_path.read_text(encoding="utf-8"))
+    if not specificity.get("passed"):
+        return {
+            "schema_version": "libero_smolvla_positive_control_actions_v1",
+            "passed": False,
+            "status": "blocked_by_specificity",
+            "factor": factor,
+        }
+    report_path = factor_root / "action_sensitivity.json"
+    binding = {
+        "plan_sha256": _file_sha256(root / "plan.json"),
+        "specificity_sha256": _file_sha256(specificity_path),
+        "factor": factor,
+        "batch_size": batch_size,
+    }
+    if report_path.is_file():
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        if report.get("binding") != binding:
+            raise FileExistsError(f"action-sensitivity binding changed: {report_path}")
+        if _file_sha256(Path(str(report["actions"]))) != report.get("actions_sha256"):
+            raise ValueError("positive-control action artifact changed")
+        return report
+    latent_report = json.loads(
+        (root / "latents" / "report.json").read_text(encoding="utf-8")
+    )
+    latent_batch_size = int(latent_report["runtime"]["batch_size"])
+    if batch_size != latent_batch_size:
+        raise ValueError(
+            f"action batch size must match latent extraction ({latent_batch_size})"
+        )
+    records, _, _, _ = load_state_bank(Path(config.output_dir) / "state_bank")
+    by_id = {record.state_id: record for record in records}
+    record_index = {record.state_id: index for index, record in enumerate(records)}
+    try:
+        from lerobot.datasets import LeRobotDataset
+    except ImportError as error:  # pragma: no cover
+        raise RuntimeError("LeRobotDataset is required for action sensitivity") from error
+    dataset = LeRobotDataset(
+        config.sources.lerobot_repo_id,
+        root=config.sources.lerobot_root,
+        revision=config.sources.lerobot_revision,
+        download_videos=True,
+    )
+    from ..backends.lerobot import SmolVLABackend
+
+    backend = SmolVLABackend(device="auto")
+    backend.load_checkpoint_for_dataset(
+        str(plan["checkpoint"]),
+        repo_id=config.sources.lerobot_repo_id,
+        dataset_root=dataset.root,
+        rename_map=LIBERO_SMOLVLA_RENAME_MAP,
+    )
+    policy, preprocessor, postprocessor = backend._loaded()
+    with np.load(specificity["intervention_artifact"]) as archive:
+        intervention = {name: archive[name].copy() for name in archive.files}
+    selected_ids = tuple(str(value) for value in intervention["state_ids"])
+    selected = tuple(by_id[state_id] for state_id in selected_ids)
+    selected_indices = np.asarray([record_index[state_id] for state_id in selected_ids])
+    all_ids, latent_features, _ = load_latent_cache(root / "latents" / PRIMARY_TAP)
+    expected_ids = tuple(record.state_id for record in records)
+    if all_ids != expected_ids:
+        raise ValueError("positive-control action latent rows differ from State Bank")
+    if not np.array_equal(intervention["source"], latent_features[selected_indices]):
+        raise ValueError("specificity source differs from positive-control latent cache")
+    context_plan = _context_batch_plan(
+        all_ids, selected_ids, batch_size=batch_size
+    )
+    modes: dict[str, np.ndarray | None] = {
+        name: None for name in ("original", "target", "random", "mean", "zero")
+    }
+    checkpoint_id = f"official:{str(plan['checkpoint_sha256'])[:16]}"
+    for start, stop, context_rows, output_rows in tqdm(
+        context_plan,
+        desc=f"{factor} actions official",
+        unit="context",
+    ):
+        batch = collate_state_bank_observations(records[start:stop], dataset)
+        context_ids = all_ids[start:stop]
+        expected = latent_features[start:stop]
+        local = np.asarray(context_rows)
+        output = np.asarray(output_rows)
+        for mode, key, zero in (
+            ("original", None, False),
+            ("target", "target_delta", False),
+            ("random", "random_delta", False),
+            ("mean", "mean_delta", False),
+            ("zero", None, True),
+        ):
+            delta = np.zeros_like(expected)
+            if key is not None:
+                delta[local] = intervention[key][output]
+            predicted = _predict(
+                policy=policy,
+                preprocessor=preprocessor,
+                postprocessor=postprocessor,
+                backend=backend,
+                batch=batch,
+                state_ids=context_ids,
+                checkpoint_id=checkpoint_id,
+                delta=delta,
+                expected=expected,
+                zero=zero,
+            )
+            if modes[mode] is None:
+                modes[mode] = np.empty(
+                    (len(selected), *predicted.shape[1:]), dtype=predicted.dtype
+                )
+            modes[mode][output] = predicted[local]
+    if any(value is None for value in modes.values()):
+        raise ValueError("positive-control action batching produced no outputs")
+    actions = {name: value for name, value in modes.items() if value is not None}
+    effects = {
+        mode: _action_effect(actions["original"], actions[mode])
+        for mode in ("target", "random", "mean", "zero")
+    }
+    indices = [record_index[record.state_id] for record in selected]
+    metrics: dict[str, object] = {}
+    for metric in effects["target"]:
+        usage = effects["target"][metric] - effects["random"][metric]
+        strata = {}
+        for stratum in (
+            "pre_contact",
+            "contact_grasp",
+            "post_grasp",
+            "place_release",
+        ):
+            rows = np.asarray(
+                [
+                    row
+                    for row, record in enumerate(selected)
+                    if phase_stratum(record.labels.phase) == stratum
+                ]
+            )
+            if len(rows):
+                strata[stratum] = _cluster_interval(
+                    usage[rows],
+                    records,
+                    [indices[row] for row in rows],
+                    config=config,
+                )
+        metrics[metric] = {
+            "target_effect": float(np.mean(effects["target"][metric])),
+            "matched_random_effect": float(np.mean(effects["random"][metric])),
+            "target_minus_random_episode_ci": _cluster_interval(
+                usage, records, indices, config=config
+            ),
+            "target_minus_random_task_ci": _cluster_interval(
+                usage, records, indices, config=config, task=True
+            ),
+            "matched_mean_effect": float(np.mean(effects["mean"][metric])),
+            "zero_ood_effect": float(np.mean(effects["zero"][metric])),
+            "strata": strata,
+        }
+    actions_path = factor_root / "actions.npz"
+    _atomic_npz(
+        actions_path,
+        state_ids=np.asarray(selected_ids),
+        **{name: value for name, value in actions.items()},
+    )
+    primary = metrics["first_action_l2"]["target_minus_random_episode_ci"]
+    report = {
+        "schema_version": "libero_smolvla_positive_control_actions_v1",
+        "passed": True,
+        "status": "complete",
+        "factor": factor,
+        "tap": PRIMARY_TAP,
+        "states": len(selected),
+        "context_batches": len(context_plan),
+        "binding": binding,
+        "primary_metric": "first_action_l2_target_minus_matched_random",
+        "primary_cluster": "episode",
+        "functionally_recruited": float(primary["ci_low"]) > 0,
+        "metrics": metrics,
+        "actions": str(actions_path),
+        "actions_sha256": _file_sha256(actions_path),
+        "closed_loop_useful": "not_measured",
+    }
+    write_json_atomic(report_path, report)
+    return report
+
+
+def report_positive_control(
+    config: LiberoStudyConfig, *, factor: str
+) -> dict[str, object]:
+    if factor not in SUPPORTED_FACTORS:
+        raise ValueError(f"unsupported positive-control factor: {factor}")
+    root = positive_control_root(config.output_dir)
+    plan = load_positive_control_plan(config)
+    probe_path = root / "probe" / "report.json"
+    probe = json.loads(probe_path.read_text(encoding="utf-8"))
+    accessible = probe.get("cells", {}).get(factor, {}).get("accessible") is True
+    specificity_path = root / "intervention" / factor / "specificity.json"
+    specificity = (
+        json.loads(specificity_path.read_text(encoding="utf-8"))
+        if specificity_path.is_file()
+        else {"passed": False, "status": "not_run"}
+    )
+    actions_path = root / "intervention" / factor / "action_sensitivity.json"
+    actions = (
+        json.loads(actions_path.read_text(encoding="utf-8"))
+        if actions_path.is_file()
+        else {"passed": False, "status": "not_run"}
+    )
+    interval = (
+        actions.get("metrics", {})
+        .get("first_action_l2", {})
+        .get("target_minus_random_episode_ci", {})
+    )
+    usage_ci = (
+        float(interval.get("ci_low", 0.0)),
+        float(interval.get("ci_high", 0.0)),
+    )
+    decision = positive_control_decision(
+        success_rate=float(plan["baseline_success_rate"]),
+        accessible=accessible,
+        specificity_passed=bool(specificity.get("passed")),
+        usage_ci=usage_ci,
+        factor=factor,
+    )
+    report = {
+        "schema_version": "libero_smolvla_positive_control_report_v1",
+        "passed": bool(actions.get("passed")),
+        "factor": factor,
+        "baseline_success_rate": plan["baseline_success_rate"],
+        "accessible": accessible,
+        "specificity_passed": bool(specificity.get("passed")),
+        "functionally_recruited": bool(actions.get("functionally_recruited")),
+        "usage_episode_ci": {"ci_low": usage_ci[0], "ci_high": usage_ci[1]},
+        **decision,
+        "bindings": {
+            "plan_sha256": _file_sha256(root / "plan.json"),
+            "probe_sha256": _file_sha256(probe_path),
+            "specificity_sha256": (
+                _file_sha256(specificity_path) if specificity_path.is_file() else None
+            ),
+            "actions_sha256": (
+                _file_sha256(actions_path) if actions_path.is_file() else None
+            ),
+        },
+        "interpretation_boundary": {
+            "closed_loop_useful": "not measured",
+            "authorize_new_training": "only continue_official_longitudinal authorizes it",
+        },
+    }
+    output = root / "intervention" / factor / "report.json"
+    _write_immutable_json(output, report)
+    return json.loads(output.read_text(encoding="utf-8"))
+
+
+def run_positive_control_intervention(
+    config: LiberoStudyConfig,
+    *,
+    factor: str = "stable_grasp",
+    max_states: int = 1600,
+    batch_size: int = 32,
+) -> dict[str, object]:
+    specificity = _positive_control_specificity(
+        config, factor=factor, max_states=max_states
+    )
+    if specificity.get("passed"):
+        _positive_control_actions(config, factor=factor, batch_size=batch_size)
+    return report_positive_control(config, factor=factor)
