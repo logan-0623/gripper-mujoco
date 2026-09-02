@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from dataclasses import asdict
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -18,6 +18,7 @@ from .crossfit_probes import (
     _write_immutable_gzip_json,
     _write_immutable_json,
     build_crossfit_manifest,
+    crossfit_partition_indices,
     run_crossfit_cell,
 )
 from .feature_binding import LIBERO_SMOLVLA_RENAME_MAP
@@ -520,8 +521,6 @@ def _positive_control_specificity(
                 )
             )
         )
-        from .crossfit_probes import crossfit_partition_indices
-
         parts = crossfit_partition_indices(
             records, manifest, fold=fold, applicable=applicable
         )
