@@ -8,9 +8,9 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "smolvla_functional_recruitment_reassessment"
-  gate: "stablegrasp_action_sensitivity_failed_stop_before_closed_loop"
-  updated_at: "2026-09-01"
+  current: "smolvla_official_positive_control"
+  gate: "official_success_then_stablegrasp_accessibility_specificity_usage"
+  updated_at: "2026-09-02"
 
 artifacts:
   scientific_audit: "docs/research/2026-08-23-libero-vla-representation-audit.md"
@@ -24,6 +24,8 @@ artifacts:
   longitudinal_v3_design: "docs/superpowers/specs/2026-08-28-libero-longitudinal-protocol-v3-design.md"
   recruitment_design: "docs/superpowers/specs/2026-08-31-smolvla-stablegrasp-longitudinal-recruitment-design.md"
   recruitment_plan: "docs/superpowers/plans/2026-08-31-smolvla-stablegrasp-longitudinal-recruitment.md"
+  positive_control_design: "docs/superpowers/specs/2026-09-01-smolvla-official-positive-control-design.md"
+  positive_control_plan: "docs/superpowers/plans/2026-09-01-smolvla-official-positive-control.md"
 
 scientific_contract:
   primary_question: "What physically grounded interaction information exists before manipulation SFT, what is selectively acquired or reorganized during SFT, where does it become action-proximal, and which factors are accessible, functionally used, or useful in closed loop?"
@@ -159,6 +161,14 @@ experiment_registry:
       optimization_time_delta_u_ci: [-0.0001016827080622865, 0.000006151432151965114]
       primary_cluster: episode
       paired_states: 1600
+  - id: SMOLVLA_OFFICIAL_POSITIVE_CONTROL
+    name: "Official SmolVLA functional-recruitment kill test"
+    status: implementation_only
+    role: successful_policy_kill_test
+    requires: [LIBERO_STATE_BANK, SMOLVLA_FUNCTIONAL_RECRUITMENT]
+    gate: "official success floor, then StableGrasp accessibility, specificity, and target-minus-random action usage"
+    output: "outputs/representation_study/libero_smolvla/protocol_v4/positive_control/"
+    decision_rule: "continue only if StableGrasp usage CI is positive; otherwise replicate Contact once, then pivot"
   - id: SMOLVLA_PAIRED_CLOSED_LOOP
     name: "StableGrasp paired closed-loop dependence"
     status: not_started
@@ -229,6 +239,12 @@ dependency_graph:
     status: not_started
     requires: [P1_D]
     blocked_by: "P1_D action-sensitivity gate"
+  - id: P1_F
+    name: "official SmolVLA successful-policy positive control"
+    status: implementation_only
+    requires: [P1_D]
+    gate: "official baseline success > 20%; StableGrasp accessibility and specificity pass; target-minus-random first-action CI > 0"
+    execution_allowed: true
   - id: RL_EXTENSION
     name: "online adaptation and RL plasticity"
     status: frozen_not_blocking

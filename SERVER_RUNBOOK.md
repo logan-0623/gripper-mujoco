@@ -10,7 +10,7 @@ LIBERO shared State Bank
 → Stage × Tap × Factor report
 ```
 
-ACT/Graph-v2 是已经保留的受控机制证据；Recovery RL v2 是 `failed_gate`。当前只允许运行 StableGrasp 离线 specificity/action-sensitivity；不要运行 closed-loop intervention、PPO 或 SAC。
+ACT/Graph-v2 是已经保留的受控机制证据；Recovery RL v2 是 `failed_gate`。原 Protocol-v3 StableGrasp functional-recruitment gate 已失败。当前只运行官方成功 SmolVLA checkpoint 的 positive-control kill test；不要运行 closed-loop intervention、PPO 或 SAC。
 
 ## 0. 先理解“上传”包含什么
 
@@ -393,7 +393,7 @@ binding 相同的 `protocol_v3/probes/crossfit_v1/cells/*.json.gz`。runtime fin
 Smoke 的 5.1–5.3 通过后才进入正式配置；5.4 是已有正式 checkpoint 时的
 当前续跑入口。
 
-### 5.5 StableGrasp longitudinal recruitment（当前下一步）
+### 5.5 StableGrasp longitudinal recruitment（已完成并冻结）
 
 服务器重启或打开新 shell 后，先恢复数据盘缓存环境。下面的 symbolic link 只需成功创建一次；环境变量需要在每个新 shell 中重新设置：
 
@@ -461,6 +461,67 @@ PY
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
   libero interventions analyze --config "$CONFIG" --max-states 1600
 ```
+
+### 5.6 官方 SmolVLA positive-control kill test（当前入口）
+
+Protocol-v3 已冻结，不重跑、不覆盖。这里使用已经通过官方 LIBERO rollout
+成功率 floor 的 `lerobot/smolvla_libero` 权重，只回答：成功 policy 中
+StableGrasp 是否 accessible、factor-specific、并比 same-norm random 更影响动作。
+
+先执行 5.5 开头的本地 dataset link 与三个 offline 环境变量，然后确认权重和
+官方 eval 报告都存在：
+
+```bash
+CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
+MODEL_DIR=/root/autodl-tmp/models/smolvla_libero_31d453f
+EVAL_DIR=/root/autodl-tmp/gripper-mujoco-rollouts/official_smolvla_libero_spatial_task0
+
+test -e "$MODEL_DIR/config.json" && echo "MODEL READY"
+test -e "$EVAL_DIR/eval_info.json" && echo "EVAL READY"
+```
+
+绑定成功率报告与 checkpoint，然后只提取 `action_expert_input`：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control plan --config "$CONFIG" \
+  --checkpoint "$MODEL_DIR" --eval-dir "$EVAL_DIR"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control extract --config "$CONFIG" --batch-size 32
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control probe --config "$CONFIG"
+```
+
+若 probe 完整，运行 StableGrasp 的 specificity 和 offline action sensitivity：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control intervene --config "$CONFIG" \
+  --factor stable_grasp --max-states 1600 --batch-size 32
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control report --config "$CONFIG" \
+  --factor stable_grasp
+```
+
+读取最终 `decision`：
+
+- `continue_official_longitudinal`：idea 通过 kill test，才训练一条 official-style longitudinal trajectory；
+- `replicate_contact_once`：只额外运行下面一次 Contact；
+- `failed_specificity`：停止并诊断 factor basis；
+- `pivot_interaction_supervised_sft`：不再扩 probe/intervention，转 interaction-supervised SFT。
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control intervene --config "$CONFIG" \
+  --factor contact --max-states 1600 --batch-size 32
+```
+
+Contact 命令只能在 StableGrasp 报告要求 `replicate_contact_once` 时运行。
+`batch-size 32` 必须与 positive-control latent extraction 一致。输出只写到
+`protocol_v4/positive_control/`，不会改动冻结的 Protocol-v3 报告。
 
 ## 6. 正式实验
 

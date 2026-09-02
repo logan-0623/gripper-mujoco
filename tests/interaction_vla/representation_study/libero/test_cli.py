@@ -1,6 +1,7 @@
 import interaction_vla.representation_study.libero.probe_runner as probe_runner
 import interaction_vla.representation_study.libero.probe_transitions as probe_transitions
 import interaction_vla.representation_study.libero.crossfit_probes as crossfit_probes
+import interaction_vla.representation_study.libero.positive_control as positive_control
 from interaction_vla.representation_study.cli import build_parser
 from interaction_vla.representation_study.libero.cli import (
     _required_intervention_batch_size,
@@ -40,6 +41,7 @@ def test_libero_cli_has_required_ordered_families() -> None:
         ("longitudinal", "plan"),
         ("probes", "run"),
         ("interventions", "run"),
+        ("positive-control", "probe"),
         ("evaluate", "paired"),
     ):
         argv = [
@@ -87,6 +89,49 @@ def test_libero_cli_has_required_ordered_families() -> None:
         ]
     )
     assert snapshot.libero_command == "snapshot"
+
+
+def test_positive_control_cli_binds_checkpoint_and_routes(monkeypatch) -> None:
+    parser = build_parser()
+    config = "configs/representation_study/libero_smolvla_linux_cuda.yaml"
+    plan = parser.parse_args(
+        [
+            "libero",
+            "positive-control",
+            "plan",
+            "--config",
+            config,
+            "--checkpoint",
+            "/tmp/model",
+            "--eval-dir",
+            "/tmp/eval",
+        ]
+    )
+    calls: list[object] = []
+    monkeypatch.setattr(
+        positive_control,
+        "plan_positive_control",
+        lambda _config, **kwargs: calls.append(kwargs) or {"passed": True},
+    )
+    assert dispatch(plan) == {"passed": True}
+    assert calls == [{"checkpoint": plan.checkpoint, "eval_dir": plan.eval_dir}]
+
+    intervene = parser.parse_args(
+        [
+            "libero",
+            "positive-control",
+            "intervene",
+            "--config",
+            config,
+            "--factor",
+            "contact",
+            "--max-states",
+            "64",
+            "--batch-size",
+            "32",
+        ]
+    )
+    assert intervene.factor == "contact"
 
 
 def test_libero_cli_does_not_offer_rl_commands() -> None:

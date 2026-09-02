@@ -102,6 +102,32 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
     intervention_analyze.add_argument("--config", type=Path, required=True)
     intervention_analyze.add_argument("--max-states", type=int, default=1600)
 
+    positive = commands.add_parser(
+        "positive-control", help="official SmolVLA functional-recruitment kill test"
+    )
+    positive_commands = positive.add_subparsers(dest="libero_command", required=True)
+    positive_plan = positive_commands.add_parser("plan")
+    positive_plan.add_argument("--config", type=Path, required=True)
+    positive_plan.add_argument("--checkpoint", type=Path, required=True)
+    positive_plan.add_argument("--eval-dir", type=Path, required=True)
+    positive_extract = positive_commands.add_parser("extract")
+    positive_extract.add_argument("--config", type=Path, required=True)
+    positive_extract.add_argument("--batch-size", type=int, default=32)
+    for name in ("probe", "report"):
+        command = positive_commands.add_parser(name)
+        command.add_argument("--config", type=Path, required=True)
+        if name == "report":
+            command.add_argument(
+                "--factor", choices=("stable_grasp", "contact"), default="stable_grasp"
+            )
+    positive_intervene = positive_commands.add_parser("intervene")
+    positive_intervene.add_argument("--config", type=Path, required=True)
+    positive_intervene.add_argument(
+        "--factor", choices=("stable_grasp", "contact"), default="stable_grasp"
+    )
+    positive_intervene.add_argument("--max-states", type=int, default=1600)
+    positive_intervene.add_argument("--batch-size", type=int, default=32)
+
     evaluate = commands.add_parser("evaluate", help="paired LIBERO closed-loop utility")
     evaluate_commands = evaluate.add_subparsers(dest="libero_command", required=True)
     evaluate_paired = evaluate_commands.add_parser("paired")
@@ -461,6 +487,33 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
             return analyze_cached_longitudinal_recruitment(
                 config, max_states=args.max_states
             )
+    if args.libero_family == "positive-control":
+        from .positive_control import (
+            extract_positive_control,
+            plan_positive_control,
+            report_positive_control,
+            run_positive_control_intervention,
+            run_positive_control_probe,
+        )
+
+        config = load_libero_study_config(args.config)
+        if args.libero_command == "plan":
+            return plan_positive_control(
+                config, checkpoint=args.checkpoint, eval_dir=args.eval_dir
+            )
+        if args.libero_command == "extract":
+            return extract_positive_control(config, batch_size=args.batch_size)
+        if args.libero_command == "probe":
+            return run_positive_control_probe(config)
+        if args.libero_command == "intervene":
+            return run_positive_control_intervention(
+                config,
+                factor=args.factor,
+                max_states=args.max_states,
+                batch_size=args.batch_size,
+            )
+        if args.libero_command == "report":
+            return report_positive_control(config, factor=args.factor)
     raise ValueError(
         f"{args.libero_family} {args.libero_command} is implementation-only until its prerequisite gate passes"
     )

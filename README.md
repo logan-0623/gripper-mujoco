@@ -20,7 +20,8 @@ Interaction Graph 是 privileged annotation / measurement vocabulary，不是必
 | LIBERO State Bank | `formal_evidence` | 20 tasks、100 episodes、13,603 states；自动审计与 12 张 timeline 人工审批通过 |
 | SmolVLA protocol v2 stages / latent / probes | `pilot_complete` | 80/96 cells 完成；存在跨服务器 latent confound，只作 pilot |
 | SmolVLA longitudinal protocol v3 | `formal_evidence` | 8 conditions、4 taps、6 factors；288/384 cells complete，96 cells 因预注册 support gate 不可估计 |
-| StableGrasp longitudinal recruitment | `not_run` | specificity/action-sensitivity 代码已实现；尚无实验结果 |
+| StableGrasp longitudinal recruitment | `failed_gate` | accessibility 早期出现，但四个 checkpoint 的 targeted action displacement 均未超过 matched random |
+| Official SmolVLA positive control | `implementation_only` | 成功 policy 的 zero-training kill test；结果尚未运行 |
 
 旧 ACT 成功率为 Flat 30.0%、Teacher Graph 35.0%、Predicted Random 40.0%、Predicted Reflect 41.7%。它说明 graph correctness 不能直接当作 control utility，但不回答新的 SmolVLA longitudinal question。
 
@@ -186,9 +187,9 @@ policy functionally used 该因素，更不表示 closed-loop useful。
 
 ## Intervention 与 RL 边界
 
-当前只执行 `StableGrasp × action_expert_input × 4 checkpoints`。先运行只读审计和 64-state specificity smoke：
-
-Linux 服务器每次打开新 shell 时先绑定数据盘缓存；`ln -s` 只会在首次缺少本地映射时执行：
+Protocol-v3 已冻结。当前只运行 official SmolVLA positive-control；完整路径与
+decision rule 见 [SERVER_RUNBOOK.md](SERVER_RUNBOOK.md)。新 shell 先恢复本地
+dataset 映射：
 
 ```bash
 export HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache
@@ -207,37 +208,31 @@ export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 ```
 
-若未输出 `LOCAL DATASET READY`，不要启动正式 action-sensitivity。完整服务器说明见 `SERVER_RUNBOOK.md`。
+若未输出 `LOCAL DATASET READY`，不要启动 action-sensitivity。随后执行：
 
 ```bash
 CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
+MODEL_DIR=/root/autodl-tmp/models/smolvla_libero_31d453f
+EVAL_DIR=/root/autodl-tmp/gripper-mujoco-rollouts/official_smolvla_libero_spatial_task0
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero interventions audit --config "$CONFIG"
+  libero positive-control plan --config "$CONFIG" \
+  --checkpoint "$MODEL_DIR" --eval-dir "$EVAL_DIR"
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero interventions run --config "$CONFIG" \
-  --max-states 64 --batch-size 32 --specificity-only
+  libero positive-control extract --config "$CONFIG" --batch-size 32
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control probe --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control intervene --config "$CONFIG" \
+  --factor stable_grasp --max-states 1600 --batch-size 32
 ```
 
-只有 `specificity.json` 的四个 checkpoint 全部 `passed: true`，才运行 formal offline action sensitivity：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero interventions run --config "$CONFIG" \
-  --max-states 1600 --batch-size 32
-```
-
-`batch-size 32` 必须与 frozen Protocol-v3 latent runtime 相同。Action evaluation 会恢复 latent extraction 使用的连续 State Bank batch context，包括最后不足 32 states 的 batch；因此 formal 进度约为 408 contexts/checkpoint，而不是把 1,600 个抽样状态重新拼成 50 batches。首次升级会保留已验证的 specificity/intervention artifacts，并记录一次仅针对 action batching 的 binding migration。64 与 1600 states 写入不同 profile 目录；相同 profile 可直接重跑续用。动作变化只叫 action-sensitive，只有未来 paired rollout 的任务结果变化才叫 closed-loop useful。Phase 是强制 specificity 对照；若它与 StableGrasp 同时被同等破坏，代码会停止在 specificity gate。
-
-动作缓存完成后，下面的 CPU-only 命令直接计算 checkpoint-paired `ΔU`、state/action-component 条件分析和 full-chunk secondary CI，不加载模型或数据集：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero interventions analyze --config "$CONFIG" --max-states 1600
-```
-
-当前不要运行或调优 PPO/SAC，不要从 nominal demonstration 制造 Recovery label。RL 只有在离线 probe、closed-loop intervention、非饱和 perturbation distribution、Oracle-State residual recovery 四个前置 gate 都通过后才恢复。
+只有最终 `decision=continue_official_longitudinal` 才允许新训练；若为
+`replicate_contact_once`，只复现一次 Contact，仍失败则 pivot。当前不要运行或调优
+PPO/SAC，也不要启动 closed-loop intervention。
 
 ## 测试
 
