@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Mapping
 
@@ -8,12 +9,26 @@ import numpy as np
 
 from ..state_bank.io import write_json_atomic
 from .config import LiberoStudyConfig
-from .latents import _file_sha256, _tree_sha256
+from .crossfit_probes import (
+    _read_gzip_json,
+    _write_immutable_gzip_json,
+    _write_immutable_json,
+    build_crossfit_manifest,
+    run_crossfit_cell,
+)
+from .latents import (
+    _file_sha256,
+    _tree_sha256,
+    extract_smolvla_latents_from_checkpoint,
+    load_latent_cache,
+)
+from .state_bank import load_state_bank
 
 
 POSITIVE_CONTROL_SCHEMA = "libero_smolvla_official_positive_control_v1"
 PRIMARY_TAP = "action_expert_input"
 SUPPORTED_FACTORS = ("stable_grasp", "contact")
+PROBE_FACTORS = ("stable_grasp", "contact", "phase", "geometry")
 MINIMUM_SUCCESS_RATE = 0.20
 
 
@@ -145,3 +160,177 @@ def load_positive_control_plan(config: LiberoStudyConfig) -> dict[str, object]:
     if _file_sha256(config.source_path) != report.get("config_sha256"):
         raise ValueError("positive-control config hash changed")
     return report
+
+
+def extract_positive_control(
+    config: LiberoStudyConfig, *, batch_size: int = 32
+) -> dict[str, object]:
+    plan = load_positive_control_plan(config)
+    root = positive_control_root(config.output_dir)
+    return extract_smolvla_latents_from_checkpoint(
+        config,
+        checkpoint=str(plan["checkpoint"]),
+        checkpoint_id=f"official:{str(plan['checkpoint_sha256'])[:16]}",
+        checkpoint_hash=str(plan["checkpoint_sha256"]),
+        output_dir=root / "latents",
+        label="official_smolvla_libero",
+        batch_size=batch_size,
+        runtime_binding=True,
+        report_schema="libero_smolvla_positive_control_latents_v1",
+        report_fields={"plan_sha256": _file_sha256(root / "plan.json")},
+        taps=(PRIMARY_TAP,),
+    )
+
+
+def summarize_positive_control_probe_results(
+    cells: Mapping[str, Mapping[str, object]],
+) -> dict[str, object]:
+    if set(cells) != set(PROBE_FACTORS):
+        raise ValueError("positive-control probe factors are incomplete")
+    status_counts = {
+        status: sum(row.get("status") == status for row in cells.values())
+        for status in ("complete", "not_estimable", "failed_gate")
+    }
+    stable = cells["stable_grasp"]
+    passed = status_counts["complete"] == len(PROBE_FACTORS)
+    return {
+        "passed": passed,
+        "status_counts": status_counts,
+        "stable_grasp_accessible": bool(
+            passed and stable.get("accessible") is True
+        ),
+    }
+
+
+def _positive_control_probe_binding(
+    *,
+    plan: Mapping[str, object],
+    plan_sha256: str,
+    latent_manifest: Mapping[str, object],
+    folds_sha256: str,
+    factor: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": "libero_smolvla_positive_control_crossfit_cell_v1",
+        "condition": "official_smolvla_libero",
+        "checkpoint_sha256": plan["checkpoint_sha256"],
+        "tap": PRIMARY_TAP,
+        "factor": factor,
+        "split": "episode_group",
+        "plan_sha256": plan_sha256,
+        "folds_sha256": folds_sha256,
+        "latent_values_sha256": latent_manifest["values_sha256"],
+        "state_bank_sha256": plan["state_bank_sha256"],
+    }
+
+
+def run_positive_control_probe(config: LiberoStudyConfig) -> dict[str, object]:
+    plan = load_positive_control_plan(config)
+    root = positive_control_root(config.output_dir)
+    plan_sha256 = _file_sha256(root / "plan.json")
+    latent_report_path = root / "latents" / "report.json"
+    latent_report = json.loads(latent_report_path.read_text(encoding="utf-8"))
+    if (
+        latent_report.get("schema_version")
+        != "libero_smolvla_positive_control_latents_v1"
+        or not latent_report.get("passed")
+        or latent_report.get("checkpoint_sha256") != plan["checkpoint_sha256"]
+        or latent_report.get("plan_sha256") != plan_sha256
+    ):
+        raise ValueError("positive-control latent report is stale or incompatible")
+    records, _, _, _ = load_state_bank(Path(config.output_dir) / "state_bank")
+    state_ids, features, latent_manifest = load_latent_cache(
+        root / "latents" / PRIMARY_TAP
+    )
+    if state_ids != tuple(record.state_id for record in records):
+        raise ValueError("positive-control latent rows differ from the State Bank")
+    if latent_manifest.get("state_bank_sha256") != plan["state_bank_sha256"]:
+        raise ValueError("positive-control latent State Bank binding is stale")
+
+    manifest = build_crossfit_manifest(
+        records,
+        split_name="episode_group",
+        folds=config.probes.crossfit_folds,
+        seed=config.seed,
+    )
+    probe_root = root / "probe"
+    folds_path = probe_root / "folds.json"
+    _write_immutable_json(
+        folds_path,
+        {
+            "schema_version": "libero_smolvla_positive_control_folds_v1",
+            "passed": True,
+            "manifest": asdict(manifest),
+            "plan_sha256": plan_sha256,
+        },
+    )
+    folds_sha256 = _file_sha256(folds_path)
+    cells: dict[str, Mapping[str, object]] = {}
+    artifacts: dict[str, dict[str, str]] = {}
+    for factor in PROBE_FACTORS:
+        path = probe_root / "cells" / f"{factor}.json.gz"
+        binding = _positive_control_probe_binding(
+            plan=plan,
+            plan_sha256=plan_sha256,
+            latent_manifest=latent_manifest,
+            folds_sha256=folds_sha256,
+            factor=factor,
+        )
+        if path.is_file():
+            cell = _read_gzip_json(path)
+            if cell.get("binding") != binding:
+                raise FileExistsError(f"positive-control probe binding changed: {path}")
+        else:
+            cell = {
+                "binding": binding,
+                "result": run_crossfit_cell(
+                    config=config,
+                    records=records,
+                    features=features,
+                    manifest=manifest,
+                    tap=PRIMARY_TAP,
+                    factor=factor,
+                ),
+            }
+            _write_immutable_gzip_json(path, cell)
+            cell = _read_gzip_json(path)
+        result = cell.get("result")
+        if not isinstance(result, Mapping):
+            raise ValueError(f"positive-control probe cell is malformed: {path}")
+        cells[factor] = result
+        artifacts[factor] = {"path": str(path), "sha256": _file_sha256(path)}
+
+    summary = summarize_positive_control_probe_results(cells)
+    report = {
+        "schema_version": "libero_smolvla_positive_control_probe_v1",
+        **summary,
+        "condition": "official_smolvla_libero",
+        "tap": PRIMARY_TAP,
+        "split": "episode_group",
+        "plan_sha256": plan_sha256,
+        "folds_sha256": folds_sha256,
+        "artifacts": artifacts,
+        "cells": {
+            factor: {
+                key: cells[factor].get(key)
+                for key in (
+                    "status",
+                    "reason",
+                    "accessible",
+                    "primary_metric_name",
+                    "primary_metric",
+                    "accessibility_threshold",
+                    "accessibility_utility",
+                    "accessibility_utility_ci",
+                )
+            }
+            for factor in PROBE_FACTORS
+        },
+        "interpretation_boundary": {
+            "accessible": "cross-fitted utility exceeds the strongest registered shortcut",
+            "functionally_used": "not measured by this report",
+        },
+    }
+    report_path = probe_root / "report.json"
+    _write_immutable_json(report_path, report)
+    return json.loads(report_path.read_text(encoding="utf-8"))

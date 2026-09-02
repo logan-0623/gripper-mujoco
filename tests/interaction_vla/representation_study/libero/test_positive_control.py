@@ -6,10 +6,13 @@ import pytest
 
 from interaction_vla.representation_study.libero.latents import validate_requested_taps
 from interaction_vla.representation_study.libero.positive_control import (
+    extract_positive_control,
     load_positive_control_plan,
     official_success_rate,
     plan_positive_control,
     positive_control_decision,
+    positive_control_root,
+    summarize_positive_control_probe_results,
 )
 from interaction_vla.representation_study.libero.config import load_libero_study_config
 from interaction_vla.representation_study.libero.taps import SEMANTIC_TAPS
@@ -89,3 +92,55 @@ def test_positive_control_plan_rejects_changed_evaluation(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="evaluation report hash changed"):
         load_positive_control_plan(config)
+
+
+def test_positive_control_uses_protocol_v4_without_touching_v3(tmp_path: Path) -> None:
+    root = positive_control_root(tmp_path)
+    assert root == tmp_path / "protocol_v4" / "positive_control"
+    assert "protocol_v3" not in str(root)
+
+
+def test_positive_control_extracts_only_action_expert_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = replace(
+        load_libero_study_config(
+            "configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml"
+        ),
+        output_dir=tmp_path,
+    )
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "interaction_vla.representation_study.libero.positive_control.load_positive_control_plan",
+        lambda _config: {
+            "checkpoint": "/tmp/official",
+            "checkpoint_sha256": "a" * 64,
+        },
+    )
+    monkeypatch.setattr(
+        "interaction_vla.representation_study.libero.positive_control._file_sha256",
+        lambda _path: "b" * 64,
+    )
+    monkeypatch.setattr(
+        "interaction_vla.representation_study.libero.positive_control.extract_smolvla_latents_from_checkpoint",
+        lambda _config, **kwargs: calls.append(kwargs) or {"passed": True},
+    )
+
+    assert extract_positive_control(config, batch_size=32)["passed"]
+    assert calls[0]["taps"] == ("action_expert_input",)
+    assert calls[0]["output_dir"] == positive_control_root(tmp_path) / "latents"
+
+
+def test_probe_summary_requires_complete_stablegrasp_accessibility() -> None:
+    cells = {
+        factor: {"status": "complete", "accessible": factor == "stable_grasp"}
+        for factor in ("stable_grasp", "contact", "phase", "geometry")
+    }
+    summary = summarize_positive_control_probe_results(cells)
+    assert summary["passed"]
+    assert summary["stable_grasp_accessible"]
+
+    cells["stable_grasp"] = {"status": "failed_gate", "accessible": None}
+    failed = summarize_positive_control_probe_results(cells)
+    assert not failed["passed"]
+    assert not failed["stable_grasp_accessible"]
