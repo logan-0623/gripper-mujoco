@@ -8,6 +8,7 @@ import pytest
 from interaction_vla.representation_study.libero.latents import validate_requested_taps
 from interaction_vla.representation_study.libero.positive_control import (
     _factor_intervention_root,
+    _evaluation_command,
     _seal_positive_control_evaluation,
     _select_factor_records,
     extract_positive_control,
@@ -171,10 +172,7 @@ def test_positive_control_plan_rejects_changed_evaluation(tmp_path: Path) -> Non
     _seal_positive_control_evaluation(
         checkpoint=checkpoint,
         eval_dir=evaluation,
-        command=(
-            f"--policy.path={checkpoint}",
-            f"--output_dir={evaluation}",
-        ),
+        command=_evaluation_command(checkpoint, evaluation),
     )
     plan_positive_control(config, checkpoint=checkpoint, eval_dir=evaluation)
     eval_info.write_text(
@@ -203,7 +201,7 @@ def test_evaluation_contract_rejects_another_checkpoint(tmp_path: Path) -> None:
     _seal_positive_control_evaluation(
         checkpoint=first,
         eval_dir=evaluation,
-        command=(f"--policy.path={first}", f"--output_dir={evaluation}"),
+        command=_evaluation_command(first, evaluation),
     )
 
     config = replace(

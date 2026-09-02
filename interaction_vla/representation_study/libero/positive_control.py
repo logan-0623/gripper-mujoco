@@ -136,30 +136,11 @@ def _seal_positive_control_evaluation(
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def evaluate_positive_control(
-    *, checkpoint: str | Path, eval_dir: str | Path
-) -> dict[str, object]:
-    checkpoint = Path(checkpoint)
-    eval_dir = Path(eval_dir)
-    contract_path = eval_dir / "positive_control_evaluation.json"
-    if contract_path.is_file():
-        contract = json.loads(contract_path.read_text(encoding="utf-8"))
-        if contract.get("checkpoint_sha256") != _tree_sha256(checkpoint):
-            raise ValueError("existing evaluation belongs to a different checkpoint")
-        if contract.get("evaluation_report_sha256") != _file_sha256(
-            eval_dir / "eval_info.json"
-        ):
-            raise ValueError("existing evaluation report changed")
-        return contract
-    if eval_dir.exists():
-        raise FileExistsError(
-            f"positive-control evaluation requires a new output directory: {eval_dir}"
-        )
-    eval_dir.parent.mkdir(parents=True, exist_ok=True)
+def _evaluation_command(checkpoint: Path, eval_dir: Path) -> tuple[str, ...]:
     camera_mapping = json.dumps(
         EVALUATION_CONTRACT["camera_name_mapping"], separators=(",", ":")
     )
-    command = (
+    return (
         sys.executable,
         "-m",
         "lerobot.scripts.lerobot_eval",
@@ -183,6 +164,29 @@ def evaluate_positive_control(
         "--seed=2057736129",
         f"--output_dir={eval_dir}",
     )
+
+
+def evaluate_positive_control(
+    *, checkpoint: str | Path, eval_dir: str | Path
+) -> dict[str, object]:
+    checkpoint = Path(checkpoint)
+    eval_dir = Path(eval_dir)
+    contract_path = eval_dir / "positive_control_evaluation.json"
+    if contract_path.is_file():
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        if contract.get("checkpoint_sha256") != _tree_sha256(checkpoint):
+            raise ValueError("existing evaluation belongs to a different checkpoint")
+        if contract.get("evaluation_report_sha256") != _file_sha256(
+            eval_dir / "eval_info.json"
+        ):
+            raise ValueError("existing evaluation report changed")
+        return contract
+    if eval_dir.exists():
+        raise FileExistsError(
+            f"positive-control evaluation requires a new output directory: {eval_dir}"
+        )
+    eval_dir.parent.mkdir(parents=True, exist_ok=True)
+    command = _evaluation_command(checkpoint, eval_dir)
     subprocess.run(command, check=True)
     report = _seal_positive_control_evaluation(
         checkpoint=checkpoint, eval_dir=eval_dir, command=command
@@ -308,9 +312,7 @@ def plan_positive_control(
     command = contract.get("command")
     if (
         contract.get("provenance") != "generated_by_evaluate_positive_control"
-        or not isinstance(command, list)
-        or f"--policy.path={checkpoint}" not in command
-        or f"--output_dir={eval_dir}" not in command
+        or command != list(_evaluation_command(checkpoint, eval_dir))
     ):
         raise ValueError("sealed evaluation provenance is incomplete")
     report: dict[str, object] = {
