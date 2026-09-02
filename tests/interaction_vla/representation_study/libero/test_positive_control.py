@@ -1,12 +1,14 @@
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from interaction_vla.representation_study.libero.latents import validate_requested_taps
 from interaction_vla.representation_study.libero.positive_control import (
     extract_positive_control,
+    _select_factor_records,
     factor_specificity_gate,
     load_positive_control_plan,
     official_success_rate,
@@ -123,6 +125,18 @@ def test_factor_specificity_gate_keeps_stablegrasp_place_control() -> None:
         place_target_minus_random=None,
         **common,
     )["passed"]
+
+
+def test_contact_replication_uses_stablegrasp_state_support() -> None:
+    def record(state_id: str, *, stable: bool) -> SimpleNamespace:
+        applicability = SimpleNamespace(contact=True, stable_grasp=stable)
+        labels = SimpleNamespace(applicability=applicability, phase="approach")
+        return SimpleNamespace(
+            suite="libero_spatial", task_id=0, state_id=state_id, labels=labels
+        )
+
+    records = (record("contact-only", stable=False), record("shared", stable=True))
+    assert _select_factor_records(records, factor="contact", max_states=2) == (1,)
 
 
 def test_positive_control_plan_rejects_changed_evaluation(tmp_path: Path) -> None:

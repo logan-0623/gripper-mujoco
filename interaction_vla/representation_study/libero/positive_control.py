@@ -403,7 +403,10 @@ def _select_factor_records(
         raise ValueError("positive-control factor and max_states are invalid")
     buckets: dict[str, list[int]] = {}
     for index, record in enumerate(records):
-        if not getattr(record.labels.applicability, factor):
+        if not (
+            record.labels.applicability.stable_grasp
+            and getattr(record.labels.applicability, factor)
+        ):
             continue
         key = f"{record.suite}:{record.task_id}:{phase_stratum(record.labels.phase)}"
         buckets.setdefault(key, []).append(index)
