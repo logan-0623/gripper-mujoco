@@ -240,12 +240,15 @@ def positive_control_decision(
     specificity_passed: bool,
     usage_ci: tuple[float, float],
     factor: str,
+    formal_profile: bool = True,
 ) -> dict[str, object]:
     if factor not in SUPPORTED_FACTORS:
         raise ValueError(f"unsupported positive-control factor: {factor}")
     if not np.isfinite((success_rate, *usage_ci)).all():
         raise ValueError("positive-control decision values must be finite")
-    if success_rate <= MINIMUM_SUCCESS_RATE:
+    if not formal_profile:
+        decision = "smoke_only"
+    elif success_rate <= MINIMUM_SUCCESS_RATE:
         decision = "failed_policy_floor"
     elif not accessible:
         decision = (
@@ -1049,6 +1052,7 @@ def report_positive_control(
         specificity_passed=bool(specificity.get("passed")),
         usage_ci=usage_ci,
         factor=factor,
+        formal_profile=max_states == 1600,
     )
     report = {
         "schema_version": "libero_smolvla_positive_control_report_v1",

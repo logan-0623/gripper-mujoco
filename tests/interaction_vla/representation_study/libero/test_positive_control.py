@@ -83,6 +83,16 @@ def test_positive_usage_authorizes_official_longitudinal_training() -> None:
         "decision": "continue_official_longitudinal",
         "authorize_longitudinal_training": True,
     }
+    smoke = positive_control_decision(
+        success_rate=0.70,
+        accessible=True,
+        specificity_passed=True,
+        usage_ci=(0.01, 0.03),
+        factor="stable_grasp",
+        formal_profile=False,
+    )
+    assert smoke["decision"] == "smoke_only"
+    assert not smoke["authorize_longitudinal_training"]
 
 
 def test_failed_factors_stop_after_one_contact_replication() -> None:
