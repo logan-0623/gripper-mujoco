@@ -231,8 +231,7 @@ EVAL_DIR=/root/autodl-tmp/gripper-mujoco-rollouts/official_smolvla_libero_spatia
 ```
 
 只有最终 `decision=continue_official_longitudinal` 才允许新训练；若为
-`replicate_contact_once`，只复现一次 Contact，仍失败则 pivot。当前不要运行或调优
-PPO/SAC，也不要启动 closed-loop intervention。
+`replicate_contact_once`，只复现一次 Contact，仍失败则 pivot。当前不要运行或调优 PPO/SAC，也不要启动 closed-loop intervention。
 
 ## 测试
 
