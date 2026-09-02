@@ -213,7 +213,11 @@ export HF_DATASETS_OFFLINE=1
 ```bash
 CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
 MODEL_DIR=/root/autodl-tmp/models/smolvla_libero_31d453f
-EVAL_DIR=/root/autodl-tmp/gripper-mujoco-rollouts/official_smolvla_libero_spatial_task0
+EVAL_DIR=/root/autodl-tmp/gripper-mujoco-rollouts/official_smolvla_positive_control_v1
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control evaluate \
+  --checkpoint "$MODEL_DIR" --eval-dir "$EVAL_DIR"
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
   libero positive-control plan --config "$CONFIG" \

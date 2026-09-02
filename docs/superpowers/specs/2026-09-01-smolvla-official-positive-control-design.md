@@ -75,15 +75,21 @@ Protocol-v3 remains unchanged under `protocol_v3/`.
 
 ## Commands
 
-The implementation exposes one new `positive-control` command family:
+The implementation exposes one new `positive-control` command family. `evaluate`
+must generate the immutable checkpoint/command/evaluation contract; historical
+`eval_info.json` files without that provenance are not accepted:
 
 ```text
+libero positive-control evaluate
 libero positive-control plan
 libero positive-control extract
 libero positive-control probe
 libero positive-control intervene
 libero positive-control report
 ```
+
+`evaluate` invokes the upstream LeRobot evaluator with the preregistered runtime
+contract and seals its exact command, checkpoint hash, and output hash.
 
 `plan` records the checkpoint hash, evaluation-report hash, observed baseline
 success, State Bank hash, policy configuration, and exact open-source rollout
@@ -212,4 +218,3 @@ The smallest required checks are:
 5. StableGrasp and Contact failure routes to the declared pivot and forbids full-SFT
    longitudinal expansion;
 6. Protocol-v3 files are unchanged by all positive-control commands.
-

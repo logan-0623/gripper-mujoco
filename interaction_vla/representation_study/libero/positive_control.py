@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
+import platform
+import subprocess
+import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -52,10 +56,138 @@ PRIMARY_TAP = "action_expert_input"
 SUPPORTED_FACTORS = ("stable_grasp", "contact")
 PROBE_FACTORS = ("stable_grasp", "contact", "phase", "geometry")
 MINIMUM_SUCCESS_RATE = 0.20
+EVALUATION_CONTRACT = {
+    "source": "lerobot.scripts.lerobot_eval",
+    "n_action_steps": 10,
+    "num_denoising_steps": 10,
+    "empty_cameras": 1,
+    "camera_name_mapping": {
+        "agentview_image": "camera1",
+        "robot0_eye_in_hand_image": "camera2",
+    },
+    "max_parallel_tasks": 1,
+    "recording": False,
+}
 
 
 def positive_control_root(output_dir: str | Path) -> Path:
     return Path(output_dir) / "protocol_v4" / "positive_control"
+
+
+def _factor_intervention_root(root: Path, factor: str, max_states: int) -> Path:
+    if factor not in SUPPORTED_FACTORS or max_states <= 0:
+        raise ValueError("positive-control factor profile is invalid")
+    return root / "intervention" / factor / f"n_{max_states:04d}"
+
+
+def _implementation_sha256() -> str:
+    digest = hashlib.sha256()
+    for path in (
+        Path(__file__),
+        Path(__file__).with_name("latents.py"),
+        Path(__file__).with_name("crossfit_probes.py"),
+        Path(__file__).with_name("probes.py"),
+        Path(__file__).with_name("recruitment.py"),
+        Path(__file__).parents[1] / "backends" / "lerobot.py",
+    ):
+        digest.update(path.name.encode())
+        digest.update(_file_sha256(path).encode())
+    return digest.hexdigest()
+
+
+def _runtime_identity() -> dict[str, object]:
+    cuda = torch.cuda.is_available()
+    return {
+        "python": platform.python_version(),
+        "torch": torch.__version__,
+        "torch_cuda": torch.version.cuda,
+        "cudnn": torch.backends.cudnn.version(),
+        "device": torch.cuda.get_device_name(0) if cuda else "cpu",
+        "lerobot": importlib.metadata.version("lerobot"),
+    }
+
+
+def _seal_positive_control_evaluation(
+    *,
+    checkpoint: str | Path,
+    eval_dir: str | Path,
+    command: Sequence[str] | None = None,
+) -> dict[str, object]:
+    checkpoint = Path(checkpoint)
+    eval_dir = Path(eval_dir)
+    config_path = checkpoint / "config.json"
+    eval_path = eval_dir / "eval_info.json"
+    if not config_path.is_file():
+        raise FileNotFoundError(f"official checkpoint is incomplete: {checkpoint}")
+    success_rate, episodes = official_success_rate(eval_path)
+    report = {
+        "schema_version": "libero_smolvla_positive_control_eval_contract_v1",
+        "passed": True,
+        "checkpoint_sha256": _tree_sha256(checkpoint),
+        "evaluation_report_sha256": _file_sha256(eval_path),
+        "success_rate": success_rate,
+        "episodes": episodes,
+        "runtime_contract": EVALUATION_CONTRACT,
+        "provenance": "generated_by_evaluate_positive_control",
+        "command": list(command or ()),
+    }
+    path = eval_dir / "positive_control_evaluation.json"
+    _write_immutable_json(path, report)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def evaluate_positive_control(
+    *, checkpoint: str | Path, eval_dir: str | Path
+) -> dict[str, object]:
+    checkpoint = Path(checkpoint)
+    eval_dir = Path(eval_dir)
+    contract_path = eval_dir / "positive_control_evaluation.json"
+    if contract_path.is_file():
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        if contract.get("checkpoint_sha256") != _tree_sha256(checkpoint):
+            raise ValueError("existing evaluation belongs to a different checkpoint")
+        if contract.get("evaluation_report_sha256") != _file_sha256(
+            eval_dir / "eval_info.json"
+        ):
+            raise ValueError("existing evaluation report changed")
+        return contract
+    if eval_dir.exists():
+        raise FileExistsError(
+            f"positive-control evaluation requires a new output directory: {eval_dir}"
+        )
+    eval_dir.parent.mkdir(parents=True, exist_ok=True)
+    camera_mapping = json.dumps(
+        EVALUATION_CONTRACT["camera_name_mapping"], separators=(",", ":")
+    )
+    command = (
+        sys.executable,
+        "-m",
+        "lerobot.scripts.lerobot_eval",
+        f"--policy.path={checkpoint}",
+        "--policy.device=cuda",
+        "--policy.use_amp=false",
+        "--policy.n_action_steps=10",
+        "--policy.empty_cameras=1",
+        "--env.type=libero",
+        "--env.task=libero_spatial",
+        "--env.task_ids=[0]",
+        "--env.obs_type=pixels_agent_pos",
+        "--env.init_states=true",
+        "--env.fps=30",
+        "--env.max_parallel_tasks=1",
+        f"--env.camera_name_mapping={camera_mapping}",
+        "--eval.n_episodes=10",
+        "--eval.batch_size=1",
+        "--eval.use_async_envs=false",
+        "--eval.recording=false",
+        "--seed=2057736129",
+        f"--output_dir={eval_dir}",
+    )
+    subprocess.run(command, check=True)
+    report = _seal_positive_control_evaluation(
+        checkpoint=checkpoint, eval_dir=eval_dir, command=command
+    )
+    return report
 
 
 def factor_specificity_gate(
@@ -146,6 +278,11 @@ def plan_positive_control(
     eval_report = eval_dir / "eval_info.json"
     if not eval_report.is_file():
         raise FileNotFoundError(f"LeRobot evaluation report is missing: {eval_report}")
+    contract_path = eval_dir / "positive_control_evaluation.json"
+    if not contract_path.is_file():
+        raise FileNotFoundError(
+            f"sealed positive-control evaluation is missing: {contract_path}"
+        )
     state_bank = Path(config.output_dir) / "state_bank" / "manifest.json"
     if not state_bank.is_file():
         raise FileNotFoundError(f"State Bank manifest is missing: {state_bank}")
@@ -154,30 +291,43 @@ def plan_positive_control(
         raise ValueError(
             "official checkpoint remains at the preregistered closed-loop floor"
         )
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    checkpoint_sha256 = _tree_sha256(checkpoint)
+    if (
+        contract.get("schema_version")
+        != "libero_smolvla_positive_control_eval_contract_v1"
+        or contract.get("passed") is not True
+    ):
+        raise ValueError("sealed evaluation contract is incomplete")
+    if contract.get("checkpoint_sha256") != checkpoint_sha256:
+        raise ValueError("sealed evaluation belongs to a different checkpoint")
+    if contract.get("evaluation_report_sha256") != _file_sha256(eval_report):
+        raise ValueError("sealed evaluation report hash changed")
+    if contract.get("runtime_contract") != EVALUATION_CONTRACT:
+        raise ValueError("sealed evaluation runtime contract changed")
+    command = contract.get("command")
+    if (
+        contract.get("provenance") != "generated_by_evaluate_positive_control"
+        or not isinstance(command, list)
+        or f"--policy.path={checkpoint}" not in command
+        or f"--output_dir={eval_dir}" not in command
+    ):
+        raise ValueError("sealed evaluation provenance is incomplete")
     report: dict[str, object] = {
         "schema_version": POSITIVE_CONTROL_SCHEMA,
         "passed": True,
         "status": "ready_for_latents",
         "checkpoint": str(checkpoint),
-        "checkpoint_sha256": _tree_sha256(checkpoint),
+        "checkpoint_sha256": checkpoint_sha256,
         "evaluation_dir": str(eval_dir),
         "evaluation_report_sha256": _file_sha256(eval_report),
+        "evaluation_contract_sha256": _file_sha256(contract_path),
         "baseline_success_rate": success_rate,
         "baseline_episodes": episodes,
         "state_bank_sha256": _file_sha256(state_bank),
         "config_sha256": _file_sha256(config.source_path),
-        "runtime_contract": {
-            "source": "lerobot.scripts.lerobot_eval",
-            "n_action_steps": 10,
-            "num_denoising_steps": 10,
-            "empty_cameras": 1,
-            "camera_name_mapping": {
-                "agentview_image": "camera1",
-                "robot0_eye_in_hand_image": "camera2",
-            },
-            "max_parallel_tasks": 1,
-            "recording": False,
-        },
+        "runtime_contract": EVALUATION_CONTRACT,
+        "implementation_sha256": _implementation_sha256(),
         "interpretation": "successful-policy floor screen, not a benchmark claim",
     }
     path = positive_control_root(config.output_dir) / "plan.json"
@@ -203,11 +353,16 @@ def load_positive_control_plan(config: LiberoStudyConfig) -> dict[str, object]:
     eval_report = Path(str(report["evaluation_dir"])) / "eval_info.json"
     if _file_sha256(eval_report) != report.get("evaluation_report_sha256"):
         raise ValueError("positive-control evaluation report hash changed")
+    contract_path = Path(str(report["evaluation_dir"])) / "positive_control_evaluation.json"
+    if _file_sha256(contract_path) != report.get("evaluation_contract_sha256"):
+        raise ValueError("positive-control evaluation contract changed")
     state_bank = Path(config.output_dir) / "state_bank" / "manifest.json"
     if _file_sha256(state_bank) != report.get("state_bank_sha256"):
         raise ValueError("positive-control State Bank hash changed")
     if _file_sha256(config.source_path) != report.get("config_sha256"):
         raise ValueError("positive-control config hash changed")
+    if _implementation_sha256() != report.get("implementation_sha256"):
+        raise ValueError("positive-control implementation changed")
     return report
 
 
@@ -270,6 +425,8 @@ def _positive_control_probe_binding(
         "folds_sha256": folds_sha256,
         "latent_values_sha256": latent_manifest["values_sha256"],
         "state_bank_sha256": plan["state_bank_sha256"],
+        "implementation_sha256": plan["implementation_sha256"],
+        "runtime": _runtime_identity(),
     }
 
 
@@ -445,14 +602,15 @@ def _positive_control_specificity(
             "status": "blocked_by_accessibility",
             "factor": factor,
         }
-    factor_root = root / "intervention" / factor
+    factor_root = _factor_intervention_root(root, factor, max_states)
     report_path = factor_root / "specificity.json"
     binding = {
         "plan_sha256": _file_sha256(root / "plan.json"),
         "probe_sha256": _file_sha256(probe_path),
         "factor": factor,
         "max_states": max_states,
-        "implementation_sha256": _file_sha256(Path(__file__)),
+        "implementation_sha256": plan["implementation_sha256"],
+        "runtime": _runtime_identity(),
     }
     if report_path.is_file():
         report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -650,11 +808,12 @@ def _positive_control_actions(
     config: LiberoStudyConfig,
     *,
     factor: str,
+    max_states: int,
     batch_size: int,
 ) -> dict[str, object]:
     root = positive_control_root(config.output_dir)
     plan = load_positive_control_plan(config)
-    factor_root = root / "intervention" / factor
+    factor_root = _factor_intervention_root(root, factor, max_states)
     specificity_path = factor_root / "specificity.json"
     specificity = json.loads(specificity_path.read_text(encoding="utf-8"))
     if not specificity.get("passed"):
@@ -665,11 +824,19 @@ def _positive_control_actions(
             "factor": factor,
         }
     report_path = factor_root / "action_sensitivity.json"
+    latent_report = json.loads(
+        (root / "latents" / "report.json").read_text(encoding="utf-8")
+    )
     binding = {
         "plan_sha256": _file_sha256(root / "plan.json"),
         "specificity_sha256": _file_sha256(specificity_path),
         "factor": factor,
         "batch_size": batch_size,
+        "latent_runtime_fingerprint_sha256": latent_report.get(
+            "runtime_fingerprint_sha256"
+        ),
+        "implementation_sha256": plan["implementation_sha256"],
+        "runtime": _runtime_identity(),
     }
     if report_path.is_file():
         report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -678,9 +845,6 @@ def _positive_control_actions(
         if _file_sha256(Path(str(report["actions"]))) != report.get("actions_sha256"):
             raise ValueError("positive-control action artifact changed")
         return report
-    latent_report = json.loads(
-        (root / "latents" / "report.json").read_text(encoding="utf-8")
-    )
     latent_batch_size = int(latent_report["runtime"]["batch_size"])
     if batch_size != latent_batch_size:
         raise ValueError(
@@ -838,7 +1002,7 @@ def _positive_control_actions(
 
 
 def report_positive_control(
-    config: LiberoStudyConfig, *, factor: str
+    config: LiberoStudyConfig, *, factor: str, max_states: int = 1600
 ) -> dict[str, object]:
     if factor not in SUPPORTED_FACTORS:
         raise ValueError(f"unsupported positive-control factor: {factor}")
@@ -847,17 +1011,26 @@ def report_positive_control(
     probe_path = root / "probe" / "report.json"
     probe = json.loads(probe_path.read_text(encoding="utf-8"))
     accessible = probe.get("cells", {}).get(factor, {}).get("accessible") is True
-    specificity_path = root / "intervention" / factor / "specificity.json"
+    factor_root = _factor_intervention_root(root, factor, max_states)
+    specificity_path = factor_root / "specificity.json"
+    actions_path = factor_root / "action_sensitivity.json"
+    if accessible and not specificity_path.is_file():
+        raise FileNotFoundError(
+            f"positive-control specificity evidence is missing: {specificity_path}"
+        )
     specificity = (
         json.loads(specificity_path.read_text(encoding="utf-8"))
         if specificity_path.is_file()
-        else {"passed": False, "status": "not_run"}
+        else {"passed": False, "status": "not_required_inaccessible"}
     )
-    actions_path = root / "intervention" / factor / "action_sensitivity.json"
+    if specificity.get("passed") and not actions_path.is_file():
+        raise FileNotFoundError(
+            f"positive-control action evidence is missing: {actions_path}"
+        )
     actions = (
         json.loads(actions_path.read_text(encoding="utf-8"))
         if actions_path.is_file()
-        else {"passed": False, "status": "not_run"}
+        else {"passed": False, "status": "not_required"}
     )
     interval = (
         actions.get("metrics", {})
@@ -877,7 +1050,8 @@ def report_positive_control(
     )
     report = {
         "schema_version": "libero_smolvla_positive_control_report_v1",
-        "passed": bool(actions.get("passed")),
+        "passed": True,
+        "status": "complete",
         "factor": factor,
         "baseline_success_rate": plan["baseline_success_rate"],
         "accessible": accessible,
@@ -900,7 +1074,7 @@ def report_positive_control(
             "authorize_new_training": "only continue_official_longitudinal authorizes it",
         },
     }
-    output = root / "intervention" / factor / "report.json"
+    output = factor_root / "report.json"
     _write_immutable_json(output, report)
     return json.loads(output.read_text(encoding="utf-8"))
 
@@ -912,9 +1086,22 @@ def run_positive_control_intervention(
     max_states: int = 1600,
     batch_size: int = 32,
 ) -> dict[str, object]:
+    if factor == "contact":
+        stable_report = _factor_intervention_root(
+            positive_control_root(config.output_dir), "stable_grasp", max_states
+        ) / "report.json"
+        if not stable_report.is_file() or json.loads(
+            stable_report.read_text(encoding="utf-8")
+        ).get("decision") != "replicate_contact_once":
+            raise ValueError(
+                "Contact requires the immutable StableGrasp decision "
+                "replicate_contact_once"
+            )
     specificity = _positive_control_specificity(
         config, factor=factor, max_states=max_states
     )
     if specificity.get("passed"):
-        _positive_control_actions(config, factor=factor, batch_size=batch_size)
-    return report_positive_control(config, factor=factor)
+        _positive_control_actions(
+            config, factor=factor, max_states=max_states, batch_size=batch_size
+        )
+    return report_positive_control(config, factor=factor, max_states=max_states)

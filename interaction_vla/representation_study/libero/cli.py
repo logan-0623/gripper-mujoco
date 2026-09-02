@@ -106,6 +106,9 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
         "positive-control", help="official SmolVLA functional-recruitment kill test"
     )
     positive_commands = positive.add_subparsers(dest="libero_command", required=True)
+    positive_evaluate = positive_commands.add_parser("evaluate")
+    positive_evaluate.add_argument("--checkpoint", type=Path, required=True)
+    positive_evaluate.add_argument("--eval-dir", type=Path, required=True)
     positive_plan = positive_commands.add_parser("plan")
     positive_plan.add_argument("--config", type=Path, required=True)
     positive_plan.add_argument("--checkpoint", type=Path, required=True)
@@ -120,6 +123,7 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
             command.add_argument(
                 "--factor", choices=("stable_grasp", "contact"), default="stable_grasp"
             )
+            command.add_argument("--max-states", type=int, default=1600)
     positive_intervene = positive_commands.add_parser("intervene")
     positive_intervene.add_argument("--config", type=Path, required=True)
     positive_intervene.add_argument(
@@ -489,6 +493,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
             )
     if args.libero_family == "positive-control":
         from .positive_control import (
+            evaluate_positive_control,
             extract_positive_control,
             plan_positive_control,
             report_positive_control,
@@ -496,6 +501,10 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
             run_positive_control_probe,
         )
 
+        if args.libero_command == "evaluate":
+            return evaluate_positive_control(
+                checkpoint=args.checkpoint, eval_dir=args.eval_dir
+            )
         config = load_libero_study_config(args.config)
         if args.libero_command == "plan":
             return plan_positive_control(
@@ -513,7 +522,9 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
                 batch_size=args.batch_size,
             )
         if args.libero_command == "report":
-            return report_positive_control(config, factor=args.factor)
+            return report_positive_control(
+                config, factor=args.factor, max_states=args.max_states
+            )
     raise ValueError(
         f"{args.libero_family} {args.libero_command} is implementation-only until its prerequisite gate passes"
     )

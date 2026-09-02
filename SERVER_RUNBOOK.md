@@ -474,13 +474,24 @@ StableGrasp 是否 accessible、factor-specific、并比 same-norm random 更影
 ```bash
 CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
 MODEL_DIR=/root/autodl-tmp/models/smolvla_libero_31d453f
-EVAL_DIR=/root/autodl-tmp/gripper-mujoco-rollouts/official_smolvla_libero_spatial_task0
+EVAL_DIR=/root/autodl-tmp/gripper-mujoco-rollouts/official_smolvla_positive_control_v1
 
 test -e "$MODEL_DIR/config.json" && echo "MODEL READY"
-test -e "$EVAL_DIR/eval_info.json" && echo "EVAL READY"
+test ! -e "$EVAL_DIR" && echo "NEW EVAL DIR READY"
 ```
 
-绑定成功率报告与 checkpoint，然后只提取 `action_expert_input`：
+先由项目调用原生 `lerobot.scripts.lerobot_eval`，固定 action steps、empty camera、
+camera mapping、seed 和单环境执行，并把真实 command、checkpoint hash 与
+`eval_info.json` hash 封存在同一个 contract。不要复用之前缺少 provenance 的
+eval 目录：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero positive-control evaluate \
+  --checkpoint "$MODEL_DIR" --eval-dir "$EVAL_DIR"
+```
+
+通过成功率 floor 后绑定 State Bank/config，再只提取 `action_expert_input`：
 
 ```bash
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
@@ -503,7 +514,7 @@ test -e "$EVAL_DIR/eval_info.json" && echo "EVAL READY"
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
   libero positive-control report --config "$CONFIG" \
-  --factor stable_grasp
+  --factor stable_grasp --max-states 1600
 ```
 
 读取最终 `decision`：
@@ -521,7 +532,8 @@ test -e "$EVAL_DIR/eval_info.json" && echo "EVAL READY"
 
 Contact 命令只能在 StableGrasp 报告要求 `replicate_contact_once` 时运行。
 `batch-size 32` 必须与 positive-control latent extraction 一致。输出只写到
-`protocol_v4/positive_control/`，不会改动冻结的 Protocol-v3 报告。
+`protocol_v4/positive_control/intervention/<factor>/n_1600/`，64-state smoke 与
+1,600-state formal profile 不冲突，也不会改动冻结的 Protocol-v3 报告。
 
 ## 6. 正式实验
 

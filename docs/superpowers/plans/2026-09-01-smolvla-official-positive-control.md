@@ -14,7 +14,7 @@
 
 - Create \`interaction_vla/representation_study/libero/positive_control.py\`: plan binding, one-condition probe, intervention orchestration, and kill/pivot report.
 - Modify \`interaction_vla/representation_study/libero/latents.py\`: optional validated semantic-tap subset; current all-tap behavior remains the default.
-- Modify \`interaction_vla/representation_study/libero/cli.py\`: five positive-control subcommands and dispatch.
+- Modify \`interaction_vla/representation_study/libero/cli.py\`: six positive-control subcommands and dispatch, including provenance-bound evaluation.
 - Create \`tests/interaction_vla/representation_study/libero/test_positive_control.py\`: pure artifact, gate, and binding tests.
 - Modify \`tests/interaction_vla/representation_study/libero/test_cli.py\`: parser and dispatch coverage.
 - Modify \`SERVER_RUNBOOK.md\`: official evaluation import and positive-control server commands.
@@ -430,7 +430,7 @@ git commit -m "feat: gate official SmolVLA functional recruitment"
 - [ ] **Step 1: Write failing CLI parser test**
 
 \`\`\`python
-def test_positive_control_cli_has_five_gated_commands() -> None:
+def test_positive_control_cli_has_six_gated_commands() -> None:
     parser = build_parser()
     config = "configs/representation_study/libero_smolvla_linux_cuda.yaml"
     plan = parser.parse_args([
@@ -449,7 +449,7 @@ def test_positive_control_cli_has_five_gated_commands() -> None:
 
 \`\`\`bash
 .venv/bin/python -m pytest \
-  tests/interaction_vla/representation_study/libero/test_cli.py::test_positive_control_cli_has_five_gated_commands \
+  tests/interaction_vla/representation_study/libero/test_cli.py::test_positive_control_cli_has_six_gated_commands \
   -q
 \`\`\`
 
@@ -484,7 +484,7 @@ Add to \`ccfa.yaml\`:
 \`\`\`
 
 Document the offline Hugging Face environment, official LeRobot eval directory,
-five commands, expected artifact paths, and the instruction not to train the
+six commands, expected artifact paths, and the instruction not to train the
 full-SFT trajectory unless \`authorize_longitudinal_training\` is true.
 
 - [ ] **Step 5: Run CLI tests**
@@ -555,4 +555,3 @@ git diff --stat
 
 Expected: only deliberate implementation changes; unrelated untracked files remain
 unstaged.
-

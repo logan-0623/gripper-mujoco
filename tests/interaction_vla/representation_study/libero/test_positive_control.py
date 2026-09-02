@@ -7,14 +7,19 @@ import pytest
 
 from interaction_vla.representation_study.libero.latents import validate_requested_taps
 from interaction_vla.representation_study.libero.positive_control import (
-    extract_positive_control,
+    _factor_intervention_root,
+    _seal_positive_control_evaluation,
     _select_factor_records,
+    extract_positive_control,
+    evaluate_positive_control,
     factor_specificity_gate,
     load_positive_control_plan,
     official_success_rate,
     plan_positive_control,
     positive_control_decision,
     positive_control_root,
+    report_positive_control,
+    run_positive_control_intervention,
     summarize_positive_control_probe_results,
 )
 from interaction_vla.representation_study.libero.config import load_libero_study_config
@@ -148,7 +153,9 @@ def test_positive_control_plan_rejects_changed_evaluation(tmp_path: Path) -> Non
     )
     checkpoint = tmp_path / "model"
     checkpoint.mkdir()
-    (checkpoint / "config.json").write_text("{}", encoding="utf-8")
+    (checkpoint / "config.json").write_text(
+        json.dumps({"n_action_steps": 10, "empty_cameras": 1}), encoding="utf-8"
+    )
     (checkpoint / "model.safetensors").write_bytes(b"weights")
     evaluation = tmp_path / "eval"
     evaluation.mkdir()
@@ -161,6 +168,14 @@ def test_positive_control_plan_rejects_changed_evaluation(tmp_path: Path) -> Non
     state_bank.parent.mkdir()
     state_bank.write_text('{"audit_passed":true}', encoding="utf-8")
 
+    _seal_positive_control_evaluation(
+        checkpoint=checkpoint,
+        eval_dir=evaluation,
+        command=(
+            f"--policy.path={checkpoint}",
+            f"--output_dir={evaluation}",
+        ),
+    )
     plan_positive_control(config, checkpoint=checkpoint, eval_dir=evaluation)
     eval_info.write_text(
         json.dumps({"overall": {"pc_success": 80.0, "n_episodes": 10}}),
@@ -171,10 +186,110 @@ def test_positive_control_plan_rejects_changed_evaluation(tmp_path: Path) -> Non
         load_positive_control_plan(config)
 
 
+def test_evaluation_contract_rejects_another_checkpoint(tmp_path: Path) -> None:
+    evaluation = tmp_path / "eval"
+    evaluation.mkdir()
+    (evaluation / "eval_info.json").write_text(
+        json.dumps({"overall": {"pc_success": 70.0, "n_episodes": 10}})
+    )
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    for checkpoint, marker in ((first, b"a"), (second, b"b")):
+        checkpoint.mkdir()
+        (checkpoint / "config.json").write_text(
+            json.dumps({"n_action_steps": 10, "empty_cameras": 1})
+        )
+        (checkpoint / "model.safetensors").write_bytes(marker)
+    _seal_positive_control_evaluation(
+        checkpoint=first,
+        eval_dir=evaluation,
+        command=(f"--policy.path={first}", f"--output_dir={evaluation}"),
+    )
+
+    config = replace(
+        load_libero_study_config(
+            "configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml"
+        ),
+        output_dir=tmp_path,
+    )
+    bank = tmp_path / "state_bank" / "manifest.json"
+    bank.parent.mkdir()
+    bank.write_text("{}")
+    with pytest.raises(ValueError, match="different checkpoint"):
+        plan_positive_control(config, checkpoint=second, eval_dir=evaluation)
+
+
+def test_official_evaluator_seals_the_exact_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint = tmp_path / "model"
+    checkpoint.mkdir()
+    (checkpoint / "config.json").write_text(
+        json.dumps({"n_action_steps": 10, "empty_cameras": 1})
+    )
+    (checkpoint / "model.safetensors").write_bytes(b"weights")
+    evaluation = tmp_path / "new-eval"
+
+    def run(command, *, check):
+        assert check
+        evaluation.mkdir()
+        (evaluation / "eval_info.json").write_text(
+            json.dumps({"overall": {"pc_success": 70.0, "n_episodes": 10}})
+        )
+
+    monkeypatch.setattr(
+        "interaction_vla.representation_study.libero.positive_control.subprocess.run",
+        run,
+    )
+    report = evaluate_positive_control(checkpoint=checkpoint, eval_dir=evaluation)
+    assert f"--policy.path={checkpoint}" in report["command"]
+    assert "--policy.n_action_steps=10" in report["command"]
+
+
 def test_positive_control_uses_protocol_v4_without_touching_v3(tmp_path: Path) -> None:
     root = positive_control_root(tmp_path)
     assert root == tmp_path / "protocol_v4" / "positive_control"
     assert "protocol_v3" not in str(root)
+    assert _factor_intervention_root(root, "stable_grasp", 64) != (
+        _factor_intervention_root(root, "stable_grasp", 1600)
+    )
+
+
+def test_report_refuses_to_freeze_missing_action_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = replace(
+        load_libero_study_config(
+            "configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml"
+        ),
+        output_dir=tmp_path,
+    )
+    root = positive_control_root(tmp_path)
+    probe = root / "probe" / "report.json"
+    probe.parent.mkdir(parents=True)
+    probe.write_text(
+        json.dumps({"cells": {"stable_grasp": {"accessible": True}}})
+    )
+    monkeypatch.setattr(
+        "interaction_vla.representation_study.libero.positive_control.load_positive_control_plan",
+        lambda _config: {"baseline_success_rate": 0.7},
+    )
+    with pytest.raises(FileNotFoundError, match="specificity"):
+        report_positive_control(config, factor="stable_grasp", max_states=1600)
+    assert not (root / "intervention" / "stable_grasp" / "n_1600" / "report.json").exists()
+
+
+def test_contact_requires_stablegrasp_replication_decision(tmp_path: Path) -> None:
+    config = replace(
+        load_libero_study_config(
+            "configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml"
+        ),
+        output_dir=tmp_path,
+    )
+    with pytest.raises(ValueError, match="StableGrasp decision"):
+        run_positive_control_intervention(
+            config, factor="contact", max_states=1600, batch_size=32
+        )
 
 
 def test_positive_control_extracts_only_action_expert_input(
