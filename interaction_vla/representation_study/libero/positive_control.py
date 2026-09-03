@@ -80,6 +80,21 @@ def _factor_intervention_root(root: Path, factor: str, max_states: int) -> Path:
     return root / "intervention" / factor / f"n_{max_states:04d}"
 
 
+def _require_contact_route(root: Path, *, factor: str, max_states: int) -> None:
+    if factor != "contact":
+        return
+    stable_report = _factor_intervention_root(
+        root, "stable_grasp", max_states
+    ) / "report.json"
+    if not stable_report.is_file() or json.loads(
+        stable_report.read_text(encoding="utf-8")
+    ).get("decision") != "replicate_contact_once":
+        raise ValueError(
+            "Contact requires the immutable StableGrasp decision "
+            "replicate_contact_once"
+        )
+
+
 def _implementation_sha256() -> str:
     digest = hashlib.sha256()
     for path in (
@@ -148,6 +163,7 @@ def _evaluation_command(checkpoint: Path, eval_dir: Path) -> tuple[str, ...]:
         "--policy.device=cuda",
         "--policy.use_amp=false",
         "--policy.n_action_steps=10",
+        "--policy.num_steps=10",
         "--policy.empty_cameras=1",
         "--env.type=libero",
         "--env.task=libero_spatial",
@@ -269,6 +285,7 @@ def positive_control_decision(
         "authorize_longitudinal_training": (
             decision == "continue_official_longitudinal"
         ),
+        "hypothesis_passed": decision == "continue_official_longitudinal",
     }
 
 
@@ -595,6 +612,7 @@ def _positive_control_specificity(
     if factor not in SUPPORTED_FACTORS:
         raise ValueError(f"unsupported positive-control factor: {factor}")
     root = positive_control_root(config.output_dir)
+    _require_contact_route(root, factor=factor, max_states=max_states)
     plan = load_positive_control_plan(config)
     probe_path = root / "probe" / "report.json"
     probe_report = json.loads(probe_path.read_text(encoding="utf-8"))
@@ -1012,6 +1030,7 @@ def report_positive_control(
     if factor not in SUPPORTED_FACTORS:
         raise ValueError(f"unsupported positive-control factor: {factor}")
     root = positive_control_root(config.output_dir)
+    _require_contact_route(root, factor=factor, max_states=max_states)
     plan = load_positive_control_plan(config)
     probe_path = root / "probe" / "report.json"
     probe = json.loads(probe_path.read_text(encoding="utf-8"))
@@ -1056,7 +1075,7 @@ def report_positive_control(
     )
     report = {
         "schema_version": "libero_smolvla_positive_control_report_v1",
-        "passed": True,
+        "passed": bool(decision["hypothesis_passed"]),
         "status": "complete",
         "factor": factor,
         "baseline_success_rate": plan["baseline_success_rate"],
@@ -1092,17 +1111,11 @@ def run_positive_control_intervention(
     max_states: int = 1600,
     batch_size: int = 32,
 ) -> dict[str, object]:
-    if factor == "contact":
-        stable_report = _factor_intervention_root(
-            positive_control_root(config.output_dir), "stable_grasp", max_states
-        ) / "report.json"
-        if not stable_report.is_file() or json.loads(
-            stable_report.read_text(encoding="utf-8")
-        ).get("decision") != "replicate_contact_once":
-            raise ValueError(
-                "Contact requires the immutable StableGrasp decision "
-                "replicate_contact_once"
-            )
+    _require_contact_route(
+        positive_control_root(config.output_dir),
+        factor=factor,
+        max_states=max_states,
+    )
     specificity = _positive_control_specificity(
         config, factor=factor, max_states=max_states
     )

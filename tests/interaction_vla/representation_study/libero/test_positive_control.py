@@ -82,6 +82,7 @@ def test_positive_usage_authorizes_official_longitudinal_training() -> None:
     assert result == {
         "decision": "continue_official_longitudinal",
         "authorize_longitudinal_training": True,
+        "hypothesis_passed": True,
     }
     smoke = positive_control_decision(
         success_rate=0.70,
@@ -93,6 +94,7 @@ def test_positive_usage_authorizes_official_longitudinal_training() -> None:
     )
     assert smoke["decision"] == "smoke_only"
     assert not smoke["authorize_longitudinal_training"]
+    assert not smoke["hypothesis_passed"]
 
 
 def test_failed_factors_stop_after_one_contact_replication() -> None:
@@ -252,6 +254,7 @@ def test_official_evaluator_seals_the_exact_command(
     report = evaluate_positive_control(checkpoint=checkpoint, eval_dir=evaluation)
     assert f"--policy.path={checkpoint}" in report["command"]
     assert "--policy.n_action_steps=10" in report["command"]
+    assert "--policy.num_steps=10" in report["command"]
 
 
 def test_positive_control_uses_protocol_v4_without_touching_v3(tmp_path: Path) -> None:
@@ -298,6 +301,8 @@ def test_contact_requires_stablegrasp_replication_decision(tmp_path: Path) -> No
         run_positive_control_intervention(
             config, factor="contact", max_states=1600, batch_size=32
         )
+    with pytest.raises(ValueError, match="StableGrasp decision"):
+        report_positive_control(config, factor="contact", max_states=1600)
 
 
 def test_positive_control_extracts_only_action_expert_input(
