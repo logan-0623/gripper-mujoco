@@ -5,18 +5,6 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from .config import load_study_config
-from .extraction import extract_latents, inspect_latents
-from .evaluation import evaluate_policy_stage
-from .probes import train_probe_suite
-from .interventions import run_closed_loop_interventions, run_interventions
-from .measurement import run_stage_measurement
-from .rl.training import evaluate_residual_rl, train_residual_rl
-from .report import build_study_report
-from .sft import train_sft
-from .state_bank.builder import collect_state_bank, inspect_state_bank
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m interaction_vla.representation_study",
@@ -225,12 +213,20 @@ def main(argv: Sequence[str] | None = None) -> None:
                 )
             print(json.dumps(result, indent=2, sort_keys=True))
             return
+        from .config import load_study_config
+
         config = load_study_config(args.config)
         if args.family == "state-bank" and args.command == "collect":
+            from .state_bank.builder import collect_state_bank
+
             result = collect_state_bank(config)
         elif args.family == "state-bank" and args.command == "inspect":
+            from .state_bank.builder import inspect_state_bank
+
             result = inspect_state_bank(config)
         elif args.family == "latents" and args.command == "extract":
+            from .extraction import extract_latents
+
             result = extract_latents(
                 config,
                 backend=args.backend,
@@ -239,6 +235,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 limit=args.limit,
             )
         elif args.family == "latents" and args.command == "inspect":
+            from .extraction import inspect_latents
+
             result = inspect_latents(
                 config,
                 backend=args.backend,
@@ -247,20 +245,30 @@ def main(argv: Sequence[str] | None = None) -> None:
                 limit=args.limit,
             )
         elif args.family == "probes" and args.command == "train":
+            from .probes import train_probe_suite
+
             result = train_probe_suite(
                 config, backend=args.backend, stage=args.stage, model_kind=args.model
             )
         elif args.family == "interventions" and args.command == "run":
+            from .interventions import run_interventions
+
             result = run_interventions(config, backend=args.backend, stage=args.stage)
         elif args.family == "interventions" and args.command == "rollout":
+            from .interventions import run_closed_loop_interventions
+
             result = run_closed_loop_interventions(
                 config, backend=args.backend, stage=args.stage
             )
         elif args.family == "policy" and args.command == "evaluate":
+            from .evaluation import evaluate_policy_stage
+
             result = evaluate_policy_stage(
                 config, backend=args.backend, stage=args.stage, force=args.force
             )
         elif args.family == "measure" and args.command == "run":
+            from .measurement import run_stage_measurement
+
             result = run_stage_measurement(
                 config,
                 backend=args.backend,
@@ -269,6 +277,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 closed_loop_intervention=args.closed_loop_intervention,
             )
         elif args.family == "sft" and args.command == "train":
+            from .sft import train_sft
+
             result = train_sft(
                 config,
                 backend=args.backend,
@@ -276,6 +286,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 resume=args.resume,
             )
         elif args.family == "rl" and args.command == "train":
+            from .rl.training import train_residual_rl
+
             result = train_residual_rl(
                 config,
                 backend=args.backend,
@@ -283,10 +295,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                 resume=args.resume,
             )
         elif args.family == "rl" and args.command == "evaluate":
+            from .rl.training import evaluate_residual_rl
+
             result = evaluate_residual_rl(
                 config, backend=args.backend, stage=args.stage
             )
         elif args.family == "report" and args.command == "build":
+            from .report import build_study_report
+
             result = build_study_report(config)
         else:  # pragma: no cover - guarded by argparse
             raise RuntimeError("unreachable representation-study command")

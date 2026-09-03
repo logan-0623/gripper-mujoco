@@ -1,0 +1,104 @@
+{
+  "schema_version": "libero_smolvla_positive_control_archive_v1",
+  "status": "failed_gate",
+  "checkpoint": {
+    "source": "lerobot/smolvla_libero",
+    "revision": "31d453f7edd78c839a8bbc39744a292686daf0de",
+    "tree_sha256": "3154ece6ac5f6e78bea3617a99f38d4d6eeaaeb43c476f70670310d8d2c4707a"
+  },
+  "evaluation": {
+    "suite": "libero_spatial",
+    "task_id": 0,
+    "episodes": 10,
+    "success_rate": 0.9,
+    "eval_info_sha256": "b42b3427f75f15be75fef79e1b26d23a9dc3ae575607ed0e65579cd09196c638",
+    "contract_sha256": "ba1f87daf04f88f6a6bf878feabe5432ce996e32a62200a17fc7bdb48cd1e830",
+    "interpretation": "successful-policy floor screen, not a benchmark-wide success claim"
+  },
+  "state_bank": {
+    "states": 13603,
+    "tasks": 20,
+    "episodes": 100,
+    "manifest_sha256": "a645164cea60d674b4edf72b1f65b1d168c0498944789c6e2910ac9813117d41"
+  },
+  "tap": {
+    "name": "action_expert_input",
+    "pooled_shape": [720],
+    "raw_shape": [50, 720],
+    "latent_runtime_fingerprint_sha256": "5c8558570b605e7801f81b70c69e9147dea477ac1f47e4c2b93198221d297f91"
+  },
+  "accessibility": {
+    "contact": {
+      "auprc": 0.96257125231636,
+      "strongest_shortcut": 0.9180889485371081,
+      "utility": 0.0444823037792518,
+      "utility_ci": [0.026111708729940047, 0.06463257413885229],
+      "accessible": true
+    },
+    "stable_grasp": {
+      "auprc": 0.9617734400828176,
+      "strongest_shortcut": 0.8565601698304437,
+      "utility": 0.10521327025237377,
+      "utility_ci": [0.07458645637473489, 0.13943015893794128],
+      "accessible": true
+    },
+    "phase": {
+      "macro_f1": 0.4629445529263371,
+      "strongest_shortcut": 0.3330216494772808,
+      "utility": 0.12992290344905635,
+      "utility_ci": [0.11254791725823006, 0.14724768521745735],
+      "accessible": true
+    },
+    "geometry": {
+      "normalized_mae": 0.17051513657537978,
+      "utility": -0.08985758817426887,
+      "utility_ci": [-0.09939681956265173, -0.08132415918013743],
+      "accessible": false
+    }
+  },
+  "interventions": {
+    "stable_grasp": {
+      "states": 1600,
+      "specificity_passed": true,
+      "activation_norm_ratio": 1.0000875569604324,
+      "target_effect": 0.6294655491188105,
+      "specificity_episode_ci": [0.5894343160229114, 0.6601218756889502],
+      "first_action_target_effect": 0.0015011101495474577,
+      "first_action_random_effect": 0.0016195126809179783,
+      "usage_episode_ci": [-0.000172570129241172, -0.0000717999435569693],
+      "functionally_recruited": false,
+      "specificity_npz_sha256": "d0924ad1d3b821fb4617941afc86121b609269bfb5fd30373190bf1dc807550b",
+      "actions_npz_sha256": "8101bdee4e211c87cc1b20663357f34b39a79b353075a3c54e13b0486043759c"
+    },
+    "contact": {
+      "states": 1600,
+      "specificity_passed": true,
+      "activation_norm_ratio": 0.9999706015665544,
+      "target_effect": 0.6014013390867476,
+      "specificity_episode_ci": [0.5667553257998093, 0.6318997973156987],
+      "first_action_target_effect": 0.0014999178238213062,
+      "first_action_random_effect": 0.0016498659970238805,
+      "usage_episode_ci": [-0.00020457793252614363, -0.00009666941370473088],
+      "functionally_recruited": false,
+      "specificity_npz_sha256": "0bdca1b3f66d98e6be7676f6d9a45f60f1d52c6eb884070d94016a31eb04c694",
+      "actions_npz_sha256": "c0de040d6ff84b52dce8cfe8452c9bc85e7eb68aaa6dc4d855692ae4d8d0595a"
+    }
+  },
+  "decision": "run one label-blind sparse-feature kill test; do not authorize new SFT, closed-loop intervention, or RL",
+  "source_artifacts": {
+    "plan_sha256": "b1a33b0ebf9972f2cf60df22c3d11603e3407aa93b17e62f5f0211782c1ef2e7",
+    "probe_report_sha256": "1db70d3645697e5718514fdf20bb6efc571925335eba6cb7c179a5646cf42a31",
+    "stable_grasp_specificity_report_sha256": "8d142880f7fab16037d604334854a4c09bc87c8e3c93733e4565d3e72d805a6e",
+    "stable_grasp_action_report_sha256": "003e8e6021ada570b2fcc8dbeede01261d37abc6a5b60e717604e3c10ccc7f3e",
+    "contact_specificity_report_sha256": "596ec44952759a22be8aee338120f5819aff666c27b5a51b72a79dac02c0e2d4",
+    "contact_action_report_sha256": "c19c0bb0a40f3b41fb4c482697a18aaee220c3ac9cd5118d7582d3a726e8efca",
+    "transfer_archive_sha256": "2891c28bb35adc429bf330e38456d92057ffbd21948f298e0c3a62f6c78bda5b"
+  },
+  "excluded_from_git": [
+    "checkpoint weights",
+    "latent values and per-state rows",
+    "probe payload cells",
+    "intervention and action NPZ arrays",
+    "rollout videos"
+  ]
+}

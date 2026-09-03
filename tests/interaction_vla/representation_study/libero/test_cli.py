@@ -1,7 +1,10 @@
 import interaction_vla.representation_study.libero.probe_runner as probe_runner
+import subprocess
+import sys
 import interaction_vla.representation_study.libero.probe_transitions as probe_transitions
 import interaction_vla.representation_study.libero.crossfit_probes as crossfit_probes
 import interaction_vla.representation_study.libero.positive_control as positive_control
+import interaction_vla.representation_study.libero.feature_discovery as feature_discovery
 from interaction_vla.representation_study.cli import build_parser
 from interaction_vla.representation_study.libero.cli import (
     _required_intervention_batch_size,
@@ -42,6 +45,7 @@ def test_libero_cli_has_required_ordered_families() -> None:
         ("probes", "run"),
         ("interventions", "run"),
         ("positive-control", "probe"),
+        ("features", "discover"),
         ("evaluate", "paired"),
     ):
         argv = [
@@ -89,6 +93,49 @@ def test_libero_cli_has_required_ordered_families() -> None:
         ]
     )
     assert snapshot.libero_command == "snapshot"
+
+
+def test_importing_cli_does_not_eagerly_import_rl_training() -> None:
+    code = (
+        "import sys; import interaction_vla.representation_study.cli; "
+        "assert 'interaction_vla.representation_study.rl.training' not in sys.modules"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_sparse_feature_cli_routes(monkeypatch) -> None:
+    parser = build_parser()
+    config = "configs/representation_study/libero_smolvla_linux_cuda.yaml"
+    calls: list[object] = []
+    monkeypatch.setattr(
+        feature_discovery,
+        "discover_sparse_features",
+        lambda _config: calls.append("discover") or {"passed": True},
+    )
+    monkeypatch.setattr(
+        feature_discovery,
+        "intervene_sparse_features",
+        lambda _config, **kwargs: calls.append(kwargs) or {"passed": True},
+    )
+    monkeypatch.setattr(
+        feature_discovery,
+        "report_sparse_features",
+        lambda _config, **kwargs: calls.append(kwargs) or {"passed": True},
+    )
+    discover = parser.parse_args(["libero", "features", "discover", "--config", config])
+    assert dispatch(discover) == {"passed": True}
+    intervene = parser.parse_args(
+        [
+            "libero", "features", "intervene", "--config", config,
+            "--max-states", "64", "--batch-size", "32",
+        ]
+    )
+    assert dispatch(intervene) == {"passed": True}
+    report = parser.parse_args(
+        ["libero", "features", "report", "--config", config, "--max-states", "64"]
+    )
+    assert dispatch(report) == {"passed": True}
+    assert calls == ["discover", {"max_states": 64, "batch_size": 32}, {"max_states": 64}]
 
 
 def test_positive_control_cli_binds_checkpoint_and_routes(monkeypatch) -> None:

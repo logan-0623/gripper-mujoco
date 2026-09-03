@@ -132,6 +132,20 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
     positive_intervene.add_argument("--max-states", type=int, default=1600)
     positive_intervene.add_argument("--batch-size", type=int, default=32)
 
+    features = commands.add_parser(
+        "features", help="label-blind sparse features in official SmolVLA"
+    )
+    feature_commands = features.add_subparsers(dest="libero_command", required=True)
+    feature_discover = feature_commands.add_parser("discover")
+    feature_discover.add_argument("--config", type=Path, required=True)
+    feature_intervene = feature_commands.add_parser("intervene")
+    feature_intervene.add_argument("--config", type=Path, required=True)
+    feature_intervene.add_argument("--max-states", type=int, default=512)
+    feature_intervene.add_argument("--batch-size", type=int, default=32)
+    feature_report = feature_commands.add_parser("report")
+    feature_report.add_argument("--config", type=Path, required=True)
+    feature_report.add_argument("--max-states", type=int, default=512)
+
     evaluate = commands.add_parser("evaluate", help="paired LIBERO closed-loop utility")
     evaluate_commands = evaluate.add_subparsers(dest="libero_command", required=True)
     evaluate_paired = evaluate_commands.add_parser("paired")
@@ -525,6 +539,22 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
             return report_positive_control(
                 config, factor=args.factor, max_states=args.max_states
             )
+    if args.libero_family == "features":
+        from .feature_discovery import (
+            discover_sparse_features,
+            intervene_sparse_features,
+            report_sparse_features,
+        )
+
+        config = load_libero_study_config(args.config)
+        if args.libero_command == "discover":
+            return discover_sparse_features(config)
+        if args.libero_command == "intervene":
+            return intervene_sparse_features(
+                config, max_states=args.max_states, batch_size=args.batch_size
+            )
+        if args.libero_command == "report":
+            return report_sparse_features(config, max_states=args.max_states)
     raise ValueError(
         f"{args.libero_family} {args.libero_command} is implementation-only until its prerequisite gate passes"
     )

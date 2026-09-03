@@ -8,9 +8,9 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "smolvla_official_positive_control"
-  gate: "official_success_then_stablegrasp_accessibility_specificity_usage"
-  updated_at: "2026-09-02"
+  current: "smolvla_sparse_feature_discovery"
+  gate: "stable_repeatable_broad_features_then_action_effect_vs_matched_random"
+  updated_at: "2026-09-03"
 
 artifacts:
   scientific_audit: "docs/research/2026-08-23-libero-vla-representation-audit.md"
@@ -26,6 +26,10 @@ artifacts:
   recruitment_plan: "docs/superpowers/plans/2026-08-31-smolvla-stablegrasp-longitudinal-recruitment.md"
   positive_control_design: "docs/superpowers/specs/2026-09-01-smolvla-official-positive-control-design.md"
   positive_control_plan: "docs/superpowers/plans/2026-09-01-smolvla-official-positive-control.md"
+  positive_control_evidence: "docs/results/libero_smolvla_positive_control/"
+  sparse_feature_design: "docs/superpowers/specs/2026-09-02-smolvla-sparse-feature-discovery-design.md"
+  sparse_feature_plan: "docs/superpowers/plans/2026-09-02-smolvla-sparse-feature-discovery.md"
+  sparse_feature_output: "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/"
 
 scientific_contract:
   primary_question: "What physically grounded interaction information exists before manipulation SFT, what is selectively acquired or reorganized during SFT, where does it become action-proximal, and which factors are accessible, functionally used, or useful in closed loop?"
@@ -163,17 +167,34 @@ experiment_registry:
       paired_states: 1600
   - id: SMOLVLA_OFFICIAL_POSITIVE_CONTROL
     name: "Official SmolVLA functional-recruitment kill test"
-    status: implementation_only
+    status: failed_gate
     role: successful_policy_kill_test
     requires: [LIBERO_STATE_BANK, SMOLVLA_FUNCTIONAL_RECRUITMENT]
     gate: "official success floor, then StableGrasp accessibility, specificity, and target-minus-random action usage"
     output: "outputs/representation_study/libero_smolvla/protocol_v4/positive_control/"
-    decision_rule: "continue only if StableGrasp usage CI is positive; otherwise replicate Contact once, then pivot"
+    evidence:
+      artifact: "docs/results/libero_smolvla_positive_control/"
+      baseline_success: 0.9
+      baseline_episodes: 10
+      stable_grasp_accessible: true
+      stable_grasp_usage_ci: [-0.000172570129241172, -0.0000717999435569693]
+      contact_accessible: true
+      contact_usage_ci: [-0.00020457793252614363, -0.00009666941370473088]
+    finding: "StableGrasp and Contact are accessible, but rank-one factor erasure changes actions less than same-norm matched-random directions."
+    limitation: "This rejects the pooled linear-probe intervention route, not all possible nonlinear feature use."
+  - id: SMOLVLA_SPARSE_FEATURE_DISCOVERY
+    name: "Official SmolVLA label-blind sparse feature kill test"
+    status: implementation_only
+    role: nonlinear_feature_rescue_test
+    requires: [SMOLVLA_OFFICIAL_POSITIVE_CONTROL]
+    output: "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/"
+    gate: "at least four broad cross-seed features, then a frozen feature exceeds same-rank same-norm random action effect after BH correction"
+    execution_allowed: true
   - id: SMOLVLA_PAIRED_CLOSED_LOOP
     name: "StableGrasp paired closed-loop dependence"
     status: not_started
     role: conditional_closed_loop_evidence
-    blocked_by: "StableGrasp longitudinal action-sensitivity gate failed; closed-loop execution is not authorized."
+    blocked_by: "Protocol-v4 factor intervention failed; Protocol-v5 sparse action gate has not passed."
   - id: SECOND_VLA_REPLICATION
     name: "Targeted second-VLA replication"
     status: not_started
@@ -241,9 +262,15 @@ dependency_graph:
     blocked_by: "P1_D action-sensitivity gate"
   - id: P1_F
     name: "official SmolVLA successful-policy positive control"
-    status: implementation_only
+    status: failed_gate
     requires: [P1_D]
     gate: "official baseline success > 20%; StableGrasp accessibility and specificity pass; target-minus-random first-action CI > 0"
+    execution_allowed: false
+  - id: P1_G
+    name: "label-blind sparse feature discovery and action kill test"
+    status: implementation_only
+    requires: [P1_F]
+    gate: "cross-seed feature stability and breadth, followed by target-minus-matched-random action CI with BH q <= 0.05"
     execution_allowed: true
   - id: RL_EXTENSION
     name: "online adaptation and RL plasticity"

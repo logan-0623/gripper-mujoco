@@ -21,11 +21,12 @@ Interaction Graph 是 privileged annotation / measurement vocabulary，不是必
 | SmolVLA protocol v2 stages / latent / probes | `pilot_complete` | 80/96 cells 完成；存在跨服务器 latent confound，只作 pilot |
 | SmolVLA longitudinal protocol v3 | `formal_evidence` | 8 conditions、4 taps、6 factors；288/384 cells complete，96 cells 因预注册 support gate 不可估计 |
 | StableGrasp longitudinal recruitment | `failed_gate` | accessibility 早期出现，但四个 checkpoint 的 targeted action displacement 均未超过 matched random |
-| Official SmolVLA positive control | `implementation_only` | 成功 policy 的 zero-training kill test；结果尚未运行 |
+| Official SmolVLA positive control | `failed_gate` | 9/10 rollout；Contact/StableGrasp 可解码，但 rank-one erasure 弱于 matched random |
+| Label-blind sparse features | `implementation_only` | 当前 kill test；先找跨 seed/任务稳定特征，再测 action sensitivity |
 
 旧 ACT 成功率为 Flat 30.0%、Teacher Graph 35.0%、Predicted Random 40.0%、Predicted Reflect 41.7%。它说明 graph correctness 不能直接当作 control utility，但不回答新的 SmolVLA longitudinal question。
 
-完整科学审计见 [LIBERO–VLA audit](docs/research/2026-08-23-libero-vla-representation-audit.md)，正式 State Bank 的轻量审计证据见 [State Bank package](docs/results/libero_state_bank_formal/README.md)，正式 Protocol-v3 报告见 [Protocol-v3 package](docs/results/libero_smolvla_protocol_v3/README.md)，机器可读状态见 [ccfa.yaml](ccfa.yaml)。
+完整科学审计见 [LIBERO–VLA audit](docs/research/2026-08-23-libero-vla-representation-audit.md)，正式 State Bank、[Protocol-v3](docs/results/libero_smolvla_protocol_v3/README.md) 与 [official positive control](docs/results/libero_smolvla_positive_control/README.md) 均有轻量证据包；机器状态见 [ccfa.yaml](ccfa.yaml)。
 
 ## Linux / RTX 4090 环境
 
@@ -185,11 +186,10 @@ Protocol v3 primary 仅使用 linear probe。`accessible` 表示 cross-fit probe
 cluster-macro utility 置信区间高于最强的 task/instruction/time shortcut；它不表示
 policy functionally used 该因素，更不表示 closed-loop useful。
 
-## Intervention 与 RL 边界
+## 当前实验
 
-Protocol-v3 已冻结。当前只运行 official SmolVLA positive-control；完整路径与
-decision rule 见 [SERVER_RUNBOOK.md](SERVER_RUNBOOK.md)。新 shell 先恢复本地
-dataset 映射：
+Protocol-v3 与 official positive control 已冻结。复用其 State Bank、官方 checkpoint
+和 `action_expert_input` cache，运行一次 label-blind sparse-feature kill test：
 
 ```bash
 export HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache
@@ -208,34 +208,22 @@ export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 ```
 
-若未输出 `LOCAL DATASET READY`，不要启动 action-sensitivity。随后执行：
+若未输出 `LOCAL DATASET READY`，不要启动动作干预。随后执行：
 
 ```bash
 CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
-MODEL_DIR=/root/autodl-tmp/models/smolvla_libero_31d453f
-EVAL_DIR=/root/autodl-tmp/gripper-mujoco-rollouts/official_smolvla_positive_control_v1
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control evaluate \
-  --checkpoint "$MODEL_DIR" --eval-dir "$EVAL_DIR"
+  libero features discover --config "$CONFIG"
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control plan --config "$CONFIG" \
-  --checkpoint "$MODEL_DIR" --eval-dir "$EVAL_DIR"
+  libero features intervene --config "$CONFIG" --max-states 512 --batch-size 32
 
 .venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control extract --config "$CONFIG" --batch-size 32
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control probe --config "$CONFIG"
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control intervene --config "$CONFIG" \
-  --factor stable_grasp --max-states 1600 --batch-size 32
+  libero features report --config "$CONFIG" --max-states 512
 ```
 
-只有最终 `decision=continue_official_longitudinal` 才允许新训练；若为
-`replicate_contact_once`，只复现一次 Contact，仍失败则 pivot。当前不要运行或调优 PPO/SAC，也不要启动 closed-loop intervention。
+只有 `decision=authorize_separate_longitudinal_design` 才允许另行设计新训练；否则停止该路线。当前不要运行或调优 PPO/SAC，也不运行新 SFT 或 closed-loop intervention。
 
 ## 测试
 

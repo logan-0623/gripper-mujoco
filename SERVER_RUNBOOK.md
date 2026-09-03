@@ -3,14 +3,14 @@
 本手册只用于当前正式主线：
 
 ```text
-LIBERO shared State Bank
-→ SmolVLA pretrained / SFT-25 / SFT-50 / SFT-100
-→ fixed latent taps
-→ linear/MLP probes
-→ Stage × Tap × Factor report
+official SmolVLA (9/10 floor)
+→ frozen action_expert_input cache
+→ label-blind Top-K SAE
+→ cross-seed/breadth/temporal gate
+→ feature intervention vs matched random
 ```
 
-ACT/Graph-v2 是已经保留的受控机制证据；Recovery RL v2 是 `failed_gate`。原 Protocol-v3 StableGrasp functional-recruitment gate 已失败。当前只运行官方成功 SmolVLA checkpoint 的 positive-control kill test；不要运行 closed-loop intervention、PPO 或 SAC。
+ACT/Graph-v2 是受控机制证据；Protocol-v3 与 official positive control 已冻结且 action-sensitivity gate 均失败。当前只运行 Protocol-v5 label-blind sparse-feature kill test；不要运行新 SFT、closed-loop intervention、PPO 或 SAC。
 
 ## 0. 先理解“上传”包含什么
 
@@ -462,78 +462,24 @@ PY
   libero interventions analyze --config "$CONFIG" --max-states 1600
 ```
 
-### 5.6 官方 SmolVLA positive-control kill test（当前入口）
+### 5.6 Protocol-v5 sparse-feature kill test（当前入口）
 
-Protocol-v3 已冻结，不重跑、不覆盖。这里使用已经通过官方 LIBERO rollout
-成功率 floor 的 `lerobot/smolvla_libero` 权重，只回答：成功 policy 中
-StableGrasp 是否 accessible、factor-specific、并比 same-norm random 更影响动作。
-
-先执行 5.5 开头的本地 dataset link 与三个 offline 环境变量，然后确认权重和
-官方 eval 报告都存在：
+前提：official SmolVLA positive control、13,603-state cache 和本地 dataset link 已存在。先找跨三个 seed 稳定且跨任务/episode 激活的 Top-K SAE features；候选冻结后才关联 Contact/StableGrasp/Phase，并对最多 8 个候选做 decoder-contribution removal 与 same-norm random 对照。
 
 ```bash
 CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
-MODEL_DIR=/root/autodl-tmp/models/smolvla_libero_31d453f
-EVAL_DIR=/root/autodl-tmp/gripper-mujoco-rollouts/official_smolvla_positive_control_v1
 
-test -e "$MODEL_DIR/config.json" && echo "MODEL READY"
-test ! -e "$EVAL_DIR" && echo "NEW EVAL DIR READY"
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero features discover --config "$CONFIG"
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero features intervene --config "$CONFIG" --max-states 512 --batch-size 32
+
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero features report --config "$CONFIG" --max-states 512
 ```
 
-先由项目调用原生 `lerobot.scripts.lerobot_eval`，固定 action steps、empty camera、
-camera mapping、seed 和单环境执行，并把真实 command、checkpoint hash 与
-`eval_info.json` hash 封存在同一个 contract。不要复用之前缺少 provenance 的
-eval 目录：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control evaluate \
-  --checkpoint "$MODEL_DIR" --eval-dir "$EVAL_DIR"
-```
-
-通过成功率 floor 后绑定 State Bank/config，再只提取 `action_expert_input`：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control plan --config "$CONFIG" \
-  --checkpoint "$MODEL_DIR" --eval-dir "$EVAL_DIR"
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control extract --config "$CONFIG" --batch-size 32
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control probe --config "$CONFIG"
-```
-
-若 probe 完整，运行 StableGrasp 的 specificity 和 offline action sensitivity：
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control intervene --config "$CONFIG" \
-  --factor stable_grasp --max-states 1600 --batch-size 32
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control report --config "$CONFIG" \
-  --factor stable_grasp --max-states 1600
-```
-
-读取最终 `decision`：
-
-- `continue_official_longitudinal`：idea 通过 kill test，才训练一条 official-style longitudinal trajectory；
-- `replicate_contact_once`：只额外运行下面一次 Contact；
-- `failed_specificity`：停止并诊断 factor basis；
-- `pivot_interaction_supervised_sft`：不再扩 probe/intervention，转 interaction-supervised SFT。
-
-```bash
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero positive-control intervene --config "$CONFIG" \
-  --factor contact --max-states 1600 --batch-size 32
-```
-
-Contact 命令只能在 StableGrasp 报告要求 `replicate_contact_once` 时运行。
-`batch-size 32` 必须与 positive-control latent extraction 一致。输出只写到
-`protocol_v4/positive_control/intervention/<factor>/n_1600/`，64-state smoke 与
-1,600-state formal profile 不冲突，也不会改动冻结的 Protocol-v3 报告。
+`discover` 拟合三个 1,440-feature、Top-32 SAE；`intervene` 才加载 policy。只有最终 `authorize_separate_longitudinal_design` 允许另行设计 longitudinal 训练，否则停止，不追加模型或 rollout。
 
 ## 6. 正式实验
 
