@@ -8,9 +8,9 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "smolvla_sparse_feature_discovery"
-  gate: "stable_repeatable_broad_features_then_action_effect_vs_matched_random"
-  updated_at: "2026-09-03"
+  current: "smolvla_sparse_feature_replication"
+  gate: "replicate_top_causal_features_across_sae_seeds_and_matched_controls"
+  updated_at: "2026-09-04"
 
 artifacts:
   scientific_audit: "docs/research/2026-08-23-libero-vla-representation-audit.md"
@@ -184,17 +184,29 @@ experiment_registry:
     limitation: "This rejects the pooled linear-probe intervention route, not all possible nonlinear feature use."
   - id: SMOLVLA_SPARSE_FEATURE_DISCOVERY
     name: "Official SmolVLA label-blind sparse feature kill test"
-    status: implementation_only
+    status: pilot_complete
     role: nonlinear_feature_rescue_test
     requires: [SMOLVLA_OFFICIAL_POSITIVE_CONTROL]
     output: "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/"
     gate: "at least four broad cross-seed features, then a frozen feature exceeds same-rank same-norm random action effect after BH correction"
-    execution_allowed: true
+    evidence:
+      states: 13603
+      candidate_features: 8
+      causal_features: [517, 694, 977, 981]
+      causal_feature_count: 4
+      decision: "authorize_separate_longitudinal_design"
+      discovery_sha256: "21b81c149eb2624874e4518e6ad1cfb98e75fc1c752a03f7b0eea246783d6d99"
+      action_sensitivity_sha256: "d4f3ea7d879a457b67fd345cfe8f0fa34f08da9c283723f9e1096f0b72a1be28"
+      effects_sha256: "03cf53c5d458275892852dd3fbeb73f29bce911ad49c3f58a18b1b3b41796195"
+    finding: "Four of eight label-blind broad cross-seed candidates changed the first action more than same-rank same-norm random directions after BH correction; effects were dominated by continuous gripper magnitude."
+    limitation: "Server reports are not yet archived in the repository; intervention uses one reference dictionary, SAE dictionaries have many inactive features, and offline action sensitivity is not closed-loop utility."
+    next_gate: "replicate features 694 and 981 across the other SAE seeds, multiple orthogonal random controls, and matched non-candidate atoms"
+    execution_allowed: false
   - id: SMOLVLA_PAIRED_CLOSED_LOOP
     name: "StableGrasp paired closed-loop dependence"
     status: not_started
     role: conditional_closed_loop_evidence
-    blocked_by: "Protocol-v4 factor intervention failed; Protocol-v5 sparse action gate has not passed."
+    blocked_by: "Protocol-v5 sparse action gate passed as a pilot, but independent feature/control replication has not passed."
   - id: SECOND_VLA_REPLICATION
     name: "Targeted second-VLA replication"
     status: not_started
@@ -268,10 +280,11 @@ dependency_graph:
     execution_allowed: false
   - id: P1_G
     name: "label-blind sparse feature discovery and action kill test"
-    status: implementation_only
+    status: pilot_complete
     requires: [P1_F]
     gate: "cross-seed feature stability and breadth, followed by target-minus-matched-random action CI with BH q <= 0.05"
-    execution_allowed: true
+    execution_allowed: false
+    next_gate: "independent feature intervention replication before paired closed-loop evaluation"
   - id: RL_EXTENSION
     name: "online adaptation and RL plasticity"
     status: frozen_not_blocking
