@@ -190,6 +190,8 @@ experiment_registry:
     output: "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/"
     gate: "at least four broad cross-seed features, then a frozen feature exceeds same-rank same-norm random action effect after BH correction"
     evidence:
+      artifact: "docs/results/libero_smolvla_sparse_features/"
+      independent_replication: false
       states: 13603
       candidate_features: 8
       causal_features: [517, 694, 977, 981]
@@ -199,7 +201,7 @@ experiment_registry:
       action_sensitivity_sha256: "d4f3ea7d879a457b67fd345cfe8f0fa34f08da9c283723f9e1096f0b72a1be28"
       effects_sha256: "03cf53c5d458275892852dd3fbeb73f29bce911ad49c3f58a18b1b3b41796195"
     finding: "Four of eight label-blind broad cross-seed candidates changed the first action more than same-rank same-norm random directions after BH correction; effects were dominated by continuous gripper magnitude."
-    limitation: "Server reports are not yet archived in the repository; intervention uses one reference dictionary, SAE dictionaries have many inactive features, and offline action sensitivity is not closed-loop utility."
+    limitation: "Server reports and per-state action effects are archived with SHA-256 checks, without dictionary weights; no independent replication was performed during archival. Intervention uses one reference dictionary, SAE dictionaries have many inactive features, and offline action sensitivity is not closed-loop utility."
     next_gate: "replicate features 694 and 981 across the other SAE seeds, multiple orthogonal random controls, and matched non-candidate atoms"
     execution_allowed: false
   - id: SMOLVLA_PAIRED_CLOSED_LOOP

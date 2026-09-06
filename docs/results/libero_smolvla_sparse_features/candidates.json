@@ -1,0 +1,209 @@
+{
+  "candidates": [
+    {
+      "breadth_score": 0.9896734816036616,
+      "feature": 981,
+      "matched_features": [
+        981,
+        828,
+        997
+      ],
+      "minimum_activation_correlation": 0.747084068691655,
+      "minimum_decoder_cosine": 0.7162234290265181,
+      "profile": {
+        "active_fraction": 0.4459659511472983,
+        "episode_count": 80,
+        "episode_entropy": 0.9881096958517709,
+        "feature": 981,
+        "mean_activation": 3.9967673156109895,
+        "scope": "broad",
+        "task_count": 20,
+        "task_entropy": 0.9912397422081807,
+        "temporal_difference_ratio": 0.051134157607688455
+      },
+      "selection_score": 0.7088273346107873,
+      "stability_score": 0.7162234290265181
+    },
+    {
+      "breadth_score": 0.9091156269585682,
+      "feature": 517,
+      "matched_features": [
+        517,
+        556,
+        407
+      ],
+      "minimum_activation_correlation": 0.7444657393335208,
+      "minimum_decoder_cosine": 0.744274336735717,
+      "profile": {
+        "active_fraction": 0.45503330866025166,
+        "episode_count": 80,
+        "episode_entropy": 0.8952737316033579,
+        "feature": 517,
+        "mean_activation": 2.890373443682808,
+        "scope": "broad",
+        "task_count": 20,
+        "task_entropy": 0.92317153291217,
+        "temporal_difference_ratio": 0.09361073163107367
+      },
+      "selection_score": 0.6766314302706639,
+      "stability_score": 0.744274336735717
+    },
+    {
+      "breadth_score": 0.940683821701273,
+      "feature": 694,
+      "matched_features": [
+        694,
+        1372,
+        795
+      ],
+      "minimum_activation_correlation": 0.774426489525441,
+      "minimum_decoder_cosine": 0.7142935194240769,
+      "profile": {
+        "active_fraction": 0.5176720947446336,
+        "episode_count": 80,
+        "episode_entropy": 0.947541675792346,
+        "feature": 694,
+        "mean_activation": 3.111035639232646,
+        "scope": "broad",
+        "task_count": 20,
+        "task_entropy": 0.9338756014827101,
+        "temporal_difference_ratio": 0.07172043508911831
+      },
+      "selection_score": 0.6719243576682932,
+      "stability_score": 0.7142935194240769
+    },
+    {
+      "breadth_score": 0.8516805889241664,
+      "feature": 561,
+      "matched_features": [
+        561,
+        770,
+        154
+      ],
+      "minimum_activation_correlation": 0.8945133409762109,
+      "minimum_decoder_cosine": 0.7572285731475185,
+      "profile": {
+        "active_fraction": 0.21955958549222798,
+        "episode_count": 57,
+        "episode_entropy": 0.8276582677665079,
+        "feature": 561,
+        "mean_activation": 0.23126966528991563,
+        "scope": "broad",
+        "task_count": 20,
+        "task_entropy": 0.8764001446003165,
+        "temporal_difference_ratio": 0.07829790360214359
+      },
+      "selection_score": 0.6449168771284848,
+      "stability_score": 0.7572285731475185
+    },
+    {
+      "breadth_score": 0.8207026989317978,
+      "feature": 161,
+      "matched_features": [
+        161,
+        927,
+        357
+      ],
+      "minimum_activation_correlation": 0.885172458123015,
+      "minimum_decoder_cosine": 0.7004980493255494,
+      "profile": {
+        "active_fraction": 0.13027387120651368,
+        "episode_count": 58,
+        "episode_entropy": 0.8417679510281222,
+        "feature": 161,
+        "mean_activation": 0.10876226987686977,
+        "scope": "broad",
+        "task_count": 18,
+        "task_entropy": 0.8001646049974581,
+        "temporal_difference_ratio": 0.09585080146113573
+      },
+      "selection_score": 0.574900639677938,
+      "stability_score": 0.7004980493255494
+    },
+    {
+      "breadth_score": 0.9438197064505544,
+      "feature": 977,
+      "matched_features": [
+        977,
+        462,
+        1174
+      ],
+      "minimum_activation_correlation": 0.5698258908214656,
+      "minimum_decoder_cosine": 0.7423071635423644,
+      "profile": {
+        "active_fraction": 0.5075869726128793,
+        "episode_count": 76,
+        "episode_entropy": 0.9443904729400507,
+        "feature": 977,
+        "mean_activation": 3.00503820320419,
+        "scope": "broad",
+        "task_count": 19,
+        "task_entropy": 0.9432492849183557,
+        "temporal_difference_ratio": 0.09973911430462208
+      },
+      "selection_score": 0.5378129050030414,
+      "stability_score": 0.5698258908214656
+    },
+    {
+      "breadth_score": 0.6128487660593921,
+      "feature": 143,
+      "matched_features": [
+        143,
+        1149,
+        381
+      ],
+      "minimum_activation_correlation": 0.9153730317695472,
+      "minimum_decoder_cosine": 0.8491065011212989,
+      "profile": {
+        "active_fraction": 0.09298667653589933,
+        "episode_count": 35,
+        "episode_entropy": 0.63073345520309,
+        "feature": 143,
+        "mean_activation": 0.09791044363659633,
+        "scope": "broad",
+        "task_count": 14,
+        "task_entropy": 0.5954712041389738,
+        "temporal_difference_ratio": 0.10967886501966612
+      },
+      "selection_score": 0.5203738714651959,
+      "stability_score": 0.8491065011212989
+    },
+    {
+      "breadth_score": 0.6696421509943878,
+      "feature": 668,
+      "matched_features": [
+        668,
+        399,
+        459
+      ],
+      "minimum_activation_correlation": 0.776721492366991,
+      "minimum_decoder_cosine": 0.7653454990377238,
+      "profile": {
+        "active_fraction": 0.0840118430792006,
+        "episode_count": 34,
+        "episode_entropy": 0.6719950313404609,
+        "feature": 668,
+        "mean_activation": 0.06144190795835436,
+        "scope": "broad",
+        "task_count": 16,
+        "task_entropy": 0.6672975088728026,
+        "temporal_difference_ratio": 0.13220463949461617
+      },
+      "selection_score": 0.5125076062294945,
+      "stability_score": 0.7653454990377238
+    }
+  ],
+  "passed": true,
+  "schema_version": "libero_smolvla_sparse_features_v1",
+  "selection_partition": "episode_group_train_plus_validation_metadata",
+  "selection_uses_interaction_labels": false,
+  "stability_partition": "episode_group_validation",
+  "thresholds": {
+    "minimum_activation_correlation": 0.5,
+    "minimum_breadth_entropy": 0.5,
+    "minimum_candidates": 4,
+    "minimum_decoder_cosine": 0.7,
+    "minimum_episodes": 30,
+    "minimum_tasks": 10
+  }
+}

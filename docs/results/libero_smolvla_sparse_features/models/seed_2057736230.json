@@ -1,0 +1,21 @@
+{
+  "binding": {
+    "batch_size": 512,
+    "checkpoint_sha256": "3154ece6ac5f6e78bea3617a99f38d4d6eeaaeb43c476f70670310d8d2c4707a",
+    "code_sha256": "e0841c62bd217b73364433aae848aa4c7033c469fbcb1d848f89435f2227586e",
+    "feature_dim": 1440,
+    "latent_values_sha256": "ef41c84055993b409b063b41e3220c87ee7457c2954a8cb8da33d3f59bb42e6a",
+    "plan_sha256": "b1a33b0ebf9972f2cf60df22c3d11603e3407aa93b17e62f5f0211782c1ef2e7",
+    "schema_version": "libero_smolvla_sparse_features_v1",
+    "seed": 2057736230,
+    "state_bank_records_sha256": "89ba2cf3b460c20ef1b64de3895497fee4720041ab5c94c7294cd830fcbc5a0d",
+    "steps": 5000,
+    "tap": "action_expert_input",
+    "top_k": 32
+  },
+  "history": {
+    "first_loss": 0.8401482701301575,
+    "last_loss": 0.0011627684580162168
+  },
+  "model_sha256": "1be0a74acc75770b91ff912a72fbb51a03705e12957708b0a24d17ce85780d8d"
+}

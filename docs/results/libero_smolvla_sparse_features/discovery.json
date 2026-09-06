@@ -1,0 +1,268 @@
+{
+  "binding": {
+    "checkpoint_sha256": "3154ece6ac5f6e78bea3617a99f38d4d6eeaaeb43c476f70670310d8d2c4707a",
+    "code_sha256": "e0841c62bd217b73364433aae848aa4c7033c469fbcb1d848f89435f2227586e",
+    "latent_values_sha256": "ef41c84055993b409b063b41e3220c87ee7457c2954a8cb8da33d3f59bb42e6a",
+    "plan_sha256": "b1a33b0ebf9972f2cf60df22c3d11603e3407aa93b17e62f5f0211782c1ef2e7",
+    "schema_version": "libero_smolvla_sparse_features_v1",
+    "state_bank_records_sha256": "89ba2cf3b460c20ef1b64de3895497fee4720041ab5c94c7294cd830fcbc5a0d",
+    "tap": "action_expert_input"
+  },
+  "candidate_count": 8,
+  "candidates": "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/candidates.json",
+  "candidates_sha256": "d6ba330b1409639a42f729caa9275f4ee263d995b82afdb0e8c14c739ef27be0",
+  "feature_profiles": "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/feature_profiles.json",
+  "feature_profiles_sha256": "b81435c531f55ac9ef2bf689e4af3de992e28f0c04da99dc39a0517b21971bc9",
+  "feature_scopes": {
+    "broad": 92,
+    "episode_concentrated": 10,
+    "inactive": 1177,
+    "intermediate": 12,
+    "task_concentrated": 149
+  },
+  "next_gate": "feature_intervention_vs_matched_random",
+  "passed": true,
+  "pca_rank_32_validation": {
+    "explained_variance": 0.9935240714305238,
+    "mse": 0.006519448943436146
+  },
+  "schema_version": "libero_smolvla_sparse_features_v1",
+  "seed_reports": [
+    {
+      "alive_features_validation": 205,
+      "history": {
+        "first_loss": 0.8401482701301575,
+        "last_loss": 0.0011627684580162168
+      },
+      "mean_l0": 32.0,
+      "model": "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/models/seed_2057736230.npz",
+      "model_sha256": "1be0a74acc75770b91ff912a72fbb51a03705e12957708b0a24d17ce85780d8d",
+      "seed": 2057736230,
+      "test": {
+        "explained_variance": 0.9974096017454288,
+        "mse": 0.002574311336502433
+      },
+      "validation": {
+        "explained_variance": 0.9979595172177803,
+        "mse": 0.0020541951525956392
+      }
+    },
+    {
+      "alive_features_validation": 217,
+      "history": {
+        "first_loss": 0.8197643756866455,
+        "last_loss": 0.0007916435715742409
+      },
+      "mean_l0": 32.0,
+      "model": "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/models/seed_2057736340.npz",
+      "model_sha256": "4ae1a07bbe288fde2b748daba8d91d89d8e7f3be6366aebf520070fbfceae611",
+      "seed": 2057736340,
+      "test": {
+        "explained_variance": 0.9979053073075593,
+        "mse": 0.0020816840697079897
+      },
+      "validation": {
+        "explained_variance": 0.9984823787827082,
+        "mse": 0.0015278197824954987
+      }
+    },
+    {
+      "alive_features_validation": 187,
+      "history": {
+        "first_loss": 0.8419678807258606,
+        "last_loss": 0.0009568880195729434
+      },
+      "mean_l0": 32.0,
+      "model": "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/models/seed_2057736436.npz",
+      "model_sha256": "29cd03c5f56b0b910708ea4b78eb7ec4bc483ec1af61a840dc40ddc7bebc8e99",
+      "seed": 2057736436,
+      "test": {
+        "explained_variance": 0.997661976597531,
+        "mse": 0.0023235036060214043
+      },
+      "validation": {
+        "explained_variance": 0.9982069592371614,
+        "mse": 0.0018050902290269732
+      }
+    }
+  ],
+  "settings": {
+    "batch_size": 512,
+    "feature_dim": 1440,
+    "seeds": [
+      2057736230,
+      2057736340,
+      2057736436
+    ],
+    "steps": 5000,
+    "top_k": 32
+  },
+  "states_by_partition": {
+    "test": 2795,
+    "train": 8196,
+    "validation": 2612
+  },
+  "status": "complete",
+  "test_associations_after_freeze": [
+    {
+      "contact": {
+        "auprc": 0.5836293403347341,
+        "direction": "negative"
+      },
+      "feature": 981,
+      "phase_mean_activation": {
+        "align_precontact": 1.122672200202942,
+        "approach": 0.9558395147323608,
+        "contact": 2.86623477935791,
+        "lift": 0.38225623965263367,
+        "place": 15.40350341796875,
+        "release_retreat": 17.255685806274414,
+        "transport": 3.206693172454834
+      },
+      "stable_grasp": {
+        "auprc": 0.5011642447876895,
+        "direction": "negative"
+      }
+    },
+    {
+      "contact": {
+        "auprc": 0.5636299607227571,
+        "direction": "positive"
+      },
+      "feature": 517,
+      "phase_mean_activation": {
+        "align_precontact": 1.2031676769256592,
+        "approach": 2.3275351524353027,
+        "contact": 1.8750401735305786,
+        "lift": 0.0,
+        "place": 3.942427635192871,
+        "release_retreat": 5.976261615753174,
+        "transport": 2.671426296234131
+      },
+      "stable_grasp": {
+        "auprc": 0.4766662171438817,
+        "direction": "positive"
+      }
+    },
+    {
+      "contact": {
+        "auprc": 0.6491041547545129,
+        "direction": "positive"
+      },
+      "feature": 694,
+      "phase_mean_activation": {
+        "align_precontact": 3.444427967071533,
+        "approach": 2.2960333824157715,
+        "contact": 4.749296188354492,
+        "lift": 4.5171074867248535,
+        "place": 0.0,
+        "release_retreat": 0.0,
+        "transport": 4.64092493057251
+      },
+      "stable_grasp": {
+        "auprc": 0.5432048537226518,
+        "direction": "positive"
+      }
+    },
+    {
+      "contact": {
+        "auprc": 0.6630968830166768,
+        "direction": "positive"
+      },
+      "feature": 561,
+      "phase_mean_activation": {
+        "align_precontact": 0.0827111005783081,
+        "approach": 0.0026853596791625023,
+        "contact": 0.24102145433425903,
+        "lift": 0.0,
+        "place": 0.4559323191642761,
+        "release_retreat": 0.4173324406147003,
+        "transport": 0.23328708112239838
+      },
+      "stable_grasp": {
+        "auprc": 0.5452442086058695,
+        "direction": "positive"
+      }
+    },
+    {
+      "contact": {
+        "auprc": 0.5816904893888999,
+        "direction": "negative"
+      },
+      "feature": 161,
+      "phase_mean_activation": {
+        "align_precontact": 0.09286367148160934,
+        "approach": 0.3289957344532013,
+        "contact": 0.07707153260707855,
+        "lift": 0.0,
+        "place": 0.04554937034845352,
+        "release_retreat": 0.005616636481136084,
+        "transport": 0.022429639473557472
+      },
+      "stable_grasp": {
+        "auprc": 0.5217932619167847,
+        "direction": "negative"
+      }
+    },
+    {
+      "contact": {
+        "auprc": 0.5417518112818467,
+        "direction": "negative"
+      },
+      "feature": 977,
+      "phase_mean_activation": {
+        "align_precontact": 6.724364757537842,
+        "approach": 2.1198318004608154,
+        "contact": 4.355486869812012,
+        "lift": 4.083218574523926,
+        "place": 2.5545096397399902,
+        "release_retreat": 0.9459872245788574,
+        "transport": 2.842108726501465
+      },
+      "stable_grasp": {
+        "auprc": 0.4821000516081294,
+        "direction": "negative"
+      }
+    },
+    {
+      "contact": {
+        "auprc": 0.5388801983402578,
+        "direction": "negative"
+      },
+      "feature": 143,
+      "phase_mean_activation": {
+        "align_precontact": 0.0881756842136383,
+        "approach": 0.243937686085701,
+        "contact": 0.09670888632535934,
+        "lift": 0.0,
+        "place": 0.08813627064228058,
+        "release_retreat": 0.07004562765359879,
+        "transport": 0.03231974318623543
+      },
+      "stable_grasp": {
+        "auprc": 0.4815640750191447,
+        "direction": "negative"
+      }
+    },
+    {
+      "contact": {
+        "auprc": 0.5174389623421348,
+        "direction": "negative"
+      },
+      "feature": 668,
+      "phase_mean_activation": {
+        "align_precontact": 0.1779690533876419,
+        "approach": 0.06723467260599136,
+        "contact": 0.11586496978998184,
+        "lift": 0.41220563650131226,
+        "place": 0.0,
+        "release_retreat": 0.0,
+        "transport": 0.0268490519374609
+      },
+      "stable_grasp": {
+        "auprc": 0.45273856536670937,
+        "direction": "negative"
+      }
+    }
+  ]
+}

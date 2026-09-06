@@ -1,0 +1,15 @@
+{
+  "action_sensitivity_sha256": "d4f3ea7d879a457b67fd345cfe8f0fa34f08da9c283723f9e1096f0b72a1be28",
+  "candidate_count": 8,
+  "causal_feature_count": 4,
+  "decision": "authorize_separate_longitudinal_design",
+  "discovery_sha256": "21b81c149eb2624874e4518e6ad1cfb98e75fc1c752a03f7b0eea246783d6d99",
+  "interpretation_boundary": {
+    "closed_loop_useful": "not measured",
+    "feature_labels": "post-freeze associations, not selection criteria",
+    "new_training": "authorized only by a positive causal feature gate"
+  },
+  "passed": true,
+  "schema_version": "libero_smolvla_sparse_features_v1",
+  "status": "complete"
+}

@@ -1,0 +1,90 @@
+{
+  "schema_version": "sae_server_archive_v1",
+  "archived_at_utc": "2026-09-06T03:57:15.122094+00:00",
+  "source_root": "/root/gripper-mujoco/outputs/representation_study/libero_smolvla/protocol_v5/sparse_features",
+  "source_checkout_commit_at_collection": "a94e01cac197d282e3ab7f1cdf4526754e5a8299",
+  "source_observed_at_utc": "2026-09-06T03:52:15Z",
+  "source_commit_note": "Checkout HEAD observed at collection; original reports retain their own code and input hashes.",
+  "verification": {
+    "server_sha256_match": true,
+    "original_bytes_preserved": true,
+    "independent_experiment_replication": false,
+    "training_rerun": false,
+    "inference_rerun": false
+  },
+  "excluded_artifacts_reason": "SAE dictionary weights remain on the server; user requested result archival without all weights.",
+  "files": [
+    {
+      "path": "models/seed_2057736230.npz",
+      "bytes": 7689453,
+      "sha256": "1be0a74acc75770b91ff912a72fbb51a03705e12957708b0a24d17ce85780d8d",
+      "archived": false
+    },
+    {
+      "path": "models/seed_2057736230.json",
+      "bytes": 870,
+      "sha256": "60d7eea81bdb72ad114bb46535722f0497c72e326a41d42d764c8c6b2bb08542",
+      "archived": true
+    },
+    {
+      "path": "models/seed_2057736340.npz",
+      "bytes": 7689375,
+      "sha256": "4ae1a07bbe288fde2b748daba8d91d89d8e7f3be6366aebf520070fbfceae611",
+      "archived": false
+    },
+    {
+      "path": "models/seed_2057736340.json",
+      "bytes": 870,
+      "sha256": "e607a7d2b878e5a9fce0bb74dfb3fb783e706bb44a35eeacb77ac269145278a4",
+      "archived": true
+    },
+    {
+      "path": "models/seed_2057736436.npz",
+      "bytes": 7689739,
+      "sha256": "29cd03c5f56b0b910708ea4b78eb7ec4bc483ec1af61a840dc40ddc7bebc8e99",
+      "archived": false
+    },
+    {
+      "path": "models/seed_2057736436.json",
+      "bytes": 870,
+      "sha256": "e0ad82b262a586e4d3f5638187c5cf4a6bcc95395463d2ccdef39e977dbd45d4",
+      "archived": true
+    },
+    {
+      "path": "feature_profiles.json",
+      "bytes": 403258,
+      "sha256": "b81435c531f55ac9ef2bf689e4af3de992e28f0c04da99dc39a0517b21971bc9",
+      "archived": true
+    },
+    {
+      "path": "candidates.json",
+      "bytes": 6317,
+      "sha256": "d6ba330b1409639a42f729caa9275f4ee263d995b82afdb0e8c14c739ef27be0",
+      "archived": true
+    },
+    {
+      "path": "discovery.json",
+      "bytes": 8105,
+      "sha256": "21b81c149eb2624874e4518e6ad1cfb98e75fc1c752a03f7b0eea246783d6d99",
+      "archived": true
+    },
+    {
+      "path": "action_effects_n_0512.npz",
+      "bytes": 165861,
+      "sha256": "03cf53c5d458275892852dd3fbeb73f29bce911ad49c3f58a18b1b3b41796195",
+      "archived": true
+    },
+    {
+      "path": "action_sensitivity_n_0512.json",
+      "bytes": 22451,
+      "sha256": "d4f3ea7d879a457b67fd345cfe8f0fa34f08da9c283723f9e1096f0b72a1be28",
+      "archived": true
+    },
+    {
+      "path": "report.json",
+      "bytes": 624,
+      "sha256": "2db98cb4c7abd43a51ff024fa7b3c453c71ceb440a267d59a3ff7f6501206e40",
+      "archived": true
+    }
+  ]
+}

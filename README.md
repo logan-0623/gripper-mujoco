@@ -235,7 +235,7 @@ $$
 \text{semantic association ranking} \neq \text{causal action ranking}.
 $$
 
-Protocol-v5 目前是通过 kill gate 的 pilot。其 compact machine-readable evidence 尚需从服务器归档到仓库，因此还没有提升为 paper-level formal evidence。
+Protocol-v5 目前是通过 kill gate 的 pilot。服务器原始报告与逐状态动作效应已归档至 [SAE 结果目录](docs/results/libero_smolvla_sparse_features/README.md)，包含文件清单和 SHA-256，未上传字典权重。本次仅核对文件完整性，没有独立复验，结果仍未提升为 paper-level formal evidence。
 
 ## 7. 当前能够成立的结论
 
