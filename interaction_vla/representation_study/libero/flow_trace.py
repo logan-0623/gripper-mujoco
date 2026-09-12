@@ -7,6 +7,8 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import time
 from typing import Sequence
 
@@ -16,12 +18,54 @@ import torch
 from ..state_bank.io import write_bytes_atomic, write_json_atomic
 from .latents import (_canonical_sha256, _runtime_provenance, _tree_sha256,
                       collate_state_bank_observations)
-from .predictive_states import file_hash, upstream
-from .smolvla_smoke import load_frozen_policy
 from .state_bank import load_state_bank
 
 
 SCHEMA = "smolvla_conditional_flow_trace_v1"
+
+
+def file_hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def action_atlas_provenance() -> dict[str, str]:
+    path = Path(__file__).resolve().parents[3] / "research" / "action-atlas"
+    if not path.is_dir():
+        raise FileNotFoundError("Missing official checkout: research/action-atlas")
+    commit = subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
+    diff = subprocess.check_output(["git", "-C", str(path), "diff", "HEAD"], text=True)
+    untracked = subprocess.check_output(
+        ["git", "-C", str(path), "ls-files", "--others", "--exclude-standard"], text=True
+    ).strip()
+    if untracked:
+        raise ValueError(f"Untracked Action Atlas files: {untracked}")
+    sys.path.insert(0, str(path))
+    return {"commit": commit, "patch_sha256": hashlib.sha256(diff.encode()).hexdigest()}
+
+
+def load_frozen_policy(checkpoint: Path, metadata: Path, device: str):
+    from lerobot.configs.policies import PreTrainedConfig
+    from lerobot.policies.factory import make_pre_post_processors
+    from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+
+    config = PreTrainedConfig.from_pretrained(str(checkpoint.resolve()))
+    config.device = device
+    config.vlm_model_name = str(metadata.resolve())
+    config.load_vlm_weights = False
+    policy = SmolVLAPolicy.from_pretrained(
+        str(checkpoint.resolve()), config=config, local_files_only=True, strict=True,
+    ).to(device).eval().requires_grad_(False)
+    pre, post = make_pre_post_processors(
+        policy.config, str(checkpoint.resolve()),
+        preprocessor_overrides={"device_processor": {"device": device},
+                                "tokenizer_processor": {"tokenizer_name": str(metadata.resolve())}},
+        postprocessor_overrides={"device_processor": {"device": device}},
+    )
+    return policy, pre, post
 
 
 def paired_inference_noise(state_ids: Sequence[str], repeat: int, row_shape: tuple[int, ...]) -> torch.Tensor:
@@ -184,7 +228,7 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, metadata: Path, output
     if len(revisions) != 1:
         raise ValueError("mixed dataset revisions")
     revision = revisions.pop()
-    source = upstream("action-atlas")
+    source = action_atlas_provenance()
     from experiments.model_adapters import SmolVLAAdapter
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
@@ -213,8 +257,7 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, metadata: Path, output
         "expert_middle_index": middle_index, "expert_late_index": late_index,
         "runtime": _runtime_provenance(policy, batch_size=batch_size),
         "source_sha256": {path.name: file_hash(path) for path in
-                          (Path(__file__), Path(__file__).with_name("smolvla_smoke.py"),
-                           Path(__file__).with_name("latents.py"))},
+                          (Path(__file__), Path(__file__).with_name("latents.py"))},
     }
     if (output / "binding.json").exists():
         if json.loads((output / "binding.json").read_text()) != binding:
