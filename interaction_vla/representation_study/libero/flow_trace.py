@@ -204,12 +204,14 @@ def plan(bank: Path, *, partition: str, max_states: int, repeats: int):
     if not manifest.get("audit_passed"):
         raise ValueError("StateBank audit has not passed")
     selected = select_records(records, split, partition=partition, max_states=max_states)
-    # Expected SmolVLA dimensions; run records actual dimensions in its binding.
-    bytes_per_state_repeat = 4 * (50 * 32 * (1 + 2 * 10 + 1) + 2 * 10 * 50 * 480 + 2 * 50 * 7)
+    # Current SmolVLA expert width; run records observed shapes in its manifest.
+    expert_hidden_dim = 720
+    bytes_per_state_repeat = 4 * (50 * 32 * (1 + 2 * 10 + 1) + 2 * 10 * 50 * expert_hidden_dim + 2 * 50 * 7)
     return {"schema": SCHEMA, "partition": partition, "requested_states": max_states,
             "selected_states": len(selected), "noise_repeats": repeats,
             "action_chunk_generations_per_checkpoint": len(selected) * repeats,
             "denoise_stage_records_per_checkpoint": len(selected) * repeats * 10,
+            "storage_estimate_expert_hidden_dim": expert_hidden_dim,
             "estimated_uncompressed_bytes_per_checkpoint": len(selected) * repeats * bytes_per_state_repeat,
             "state_ids": [row.state_id for row in selected]}
 
@@ -311,6 +313,11 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, metadata: Path, output
               "resumed_states": resumed, "elapsed_seconds": time.perf_counter() - started,
               "batch_seconds": [item["seconds"] for item in measured],
               "closed_loop": "not_run"}
+    with np.load(output / shards[0], allow_pickle=False) as first:
+        result["array_contract"] = {
+            name: {"shape": list(first[name].shape), "dtype": str(first[name].dtype)}
+            for name in first.files if name != "state_ids"
+        }
     write_json_atomic(output / "manifest.json", result)
     write_json_atomic(output / "progress.json", result)
     return result

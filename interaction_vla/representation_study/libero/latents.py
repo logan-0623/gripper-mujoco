@@ -110,7 +110,17 @@ def collate_state_bank_observations(
 ) -> dict[str, object]:
     if not records:
         raise ValueError("cannot collate an empty LIBERO State Bank batch")
-    samples = [dataset[record.observation.dataset_index] for record in records]  # type: ignore[index]
+    # LeRobot's episode-filtered reader exposes relative rows, not global indices.
+    mapping = getattr(dataset, "absolute_to_relative_idx", None)
+    samples = []
+    for record in records:
+        absolute = record.observation.dataset_index
+        if mapping is not None and absolute not in mapping:
+            raise ValueError(f"State Bank index absent from selected episodes: {absolute}")
+        sample = dataset[absolute if mapping is None else mapping[absolute]]  # type: ignore[index]
+        if "index" in sample and int(sample["index"]) != absolute:
+            raise ValueError(f"Dataset/State Bank index mismatch: {absolute}")
+        samples.append(sample)
     global_values: list[torch.Tensor] = []
     wrist_values: list[torch.Tensor] = []
     for record, sample in zip(records, samples, strict=True):
