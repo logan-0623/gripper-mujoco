@@ -47,12 +47,12 @@ def action_atlas_provenance() -> dict[str, str]:
     return {"commit": commit, "patch_sha256": hashlib.sha256(diff.encode()).hexdigest()}
 
 
-def load_frozen_policy(checkpoint: Path, metadata: Path, device: str):
+def load_frozen_policy(checkpoint: Path, contract: Path, metadata: Path, device: str):
     from lerobot.configs.policies import PreTrainedConfig
     from lerobot.policies.factory import make_pre_post_processors
     from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
-    config = PreTrainedConfig.from_pretrained(str(checkpoint.resolve()))
+    config = PreTrainedConfig.from_pretrained(str(contract.resolve()))
     config.device = device
     config.vlm_model_name = str(metadata.resolve())
     config.load_vlm_weights = False
@@ -60,7 +60,7 @@ def load_frozen_policy(checkpoint: Path, metadata: Path, device: str):
         str(checkpoint.resolve()), config=config, local_files_only=True, strict=True,
     ).to(device).eval().requires_grad_(False)
     pre, post = make_pre_post_processors(
-        policy.config, str(checkpoint.resolve()),
+        policy.config, str(contract.resolve()),
         preprocessor_overrides={"device_processor": {"device": device},
                                 "tokenizer_processor": {"tokenizer_name": str(metadata.resolve())}},
         postprocessor_overrides={"device_processor": {"device": device}},
@@ -80,6 +80,30 @@ def paired_inference_noise(state_ids: Sequence[str], repeat: int, row_shape: tup
         )
         rows.append(torch.randn(row_shape, generator=generator, dtype=torch.float32))
     return torch.stack(rows)
+
+
+def bind_policy_images(batch: dict[str, object], input_features) -> tuple[dict[str, object], dict[str, str]]:
+    """Bind LIBERO's two cameras to either native or legacy SmolVLA feature names."""
+    expected = sorted(key for key in input_features if key.startswith("observation.images."))
+    if not expected:
+        raise ValueError("checkpoint declares no image features")
+    if all(key in batch for key in expected):
+        return batch, {key: key for key in expected}
+    sources = [key for key in ("observation.images.image", "observation.images.image2") if key in batch]
+    if not sources:
+        raise ValueError("LIBERO batch contains no bindable image features")
+    result, binding = dict(batch), {}
+    for index, target in enumerate(expected):
+        if index < len(sources):
+            result[target] = batch[sources[index]]
+            binding[target] = sources[index]
+        else:
+            source = batch[sources[0]]
+            if not isinstance(source, torch.Tensor):
+                raise TypeError("image features must be tensors")
+            result[target] = torch.zeros_like(source)
+            binding[target] = "zero_like:" + sources[0]
+    return result, binding
 
 
 def select_records(records, split, *, partition: str, max_states: int, seed: int = 42):
@@ -216,7 +240,7 @@ def plan(bank: Path, *, partition: str, max_states: int, repeats: int):
             "state_ids": [row.state_id for row in selected]}
 
 
-def run(bank: Path, dataset_root: Path, checkpoint: Path, metadata: Path, output: Path, *,
+def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metadata: Path, output: Path, *,
         device: str, batch_size: int, partition: str, max_states: int, repeats: int):
     if batch_size <= 0 or repeats <= 0:
         raise ValueError("batch_size and repeats must be positive")
@@ -239,14 +263,18 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, metadata: Path, output
                              episodes=sorted({row.lerobot_episode_index for row in selected}),
                              video_backend="torchcodec")
     checkpoint_hash = _tree_sha256(checkpoint)
-    policy, pre, post = load_frozen_policy(checkpoint, metadata, device)
+    policy, pre, post = load_frozen_policy(checkpoint, contract, metadata, device)
     adapter = SmolVLAAdapter()
     adapter.policy = policy
     layers = adapter.get_layer_groups()["expert"]
     middle_index, late_index = len(layers) // 2, len(layers) - 1
+    _, image_binding = bind_policy_images(
+        collate_state_bank_observations(selected[:1], dataset), policy.config.input_features
+    )
     binding = {
         "schema": SCHEMA, "state_bank_sha256": file_hash(bank / "manifest.json"),
         "checkpoint_tree_sha256": checkpoint_hash, "metadata_tree_sha256": _tree_sha256(metadata),
+        "contract_tree_sha256": _tree_sha256(contract),
         "dataset_revision": revision, "dataset_scientific_sha256": _canonical_sha256({
             str(path.relative_to(dataset_root)): file_hash(path)
             for pattern in ("meta/**/*.json", "meta/**/*.parquet", "data/**/*.parquet", "videos/**/*.mp4")
@@ -257,6 +285,7 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, metadata: Path, output
         "num_steps": int(policy.config.num_steps), "chunk_size": int(policy.config.chunk_size),
         "max_action_dim": int(policy.config.max_action_dim), "expert_layer_count": len(layers),
         "expert_middle_index": middle_index, "expert_late_index": late_index,
+        "image_binding": image_binding,
         "runtime": _runtime_provenance(policy, batch_size=batch_size),
         "source_sha256": {path.name: file_hash(path) for path in
                           (Path(__file__), Path(__file__).with_name("latents.py"))},
@@ -279,16 +308,22 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, metadata: Path, output
             resumed += len(rows)
         else:
             tick = time.perf_counter()
-            processed = pre(collate_state_bank_observations(rows, dataset))
+            batch, observed_binding = bind_policy_images(
+                collate_state_bank_observations(rows, dataset), policy.config.input_features
+            )
+            if observed_binding != image_binding:
+                raise ValueError("image binding changed within one trace run")
+            processed = pre(batch)
             traces = []
             for repeat in range(repeats):
                 noise = paired_inference_noise(
                     ids, repeat, (binding["chunk_size"], binding["max_action_dim"])
                 ).to(device)
                 trace = trace_action_flow(policy, processed, noise, layers[middle_index], layers[late_index])
+                action_dim = trace["action_normalized"].shape[-1]
                 trace["action_postprocessed"] = post(
-                    torch.from_numpy(trace["action_normalized"]).to(device).reshape(-1, 7)
-                ).reshape(len(rows), binding["chunk_size"], 7).detach().cpu().float().numpy()
+                    torch.from_numpy(trace["action_normalized"]).to(device).reshape(-1, action_dim)
+                ).reshape(len(rows), binding["chunk_size"], action_dim).detach().cpu().float().numpy()
                 traces.append(trace)
             arrays = {
                 name: np.stack([trace[name] for trace in traces], axis=0 if name == "sigma" else 1)
@@ -329,6 +364,8 @@ def main():
     parser.add_argument("--bank", type=Path, default=Path("outputs/representation_study/libero_smolvla/state_bank"))
     parser.add_argument("--dataset-root", type=Path, default=Path("outputs/datasets/libero"))
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--contract-checkpoint", type=Path,
+                        help="Checkpoint supplying the dataset-bound config/processors; defaults to --checkpoint")
     parser.add_argument("--metadata", type=Path, default=Path("outputs/pretrained/SmolVLM2-500M-Instruct"))
     parser.add_argument("--output", type=Path)
     parser.add_argument("--device", choices=("cpu", "mps", "cuda"), default="cpu")
@@ -343,7 +380,8 @@ def main():
         return
     if args.checkpoint is None or args.output is None:
         parser.error("run requires --checkpoint and --output")
-    print(json.dumps(run(args.bank, args.dataset_root, args.checkpoint, args.metadata, args.output,
+    print(json.dumps(run(args.bank, args.dataset_root, args.checkpoint,
+                         args.contract_checkpoint or args.checkpoint, args.metadata, args.output,
                          device=args.device, batch_size=args.batch_size, partition=args.partition,
                          max_states=args.max_states, repeats=args.noise_repeats), indent=2))
 

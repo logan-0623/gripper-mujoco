@@ -2,6 +2,7 @@ import numpy as np
 import torch
 
 from interaction_vla.representation_study.libero.flow_trace import (
+    bind_policy_images,
     paired_inference_noise,
     trace_action_flow,
 )
@@ -51,3 +52,17 @@ def test_flow_trace_uses_checkpoint_independent_noise_and_captures_every_stage()
     np.testing.assert_allclose(trace["sigma"], [1, 2 / 3, 1 / 3], atol=1e-6)
     np.testing.assert_allclose(trace["final_x0"][..., :2], trace["action_normalized"], atol=1e-6)
     assert policy.model.denoise_step == original
+
+
+def test_bind_policy_images_maps_two_libero_cameras_and_zeros_the_third():
+    image = torch.ones(1, 3, 4, 4)
+    wrist = torch.full_like(image, 2)
+    batch = {"observation.images.image": image, "observation.images.image2": wrist}
+    expected = {f"observation.images.camera{i}": object() for i in (1, 2, 3)}
+
+    result, binding = bind_policy_images(batch, expected)
+
+    assert result["observation.images.camera1"] is image
+    assert result["observation.images.camera2"] is wrist
+    assert torch.count_nonzero(result["observation.images.camera3"]) == 0
+    assert binding["observation.images.camera3"] == "zero_like:observation.images.image"
