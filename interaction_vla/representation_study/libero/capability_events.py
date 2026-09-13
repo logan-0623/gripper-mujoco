@@ -18,6 +18,7 @@ class EpisodeEventTracker:
     initial_state_id: int
     control_freq: int
     thresholds: AnnotationThresholds
+    drop_height_m: float
     frames: list[PrivilegedFrame]
 
     def add(self, frame: PrivilegedFrame) -> None:
@@ -60,7 +61,7 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
             if (
                 not contact[index]
                 and not tracker.frames[index].goal_satisfied
-                and peak - float(target_z[index]) >= tracker.thresholds.lift_clearance_m
+                and peak - float(target_z[index]) >= tracker.drop_height_m
             ):
                 drop_onset = index
                 break
@@ -92,12 +93,17 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
 
 
 def install_libero_event_recorder(
-    *, output: Path, suite: str, initial_state_offset: int, thresholds: AnnotationThresholds
+    *,
+    output: Path,
+    suite: str,
+    initial_state_offset: int,
+    thresholds: AnnotationThresholds,
+    drop_height_m: float,
 ) -> None:
     from lerobot.envs.libero import LiberoEnv
 
-    if initial_state_offset < 0:
-        raise ValueError("initial_state_offset must be non-negative")
+    if initial_state_offset < 0 or drop_height_m <= 0:
+        raise ValueError("initial_state_offset must be non-negative and drop_height_m positive")
     rows: list[dict[str, object]] = []
     monitors: dict[int, tuple[LiberoOffscreenSimulator, EpisodeEventTracker, bool]] = {}
     original_reset, original_step, original_close = LiberoEnv.reset, LiberoEnv.step, LiberoEnv.close
@@ -110,6 +116,7 @@ def install_libero_event_recorder(
                 "suite": suite,
                 "initial_state_offset": initial_state_offset,
                 "thresholds": thresholds.__dict__,
+                "drop_height_m": drop_height_m,
                 "episodes": rows,
             },
         )
@@ -146,6 +153,7 @@ def install_libero_event_recorder(
             initial_state_id=initial_state_id,
             control_freq=int(env.control_freq),
             thresholds=thresholds,
+            drop_height_m=drop_height_m,
             frames=[],
         )
         tracker.add(adapter._privileged_frame())
@@ -178,6 +186,8 @@ def main() -> None:
     parser.add_argument("--initial-state-offset", type=int, default=10)
     parser.add_argument("--stable-window-frames", type=int, default=5)
     parser.add_argument("--lift-clearance-m", type=float, default=0.01)
+    parser.add_argument("--drop-height-m", type=float, default=0.02)
+    parser.add_argument("--rendered-episodes", type=int, default=0)
     args, forwarded = parser.parse_known_args()
     if forwarded[:1] == ["--"]:
         forwarded = forwarded[1:]
@@ -189,11 +199,22 @@ def main() -> None:
             stable_window_frames=args.stable_window_frames,
             lift_clearance_m=args.lift_clearance_m,
         ),
+        drop_height_m=args.drop_height_m,
     )
-    from lerobot.scripts.lerobot_eval import main as lerobot_eval_main
+    import lerobot.scripts.lerobot_eval as lerobot_eval
+
+    original_eval_all = lerobot_eval.eval_policy_all
+
+    def eval_without_extra_videos(*call_args, **call_kwargs):
+        call_kwargs["max_episodes_rendered"] = args.rendered_episodes
+        if args.rendered_episodes == 0:
+            call_kwargs["videos_dir"] = None
+        return original_eval_all(*call_args, **call_kwargs)
+
+    lerobot_eval.eval_policy_all = eval_without_extra_videos
 
     sys.argv = [sys.argv[0], *forwarded]
-    lerobot_eval_main()
+    lerobot_eval.main()
 
 
 if __name__ == "__main__":
