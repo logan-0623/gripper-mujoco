@@ -45,11 +45,15 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
         else None
     )
     normal_release = bool(
-        release_onset is not None and tracker.frames[release_onset].goal_satisfied
+        release_onset is not None
+        and (
+            success
+            or any(frame.goal_satisfied for frame in tracker.frames[release_onset:])
+        )
     )
     max_lift = float(np.max(target_z - initial_z, initial=0.0))
     drop_onset = None
-    if lift_onset is not None:
+    if lift_onset is not None and not normal_release:
         peak = float(target_z[lift_onset])
         for index in range(lift_onset + 1, len(target_z)):
             peak = max(peak, float(target_z[index]))

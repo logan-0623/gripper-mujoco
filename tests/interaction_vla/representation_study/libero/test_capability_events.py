@@ -30,7 +30,7 @@ def test_summarizes_grasp_lift_normal_release_and_drop() -> None:
         suite="libero_spatial", task_id=0, task_name="fixture", language="fixture",
         goal_atoms=(GoalAtom("on", ("target", "goal")),),
     )
-    frames = [frame(0, 0.0), frame(1, 0.01, contact=True), frame(2, 0.02, contact=True), frame(3, 0.02, goal=True)]
+    frames = [frame(0, 0.0), frame(1, 0.01, contact=True), frame(2, 0.02, contact=True), frame(3, 0.0)]
     tracker = EpisodeEventTracker(0, 10, 20, thresholds, frames)
     result = _summarize(tracker, annotate_relocation_episode(frames, semantics, thresholds), success=True)
     assert result["stable_grasp"] and result["lift"] and result["normal_release"]
