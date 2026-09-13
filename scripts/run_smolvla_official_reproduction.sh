@@ -9,6 +9,10 @@ MODE=${1:-smoke}
 test -f "$BASE_CHECKPOINT/config.json"
 test -f "$DATASET_ROOT/meta/info.json"
 
+export HF_HOME=${HF_HOME:-${DATASET_ROOT%%/lerobot/hub/*}}
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+
 case "$MODE" in
   smoke)
     STEPS=${STEPS:-20}
@@ -36,9 +40,13 @@ fi
 .venv-lerobot/bin/python -m lerobot.scripts.lerobot_train \
   --policy.path="$BASE_CHECKPOINT" \
   --policy.push_to_hub=false \
+  --policy.freeze_vision_encoder=false \
+  --policy.train_expert_only=false \
+  --policy.scheduler_decay_steps=25000 \
   --dataset.repo_id=lerobot/libero \
   --dataset.root="$DATASET_ROOT" \
   --dataset.revision=a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4 \
+  --dataset.use_imagenet_stats=false \
   --rename_map='{"observation.images.image":"observation.images.camera1","observation.images.image2":"observation.images.camera2"}' \
   --output_dir="$OUTPUT_DIR" \
   --job_name="smolvla-libero-official-$MODE" \
