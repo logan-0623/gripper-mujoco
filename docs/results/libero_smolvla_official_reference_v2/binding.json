@@ -1,0 +1,67 @@
+{
+  "batch_size": 4,
+  "checkpoint_tree_sha256": "5def8dbaf11c385591d5e6cd87219332af0683dfe65091f801199b76ca2fe337",
+  "chunk_size": 50,
+  "contract_tree_sha256": "f0a6154caabce3556aeafa61c316f708cbac9370ee1c70531373947f5048e66f",
+  "dataset_revision": "a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4",
+  "dataset_scientific_sha256": "2f2dd391255625b3611d3bdb8e017f896e30a50102a60781a257df9f816c3159",
+  "expert_late_index": 15,
+  "expert_layer_count": 16,
+  "expert_middle_index": 8,
+  "image_binding": {
+    "observation.images.camera1": "observation.images.image",
+    "observation.images.camera2": "observation.images.image2",
+    "observation.images.camera3": "zero_like:observation.images.image"
+  },
+  "max_action_dim": 32,
+  "metadata_tree_sha256": "09d6c6e90b06233a2e324e90a9d0c5032734f314498ea2e10a135dcaff777b93",
+  "noise": "flow-trace:v1 keyed by state_id and repeat; checkpoint-independent CPU float32",
+  "noise_repeats": 3,
+  "num_steps": 10,
+  "partition": "train",
+  "query_mode": "fixed_reference_points",
+  "reference_trace": {
+    "binding_sha256": "de673c98541e7b8db4651ba2605f55e9fd2677b80f977dcc64c4f10a1560435f",
+    "path": "/root/autodl-tmp/flow-trace/paired_sft016435_n8_r3"
+  },
+  "runtime": {
+    "batch_size": 4,
+    "cudnn": 91002,
+    "device_capability": [
+      8,
+      9
+    ],
+    "device_name": "NVIDIA GeForce RTX 4080 SUPER",
+    "device_type": "cuda",
+    "model_dtype": "torch.float32",
+    "packages": {
+      "lerobot": "0.6.1",
+      "torch": "2.10.0+cu128",
+      "transformers": "5.5.4"
+    },
+    "platform": "Linux-5.15.0-78-generic-x86_64-with-glibc2.35",
+    "python": "3.12.3",
+    "torch_cuda": "12.8"
+  },
+  "schema": "smolvla_conditional_flow_trace_v1",
+  "selection_seed": 42,
+  "source_sha256": {
+    "flow_trace.py": "5a818bde6589bf89e94a882ff80e38e370d543ac20bc9bb87635102f45269e9d",
+    "latents.py": "6d2a319af3f54e909374ad6ba846098c92c11b4f1004628754e76aa7f9aaecf2"
+  },
+  "state_bank_sha256": "a645164cea60d674b4edf72b1f65b1d168c0498944789c6e2910ac9813117d41",
+  "state_ids": [
+    "libero:libero_object:0:demo_42:121:a1aaacb7f6cd",
+    "libero:libero_object:1:demo_21:114:a1aaacb7f6cd",
+    "libero:libero_object:2:demo_4:185:a1aaacb7f6cd",
+    "libero:libero_object:3:demo_39:35:a1aaacb7f6cd",
+    "libero:libero_object:5:demo_22:130:a1aaacb7f6cd",
+    "libero:libero_object:8:demo_33:141:a1aaacb7f6cd",
+    "libero:libero_object:9:demo_31:10:a1aaacb7f6cd",
+    "libero:libero_spatial:0:demo_3:4:a1aaacb7f6cd"
+  ],
+  "upstream": {
+    "commit": "b8b0db331df18fc30a3fd92c45ec721d35d3ee52",
+    "patch_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

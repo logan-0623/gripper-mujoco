@@ -1,0 +1,77 @@
+{
+  "array_contract": {
+    "epsilon": {
+      "dtype": "float32",
+      "shape": [
+        4,
+        3,
+        50,
+        32
+      ]
+    },
+    "expert_late": {
+      "dtype": "float32",
+      "shape": [
+        4,
+        3,
+        10,
+        50,
+        720
+      ]
+    },
+    "expert_middle": {
+      "dtype": "float32",
+      "shape": [
+        4,
+        3,
+        10,
+        50,
+        720
+      ]
+    },
+    "sigma": {
+      "dtype": "float32",
+      "shape": [
+        3,
+        10
+      ]
+    },
+    "velocity": {
+      "dtype": "float32",
+      "shape": [
+        4,
+        3,
+        10,
+        50,
+        32
+      ]
+    },
+    "x_sigma": {
+      "dtype": "float32",
+      "shape": [
+        4,
+        3,
+        10,
+        50,
+        32
+      ]
+    }
+  },
+  "batch_seconds": [
+    1.9055270375683904,
+    1.304951480589807
+  ],
+  "binding_sha256": "44d11038f30922181f974f8f3e7a1d07cde8d97aa173a5f5cc2f206245dca477",
+  "closed_loop": "not_run",
+  "complete": true,
+  "elapsed_seconds": 29.02608022093773,
+  "measured_states": 8,
+  "noise_repeats": 3,
+  "resumed_states": 0,
+  "schema": "smolvla_conditional_flow_trace_v1",
+  "shards": [
+    "shards/000000.npz",
+    "shards/000004.npz"
+  ],
+  "states": 8
+}

@@ -1,0 +1,107 @@
+{
+  "artifact_complete": true,
+  "audited_stages": [
+    "sft_100"
+  ],
+  "configured_tasks_per_suite": 3,
+  "evaluation_roles": {
+    "libero_spatial/0": "in_training_scope",
+    "libero_spatial/1": "in_training_scope",
+    "libero_spatial/2": "in_training_scope",
+    "libero_spatial/3": "generalization"
+  },
+  "evaluation_tasks": [
+    "libero_spatial/0",
+    "libero_spatial/1",
+    "libero_spatial/2",
+    "libero_spatial/3"
+  ],
+  "execution_contract_complete": false,
+  "interpretation": "Coverage and artifact audit only; it does not establish optimization sufficiency, convergence, or a flow-matching failure mechanism.",
+  "protocol_fields_missing": [
+    "compute_ceiling",
+    "evaluation_contract",
+    "noninferiority_margin",
+    "official_checkpoint",
+    "stop_rule",
+    "task_floors",
+    "validation_rule"
+  ],
+  "protocol_path": null,
+  "protocol_ready": false,
+  "resume_ready": true,
+  "schema_version": "libero_smolvla_training_contract_audit_v1",
+  "stages": [
+    {
+      "artifact_complete": true,
+      "batch": {
+        "effective": 2,
+        "gradient_accumulation_steps": 1,
+        "per_device": 2,
+        "planned_per_device": null,
+        "world_size": 1
+      },
+      "batch_contract_matches": false,
+      "checkpoint_hash_verified": true,
+      "checkpoint_tree_sha256": "f0a6154caabce3556aeafa61c316f708cbac9370ee1c70531373947f5048e66f",
+      "coverage_source": "stage manifest episode contract",
+      "episode_count": 254,
+      "execution_contract_complete": false,
+      "initialization": {
+        "base_model": "lerobot/smolvla_base",
+        "base_revision": "c83c3163b8ca9b7e67c509fffd9121e66cb96205"
+      },
+      "manifest_status": "complete",
+      "observed_checkpoint_steps": [
+        "004108",
+        "008216",
+        "012324",
+        "016432",
+        "016435"
+      ],
+      "planned_optimizer_steps": 16435,
+      "resume_ready": true,
+      "sampler_visit_counts_present": false,
+      "stage": "sft_100",
+      "task_coverage": {
+        "libero_object/0": {
+          "episodes": 41,
+          "frames": 6426
+        },
+        "libero_object/1": {
+          "episodes": 42,
+          "frames": 5959
+        },
+        "libero_object/2": {
+          "episodes": 44,
+          "frames": 5720
+        },
+        "libero_spatial/0": {
+          "episodes": 42,
+          "frames": 4214
+        },
+        "libero_spatial/1": {
+          "episodes": 42,
+          "frames": 5553
+        },
+        "libero_spatial/2": {
+          "episodes": 43,
+          "frames": 4997
+        }
+      },
+      "train_config_present": true,
+      "training_state_files_missing": [],
+      "training_tasks_missing": [],
+      "unknown_episode_ids": []
+    }
+  ],
+  "training_coverage_complete": true,
+  "training_tasks": [
+    "libero_object/0",
+    "libero_object/1",
+    "libero_object/2",
+    "libero_spatial/0",
+    "libero_spatial/1",
+    "libero_spatial/2"
+  ]
+}

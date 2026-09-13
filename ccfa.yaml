@@ -33,6 +33,7 @@ artifacts:
   acquisition_flow_design: "docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md"
   acquisition_flow_evidence: "docs/results/libero_smolvla_acquisition_flow/"
   acquisition_flow_training_audit: "outputs/representation_study/libero_smolvla/stages/training_contract_audit.json"
+  official_spatial_reference_v2: "docs/results/libero_smolvla_official_reference_v2/"
 
 scientific_contract:
   primary_question: "What physically grounded interaction information exists before manipulation SFT, what is selectively acquired or reorganized during SFT, where does it become action-proximal, and which factors are accessible, functionally used, or useful in closed loop?"
@@ -245,6 +246,21 @@ experiment_registry:
     name: "Targeted second-VLA replication"
     status: not_started
     role: optional_external_validity
+  - id: SMOLVLA_OFFICIAL_SPATIAL_REFERENCE_V2
+    name: "Official SmolVLA Spatial task 0-3 capability reference"
+    status: pilot_complete
+    role: cross_lineage_capability_reference
+    evidence:
+      artifact: "docs/results/libero_smolvla_official_reference_v2/"
+      checkpoint_sha256: "3154ece6ac5f6e78bea3617a99f38d4d6eeaaeb43c476f70670310d8d2c4707a"
+      initial_state_ids: "10-19"
+      episodes_per_task: 10
+      success_counts: [8, 7, 7, 8]
+      physical_event_schema: "libero_capability_events_v2"
+      training_scope: ["libero_spatial/0", "libero_spatial/1", "libero_spatial/2", "libero_object/0", "libero_object/1", "libero_object/2"]
+      generalization_evaluation: ["libero_spatial/3"]
+      fixed_point_smoke: "008216 queried at 016435 natural x_sigma; 8 states x 3 repeats"
+    limitation: "Official and self-trained checkpoints are different lineages. Forty rollouts provide a bounded capability reference, not benchmark precision or a causal model-diff conclusion."
 
 dependency_graph:
   - id: P0_A
