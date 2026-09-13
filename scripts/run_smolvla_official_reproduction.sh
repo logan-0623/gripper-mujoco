@@ -18,12 +18,14 @@ case "$MODE" in
     STEPS=${STEPS:-20}
     BATCH_SIZE=${BATCH_SIZE:-1}
     SAVE_FREQ=$STEPS
+    LOG_FREQ=1
     OUTPUT_DIR="$OUTPUT_ROOT/smoke"
     ;;
   full)
     STEPS=25000
     BATCH_SIZE=32
     SAVE_FREQ=5000
+    LOG_FREQ=200
     OUTPUT_DIR="$OUTPUT_ROOT/full_25k_seed1000"
     ;;
   *)
@@ -58,4 +60,5 @@ fi
   --env_eval_freq=0 \
   --save_checkpoint=true \
   --save_freq="$SAVE_FREQ" \
+  --log_freq="$LOG_FREQ" \
   --wandb.enable=false
