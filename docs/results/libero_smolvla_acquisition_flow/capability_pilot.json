@@ -1,0 +1,55 @@
+{
+  "schema": "smolvla_acquisition_capability_pilot_v1",
+  "status": "exploratory_partial_unresolved",
+  "policy_lineage": "libero_smolvla_smoke/sft_100",
+  "seed": 2057736129,
+  "protocol": {
+    "suite": "libero_spatial",
+    "task_ids": [0, 1, 2, 3],
+    "paired_initial_conditions": true,
+    "episodes_per_cell": 10,
+    "n_action_steps": 10,
+    "num_steps": 10,
+    "empty_cameras": 1,
+    "init_states": true,
+    "recording": false
+  },
+  "cells": [
+    {"checkpoint":"004108","task_id":0,"attempts":10,"successes":5,"outcomes":[true,true,true,false,false,true,false,true,false,false]},
+    {"checkpoint":"004108","task_id":1,"attempts":10,"successes":2,"outcomes":[false,true,true,false,false,false,false,false,false,false]},
+    {"checkpoint":"004108","task_id":2,"attempts":10,"successes":4,"outcomes":[true,false,false,true,false,false,true,false,true,false]},
+    {"checkpoint":"004108","task_id":3,"attempts":10,"successes":0,"outcomes":[false,false,false,false,false,false,false,false,false,false]},
+    {"checkpoint":"008216","task_id":0,"attempts":10,"successes":1,"outcomes":[false,false,false,false,false,false,true,false,false,false]},
+    {"checkpoint":"008216","task_id":1,"attempts":10,"successes":5,"outcomes":[true,true,true,false,false,false,false,false,true,true]},
+    {"checkpoint":"008216","task_id":2,"attempts":10,"successes":1,"outcomes":[false,false,false,false,false,false,true,false,false,false]},
+    {"checkpoint":"008216","task_id":3,"attempts":10,"successes":0,"outcomes":[false,false,false,false,false,false,false,false,false,false]},
+    {"checkpoint":"016435","task_id":0,"attempts":10,"successes":4,"outcomes":[false,true,false,true,false,false,false,false,true,true]},
+    {"checkpoint":"016435","task_id":1,"attempts":10,"successes":4,"outcomes":[true,true,false,true,false,false,false,false,false,true]},
+    {"checkpoint":"016435","task_id":2,"attempts":10,"successes":6,"outcomes":[true,true,false,true,false,false,true,true,true,false]},
+    {"checkpoint":"016435","task_id":3,"attempts":10,"successes":0,"outcomes":[false,false,false,false,false,false,false,false,false,false]}
+  ],
+  "paired_comparisons": [
+    {"from":"004108","to":"008216","gains":4,"losses":8,"net":-4,"exact_mcnemar_p":0.3876953125},
+    {"from":"008216","to":"016435","gains":10,"losses":3,"net":7,"exact_mcnemar_p":0.09228515625},
+    {"from":"004108","to":"016435","gains":8,"losses":5,"net":3,"exact_mcnemar_p":0.5810546875}
+  ],
+  "source_files": [
+    {"checkpoint":"004108","task_id":0,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft004108_capability_task0_n10/eval_info.json","sha256":"1de4fcc3fd9e4d8c61b7caf8e1418893d8ac380d85a6e1a1bbea66c00e58503b","bytes":5194},
+    {"checkpoint":"004108","task_id":1,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft004108_capability_task1_n10/eval_info.json","sha256":"11752fa6d8d3cfce296c42d9968ed11501ba0b9ebcb2010409dd5ac969545826","bytes":5196},
+    {"checkpoint":"004108","task_id":2,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft004108_capability_task2_n10/eval_info.json","sha256":"ff47bab8371205986c43757374e6eca97f42021f3b5a7edc505066de59201f6a","bytes":5195},
+    {"checkpoint":"004108","task_id":3,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft004108_capability_task3_n10/eval_info.json","sha256":"3ec55dbe587d1fa4a7904cee20bd1081db96312351cc8061a97cba3a1cd04204","bytes":5197},
+    {"checkpoint":"008216","task_id":0,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft008216_capability_task0_n10/eval_info.json","sha256":"c778b200cab0d90e99b42bfbcc3bbc1179adf676f3cc526db7f4b3cca6891068","bytes":5198},
+    {"checkpoint":"008216","task_id":1,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft008216_capability_task1_n10/eval_info.json","sha256":"eddbc663bd131c99a0132789f055ea3d65206fc21e15393ee9fb0d06d7a8da98","bytes":5194},
+    {"checkpoint":"008216","task_id":2,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft008216_capability_task2_n10/eval_info.json","sha256":"a598aefb2c3fc107a0eb5c58924090c72a1513f86945c6d3d12a0401ffdef627","bytes":5197},
+    {"checkpoint":"008216","task_id":3,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft008216_capability_task3_n10/eval_info.json","sha256":"55dcf2bb57a4a23772045ce8d32c0dbf2d3e0cf727033ec1239a01deafd1330d","bytes":5196},
+    {"checkpoint":"016435","task_id":0,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft016435_capability_task0_n10/eval_info.json","sha256":"0f470096f26be542acd66693f279f86277a7f99194bd4e52ceda05480feed35f","bytes":5195},
+    {"checkpoint":"016435","task_id":1,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft016435_capability_task1_n10/eval_info.json","sha256":"937067f23c6a1c3fbb39c28856937d32419ba3dc78e778fa98bfeeff8f23192b","bytes":5194},
+    {"checkpoint":"016435","task_id":2,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft016435_capability_task2_n10/eval_info.json","sha256":"85aaec57d7724233e1bf88b5662096981963198c2edd16929b4136e0e96c948b","bytes":5193},
+    {"checkpoint":"016435","task_id":3,"path":"/root/autodl-tmp/gripper-mujoco-rollouts/smoke_sft016435_capability_task3_n10/eval_info.json","sha256":"d35275625c5d522d6f6aac5c8ffdbfb6860c208814aca3269abf30366ad69fc6","bytes":5197}
+  ],
+  "limitations": [
+    "Only task success was recorded; simulator grasp, lift, hold, release, and drop outcomes required by E0 are missing.",
+    "Task directions conflict and task 3 is at floor for all checkpoints.",
+    "This discovery pilot does not supply independent held-out confirmation."
+  ]
+}

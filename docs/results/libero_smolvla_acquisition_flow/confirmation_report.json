@@ -1,0 +1,614 @@
+{
+  "comparison": {
+    "initial_state_ids": [
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "paired_rollouts": 160,
+    "post": "016435",
+    "pre": "008216",
+    "suite": "libero_spatial",
+    "task_ids": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "total_rollouts": 320
+  },
+  "decision": {
+    "global_capability_acquisition_gate": false,
+    "next_step": "Do not use this pair for a generic ability-acquisition causal claim. Treat task-conditioned reorganization as the E2 target only if the project explicitly adopts that revised hypothesis; otherwise recover a lineage with a consistent capability transition.",
+    "reason": "Physical and success effects reverse direction across tasks; pooled/task-macro effects are near zero and task 3 remains at floor.",
+    "supported_finding": "Training reorganized task-conditioned interaction behavior: task 0 grasp/lift improved strongly while task 1 grasp/lift and success deteriorated."
+  },
+  "integrity": {
+    "cells_complete": 8,
+    "episodes_per_cell": 40,
+    "event_eval_success_exact_match": true,
+    "source_archive_sha256": "5f6b563f2de1d4afb82bc4d7066fc23217deefa557c6e7d698d2e18732a7db52",
+    "unique_initial_states_per_cell": 40
+  },
+  "metrics": {
+    "contact": {
+      "attempts_per_checkpoint": 160,
+      "per_task": [
+        {
+          "attempts": 40,
+          "delta_rate": 0.275,
+          "exact_mcnemar_p": 0.012725830078125,
+          "gains": 14,
+          "holm_p_within_metric": 0.038177490234375,
+          "losses": 3,
+          "post_count": 36,
+          "pre_count": 25,
+          "task_id": 0
+        },
+        {
+          "attempts": 40,
+          "delta_rate": -0.225,
+          "exact_mcnemar_p": 0.00390625,
+          "gains": 0,
+          "holm_p_within_metric": 0.015625,
+          "losses": 9,
+          "post_count": 31,
+          "pre_count": 40,
+          "task_id": 1
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.075,
+          "exact_mcnemar_p": 0.6636238098144531,
+          "gains": 12,
+          "holm_p_within_metric": 1.0,
+          "losses": 9,
+          "post_count": 27,
+          "pre_count": 24,
+          "task_id": 2
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.0,
+          "exact_mcnemar_p": 1.0,
+          "gains": 0,
+          "holm_p_within_metric": 1.0,
+          "losses": 0,
+          "post_count": 0,
+          "pre_count": 0,
+          "task_id": 3
+        }
+      ],
+      "post_count": 94,
+      "pre_count": 89,
+      "task_macro_delta": 0.03125,
+      "task_stratified_bootstrap_ci": [
+        -0.049999999999999996,
+        0.10625000000000001
+      ]
+    },
+    "lift": {
+      "attempts_per_checkpoint": 160,
+      "per_task": [
+        {
+          "attempts": 40,
+          "delta_rate": 0.325,
+          "exact_mcnemar_p": 0.002349853515625,
+          "gains": 15,
+          "holm_p_within_metric": 0.0093994140625,
+          "losses": 2,
+          "post_count": 15,
+          "pre_count": 2,
+          "task_id": 0
+        },
+        {
+          "attempts": 40,
+          "delta_rate": -0.325,
+          "exact_mcnemar_p": 0.010622024536132812,
+          "gains": 5,
+          "holm_p_within_metric": 0.03186607360839844,
+          "losses": 18,
+          "post_count": 9,
+          "pre_count": 22,
+          "task_id": 1
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.125,
+          "exact_mcnemar_p": 0.332305908203125,
+          "gains": 11,
+          "holm_p_within_metric": 0.66461181640625,
+          "losses": 6,
+          "post_count": 17,
+          "pre_count": 12,
+          "task_id": 2
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.0,
+          "exact_mcnemar_p": 1.0,
+          "gains": 0,
+          "holm_p_within_metric": 1.0,
+          "losses": 0,
+          "post_count": 0,
+          "pre_count": 0,
+          "task_id": 3
+        }
+      ],
+      "post_count": 41,
+      "pre_count": 36,
+      "task_macro_delta": 0.03125,
+      "task_stratified_bootstrap_ci": [
+        -0.056249999999999994,
+        0.1125
+      ]
+    },
+    "longest_stable_hold_s": {
+      "per_task": [
+        {
+          "paired_mean_delta": 0.3175,
+          "post_mean": 0.36916666666666664,
+          "pre_mean": 0.05166666666666667,
+          "task_id": 0
+        },
+        {
+          "paired_mean_delta": -0.5425,
+          "post_mean": 0.37,
+          "pre_mean": 0.9125,
+          "task_id": 1
+        },
+        {
+          "paired_mean_delta": 0.027500000000000004,
+          "post_mean": 0.6733333333333335,
+          "pre_mean": 0.6458333333333334,
+          "task_id": 2
+        },
+        {
+          "paired_mean_delta": 0.0,
+          "post_mean": 0.0,
+          "pre_mean": 0.0,
+          "task_id": 3
+        }
+      ],
+      "task_macro_paired_mean_delta": -0.049374999999999995,
+      "task_stratified_bootstrap_ci": [
+        -0.1933385416666667,
+        0.09124999999999998
+      ]
+    },
+    "max_target_lift_m": {
+      "per_task": [
+        {
+          "paired_mean_delta": 0.020031158210448617,
+          "post_mean": 0.0338104476639033,
+          "pre_mean": 0.013779289453454682,
+          "task_id": 0
+        },
+        {
+          "paired_mean_delta": -0.02997478372636746,
+          "post_mean": 0.030717346752740016,
+          "pre_mean": 0.06069213047910747,
+          "task_id": 1
+        },
+        {
+          "paired_mean_delta": 0.010555245260173549,
+          "post_mean": 0.048130075005791396,
+          "pre_mean": 0.037574829745617856,
+          "task_id": 2
+        },
+        {
+          "paired_mean_delta": -0.0013091646102271009,
+          "post_mean": 2.7553069595898094e-05,
+          "pre_mean": 0.001336717679822999,
+          "task_id": 3
+        }
+      ],
+      "task_macro_paired_mean_delta": -0.00017438621649309885,
+      "task_stratified_bootstrap_ci": [
+        -0.009547666352745437,
+        0.009145968974736062
+      ]
+    },
+    "normal_release": {
+      "attempts_per_checkpoint": 160,
+      "per_task": [
+        {
+          "attempts": 40,
+          "delta_rate": 0.05,
+          "exact_mcnemar_p": 0.5,
+          "gains": 2,
+          "holm_p_within_metric": 1.0,
+          "losses": 0,
+          "post_count": 2,
+          "pre_count": 0,
+          "task_id": 0
+        },
+        {
+          "attempts": 40,
+          "delta_rate": -0.025,
+          "exact_mcnemar_p": 1.0,
+          "gains": 0,
+          "holm_p_within_metric": 1.0,
+          "losses": 1,
+          "post_count": 0,
+          "pre_count": 1,
+          "task_id": 1
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.0,
+          "exact_mcnemar_p": 1.0,
+          "gains": 1,
+          "holm_p_within_metric": 1.0,
+          "losses": 1,
+          "post_count": 1,
+          "pre_count": 1,
+          "task_id": 2
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.0,
+          "exact_mcnemar_p": 1.0,
+          "gains": 0,
+          "holm_p_within_metric": 1.0,
+          "losses": 0,
+          "post_count": 0,
+          "pre_count": 0,
+          "task_id": 3
+        }
+      ],
+      "post_count": 3,
+      "pre_count": 2,
+      "task_macro_delta": 0.00625,
+      "task_stratified_bootstrap_ci": [
+        -0.018750000000000003,
+        0.03125
+      ]
+    },
+    "release_after_grasp": {
+      "attempts_per_checkpoint": 160,
+      "per_task": [
+        {
+          "attempts": 40,
+          "delta_rate": 0.125,
+          "exact_mcnemar_p": 0.0625,
+          "gains": 5,
+          "holm_p_within_metric": 0.1875,
+          "losses": 0,
+          "post_count": 5,
+          "pre_count": 0,
+          "task_id": 0
+        },
+        {
+          "attempts": 40,
+          "delta_rate": -0.225,
+          "exact_mcnemar_p": 0.0224609375,
+          "gains": 2,
+          "holm_p_within_metric": 0.08984375,
+          "losses": 11,
+          "post_count": 4,
+          "pre_count": 13,
+          "task_id": 1
+        },
+        {
+          "attempts": 40,
+          "delta_rate": -0.1,
+          "exact_mcnemar_p": 0.34375,
+          "gains": 3,
+          "holm_p_within_metric": 0.6875,
+          "losses": 7,
+          "post_count": 4,
+          "pre_count": 8,
+          "task_id": 2
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.0,
+          "exact_mcnemar_p": 1.0,
+          "gains": 0,
+          "holm_p_within_metric": 1.0,
+          "losses": 0,
+          "post_count": 0,
+          "pre_count": 0,
+          "task_id": 3
+        }
+      ],
+      "post_count": 13,
+      "pre_count": 21,
+      "task_macro_delta": -0.05,
+      "task_stratified_bootstrap_ci": [
+        -0.1125,
+        0.012499999999999997
+      ]
+    },
+    "stable_grasp": {
+      "attempts_per_checkpoint": 160,
+      "per_task": [
+        {
+          "attempts": 40,
+          "delta_rate": 0.325,
+          "exact_mcnemar_p": 0.002349853515625,
+          "gains": 15,
+          "holm_p_within_metric": 0.007049560546875,
+          "losses": 2,
+          "post_count": 15,
+          "pre_count": 2,
+          "task_id": 0
+        },
+        {
+          "attempts": 40,
+          "delta_rate": -0.5,
+          "exact_mcnemar_p": 1.0967254638671875e-05,
+          "gains": 1,
+          "holm_p_within_metric": 4.38690185546875e-05,
+          "losses": 21,
+          "post_count": 10,
+          "pre_count": 30,
+          "task_id": 1
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.1,
+          "exact_mcnemar_p": 0.454498291015625,
+          "gains": 10,
+          "holm_p_within_metric": 0.90899658203125,
+          "losses": 6,
+          "post_count": 17,
+          "pre_count": 13,
+          "task_id": 2
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.0,
+          "exact_mcnemar_p": 1.0,
+          "gains": 0,
+          "holm_p_within_metric": 1.0,
+          "losses": 0,
+          "post_count": 0,
+          "pre_count": 0,
+          "task_id": 3
+        }
+      ],
+      "post_count": 42,
+      "pre_count": 45,
+      "task_macro_delta": -0.018749999999999996,
+      "task_stratified_bootstrap_ci": [
+        -0.09999999999999998,
+        0.05625000000000001
+      ]
+    },
+    "success": {
+      "attempts_per_checkpoint": 160,
+      "per_task": [
+        {
+          "attempts": 40,
+          "delta_rate": 0.2,
+          "exact_mcnemar_p": 0.057373046875,
+          "gains": 11,
+          "holm_p_within_metric": 0.11572265625,
+          "losses": 3,
+          "post_count": 12,
+          "pre_count": 4,
+          "task_id": 0
+        },
+        {
+          "attempts": 40,
+          "delta_rate": -0.3,
+          "exact_mcnemar_p": 0.01181793212890625,
+          "gains": 4,
+          "holm_p_within_metric": 0.047271728515625,
+          "losses": 16,
+          "post_count": 6,
+          "pre_count": 18,
+          "task_id": 1
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.2,
+          "exact_mcnemar_p": 0.03857421875,
+          "gains": 10,
+          "holm_p_within_metric": 0.11572265625,
+          "losses": 2,
+          "post_count": 14,
+          "pre_count": 6,
+          "task_id": 2
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.0,
+          "exact_mcnemar_p": 1.0,
+          "gains": 0,
+          "holm_p_within_metric": 1.0,
+          "losses": 0,
+          "post_count": 0,
+          "pre_count": 0,
+          "task_id": 3
+        }
+      ],
+      "post_count": 32,
+      "pre_count": 28,
+      "task_macro_delta": 0.02500000000000001,
+      "task_stratified_bootstrap_ci": [
+        -0.05,
+        0.1
+      ]
+    },
+    "unintended_drop": {
+      "attempts_per_checkpoint": 160,
+      "per_task": [
+        {
+          "attempts": 40,
+          "delta_rate": 0.075,
+          "exact_mcnemar_p": 0.25,
+          "gains": 3,
+          "holm_p_within_metric": 0.875,
+          "losses": 0,
+          "post_count": 3,
+          "pre_count": 0,
+          "task_id": 0
+        },
+        {
+          "attempts": 40,
+          "delta_rate": -0.025,
+          "exact_mcnemar_p": 1.0,
+          "gains": 2,
+          "holm_p_within_metric": 1.0,
+          "losses": 3,
+          "post_count": 3,
+          "pre_count": 4,
+          "task_id": 1
+        },
+        {
+          "attempts": 40,
+          "delta_rate": -0.1,
+          "exact_mcnemar_p": 0.21875,
+          "gains": 1,
+          "holm_p_within_metric": 0.875,
+          "losses": 5,
+          "post_count": 2,
+          "pre_count": 6,
+          "task_id": 2
+        },
+        {
+          "attempts": 40,
+          "delta_rate": 0.0,
+          "exact_mcnemar_p": 1.0,
+          "gains": 0,
+          "holm_p_within_metric": 1.0,
+          "losses": 0,
+          "post_count": 0,
+          "pre_count": 0,
+          "task_id": 3
+        }
+      ],
+      "post_count": 8,
+      "pre_count": 10,
+      "task_macro_delta": -0.012500000000000002,
+      "task_stratified_bootstrap_ci": [
+        -0.05625,
+        0.03125
+      ]
+    }
+  },
+  "schema": "smolvla_e0_physical_confirmation_v1",
+  "source_files": [
+    {
+      "bytes": 23225,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft008216_task0_states10_49/physical_events.json",
+      "sha256": "94e89e1f543440e66cd6b55b1745fa4cb2bb05e7973ad54f86611556763743a5"
+    },
+    {
+      "bytes": 2625,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft008216_task0_states10_49/eval_info.json",
+      "sha256": "45fab0f3c0d7da53aa90cfcaceb051b4eb730c715702acecd54baaed5dc28cbf"
+    },
+    {
+      "bytes": 23292,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft008216_task1_states10_49/physical_events.json",
+      "sha256": "80c4b9a65d8682921c94e27296d2f5f47c2ea0aa993f39e67553cc6aa4898362"
+    },
+    {
+      "bytes": 2617,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft008216_task1_states10_49/eval_info.json",
+      "sha256": "cf8276e06660560f679dda262a84a5a1761907ab633f77d40f319ece93b24903"
+    },
+    {
+      "bytes": 23269,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft008216_task2_states10_49/physical_events.json",
+      "sha256": "26a5bb2344b68c43bf8c0fd140e83102a4d479c56ddb49c71b703c378221652d"
+    },
+    {
+      "bytes": 2627,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft008216_task2_states10_49/eval_info.json",
+      "sha256": "5d9c9f7d58e9eddf0927387fe0f4e505d6ee437cf050e83c3654a6287f4adc10"
+    },
+    {
+      "bytes": 23357,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft008216_task3_states10_49/physical_events.json",
+      "sha256": "a4602b17ef9f6e5e368ea7203d49f72690f1192deb5d303f940f1c33841aa835"
+    },
+    {
+      "bytes": 2628,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft008216_task3_states10_49/eval_info.json",
+      "sha256": "f337dab44a05edf5ae615248d1b55f84e8f7dcc5ae4ee1351dadf0c977b526d0"
+    },
+    {
+      "bytes": 23238,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft016435_task0_states10_49/physical_events.json",
+      "sha256": "e9117a6aa48e775b51a786e0b93d514366dfe56ae7517ef519e32e9f9e08cb3e"
+    },
+    {
+      "bytes": 2617,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft016435_task0_states10_49/eval_info.json",
+      "sha256": "7d47644106a7fd8951a57ffd53ccc25f2e91b44e68aa525e977ea465f72fc188"
+    },
+    {
+      "bytes": 23265,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft016435_task1_states10_49/physical_events.json",
+      "sha256": "95a4346549f748a69017ea3cb8cb71c65bc397178127a7725009bf471cacd976"
+    },
+    {
+      "bytes": 2628,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft016435_task1_states10_49/eval_info.json",
+      "sha256": "700b7d3d1c2b3a426fdfcfe160ca7b794d52c3ae0f51217068ef92127b09d73e"
+    },
+    {
+      "bytes": 23286,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft016435_task2_states10_49/physical_events.json",
+      "sha256": "7880e727e21d8c8d15da2750c2adfd18a84ea3054e07e1cc99e4c66f06271da2"
+    },
+    {
+      "bytes": 2621,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft016435_task2_states10_49/eval_info.json",
+      "sha256": "bdc3f58d0bce4bdb7b866cba5f8f6a80a614d6c8b1c80932905992147af5c9b5"
+    },
+    {
+      "bytes": 23369,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft016435_task3_states10_49/physical_events.json",
+      "sha256": "9c35c06828efa703a0bd455fb4ab176aed6766bd8fbeba1747f560d373338293"
+    },
+    {
+      "bytes": 2628,
+      "path": "docs/results/libero_smolvla_acquisition_flow/confirmation_raw/sft016435_task3_states10_49/eval_info.json",
+      "sha256": "1ad2d3f3a39379f8f7823b2440d6986549fa8bd91819ea5811f7fd5829551824"
+    }
+  ],
+  "status": "complete_gate_failed_task_heterogeneity"
+}
