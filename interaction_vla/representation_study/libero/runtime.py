@@ -139,6 +139,44 @@ class LiberoOffscreenSimulator:
             distractors=distractors,
         )
 
+    @classmethod
+    def from_live_env(
+        cls,
+        env: object,
+        *,
+        suite: str,
+        task_id: int,
+        task_name: str,
+        language: str,
+    ) -> "LiberoOffscreenSimulator":
+        """Bind privileged measurements to an already-running LIBERO env."""
+        self = cls.__new__(cls)
+        self.env = env
+        self._observation = self.domain._get_observations()
+        self._raw_goal_states = tuple(
+            tuple(str(item) for item in value)
+            for value in self.domain.parsed_problem["goal_state"]
+        )
+        raw_goals = tuple(
+            GoalAtom(value[0].lower(), value[1:]) for value in self._raw_goal_states
+        )
+        source = str(getattr(self.domain, "workspace_name", "kitchen_table"))
+        distractors = tuple(
+            str(name)
+            for name in getattr(self.domain, "objects_dict", {})
+            if str(name) not in {raw_goals[0].arguments[0], *raw_goals[0].arguments[1:]}
+        )
+        self.semantics = TaskSemanticsRegistry.default().resolve(
+            suite=suite,
+            task_id=task_id,
+            task_name=task_name,
+            language=language,
+            goal_atoms=raw_goals,
+            source=source,
+            distractors=distractors,
+        )
+        return self
+
     @property
     def domain(self):
         return getattr(self.env, "env", self.env)
