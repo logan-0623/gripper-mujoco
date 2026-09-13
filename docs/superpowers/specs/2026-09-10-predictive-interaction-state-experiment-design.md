@@ -1,11 +1,11 @@
-# VLA 抓取能力获得与条件动作流机制：实验设计
+# VLA 能力形成与条件动作流机制：实验设计
 
-> 初稿：2026-09-10；最新证据修订：2026-09-11  
+> 初稿：2026-09-10；最新原则修订：2026-09-13
 > 状态：实验设计；不授权启动训练、闭环评测或 RL  
-> 当前项目门禁：先完成跨 SAE seed 与匹配对照复制，再决定是否进入闭环  
+> 当前设计优先级：官方能力参照 → 训练覆盖/配方审计 → 充分训练的同谱系对照 → 无标签候选发现与机制验证；具体合同见 §12.16
 > 主要依据：[数学基础](../../research/vla-mathematical-foundations.md)、[当前研究协议](../../../research/predictive-states.md)、[项目状态](../../../ccfa.yaml)、[Observing and Controlling Features in VLA Models](../../../paper/2603.05487v1.pdf)
 
-**当前主线已按用户研究定位更新为 §12：能力获得 → 内部变化 → 条件 action flow 中的功能招募 → 闭环物理后果。G2/G2b 已有结果，作为物理预测测量工具保留；RET 不再是下一步默认主实验。** §1–11 保留为前期预测路线与协议记录，涉及当前顺序、核心假设和方法优先级时以 §12 为准。最新 G2b 逐任务结果见 [分析报告](../../research/g2b-results-analysis.md)。本次仅更新设计，不启动训练或解除执行门禁。
+**当前主线：在可靠的行为能力参照和可追溯训练谱系上，发现哪些内部计算随能力形成而变化，并检验这些计算如何参与条件动作生成和闭环行为。** §12.16 是当前有效的原则与执行顺序；它覆盖 §12.1–12.15 中与其冲突的研究优先级。§1–11 保留为前期预测路线记录；G2/G2b 是可选解释工具，预测通过不是所有机制候选的前置条件，RET 不再是默认主实验。§12.13–12.15 的实测数字原样保留，任务差异不自动触发研究转向。最新 G2b 逐任务结果见 [分析报告](../../research/g2b-results-analysis.md)。本次仅更新设计，不启动训练或解除执行门禁；`ccfa.yaml` 的现有阶段名称仍是上一轮任务重组决策记录，不表示本次设计已实施。
 
 ## 1. 要回答的科学问题
 
@@ -612,7 +612,7 @@ G4/G5 保留 observer compliance、实际物理 compliance、success 的分离�
 
 ### 12.1 问题与基本边界
 
-**当 VLA 通过训练获得抓取能力时，发现哪些内部特征或子空间被形成、压缩、重组或招募，并检验它们如何影响 conditional action flow、动作生成和闭环行为。**
+**先建立官方能力参照并检查自训练是否充分，再研究可追溯训练中的能力变化与内部计算变化，检验候选如何影响 conditional action flow、动作生成和闭环行为。** 不预设当前 smoke 终点已充分训练，不把已观察到的任务异质性直接归因于 flow matching 或通用训练干扰；E0 的补充合同见 §12.16。
 
 首要贡献为实证机制发现；信息瓶颈是待检验假设，未来像素或完整 latent 重建不是成功条件。Contact/StableGrasp 用于候选发现后的物理解释，不要求每个候选对应预设概念。G2b 保留为测量工具，RET 不再是默认下一步。
 
@@ -694,7 +694,7 @@ G4/G5 保留 observer compliance、实际物理 compliance、success 的分离�
 
 擦除后放回原 activation 只验证回放正确性，不算机制 rescue。跨 checkpoint patch 需另验证表示对齐、尺度与接收模型兼容性；失败不能直接否定充分性。候选作用必须在留出 episodes、噪声重复和匹配控制上重现。
 
-旧 SAE 候选继续受 G1 跨 dictionary seed 门禁约束；新子空间路线需独立验证，不能借用 SAE pilot 自动通过。新设计不改变 ccfa.yaml 权限。
+旧 SAE 候选继续受 G1 跨 dictionary seed 门禁约束；新子空间路线需独立验证，不能借用 SAE pilot 自动通过。G2b 预测结果不是 E4 的通用准入条件；准入依据是冻结候选在留出数据上的功能效应、匹配控制和回放完整性。新设计不改变 ccfa.yaml 权限。
 
 闭环先最多 2 个候选、一个冻结噪声阶段。一个候选的拟议 pilot 为 4 tasks×10 paired 初始条件×4 条件（无干预、target、随机方向、低变化方向）=160 rollouts；用于效应/方差估计，不自动满足统计功效。随机方向从离线 validation 固定，不能在闭环选最弱对照。
 
@@ -704,7 +704,7 @@ G4/G5 保留 observer compliance、实际物理 compliance、success 的分离�
 
 压缩假设：在保持指定预测/控制效果的容差内，训练后所需表示预算更小。先冻结失真与容差，再测 r={1,2,4,8,16,32} 的任务风险/行为曲线；每个 rank 的子空间只在 discovery/validation 选择，不在 test 挑 rank。
 
-同时测物理预测、原策略行为保留和非目标副作用。effective rank 或活跃 atom 数下降不等于压缩成立；只保留子空间、删除其余分量可能产生巨大分布偏移，必须报告偏离和匹配扰动控制。
+以原策略行为保留、任务表现和非目标副作用为主；物理预测仅在主张包含预测充分性时作为必要指标，否则作为辅助解释。effective rank 或活跃 atom 数下降不等于压缩成立；只保留子空间、删除其余分量可能产生巨大分布偏移，必须报告偏离和匹配扰动控制。动作接近也不能替代闭环性能保持，失真和容差须对指定任务分布预先冻结。
 
 首先称 representation-budget / task-distortion comparison。若需 Shannon IB 主张，另定义随机编码/量化和可估计的信息量；维数不是比特率，优化 FM loss 也不保证遵循 IB。
 
@@ -712,7 +712,7 @@ OOD 先固定一个不改变物理机制的视觉干扰（如受控背景/纹理
 
 ### 12.8 最小近期交付与停止条件
 
-近期只推进 E0 权重/谱系审计、E1 小批完整 flow trace、E2 共享坐标筛选、E3 观察/噪声区分；RET、CPC、第二 VLA、world model 和 RL 暂缓。
+当前先完成 §12.16 的 E0 官方参照、数据/训练审计和充分训练计划；E1 小批机制测量可作为实现准备。E2/E3 的正式候选发现须待研究比较对象和能力范围明确后开展；RET、CPC、第二 VLA、world model 和 RL 暂缓。
 
 | 阶段 | 必存产物 | 停止/收窄条件 |
 | --- | --- | --- |
@@ -879,3 +879,143 @@ smoke SFT100 manifest 记录 254 个训练 episodes、16,435 steps、seed=205773
 任务异质性很强。task 0（black bowl between plate and ramekin）StableGrasp/Lift 从 2/40 增至 15/40；task 1（black bowl next to ramekin）StableGrasp 从 30/40 降至 10/40、Lift 从 22/40 降至 9/40；task 2（black bowl from table center）StableGrasp 从 13/40 增至 17/40；task 3（black bowl on cookie box）两个 checkpoint 均从未接触目标。success 同样为 task 0 `4→12`、task 1 `18→6`、task 2 `6→14`、task 3 `0→0`。两例 `008216` task-0 success 没有满足严格五帧双侧接触 StableGrasp，但最大抬升超过 0.11 m；这表示严格 StableGrasp 规则未覆盖所有成功操纵方式，不应把它当成 success 标注错误。
 
 **E0 决策：`complete_gate_failed_task_heterogeneity`。** 现有“从不会抓取到会抓取”的全局能力获得叙事停止；不能用 `008216 -> 016435` 筛选通用抓取 feature。确认数据支持一个更窄的新假设：训练在共享物体与目标、不同初始空间关系之间重新分配了 interaction competence，可能涉及 task-conditioned recruitment 或 interference。进入 E2 前必须先把这一假设、task 0/1 的方向性对照、候选冻结规则和独立验证单元写入协议；若不接受该范围修订，则返回寻找具有跨任务同方向能力增长的训练谱系。
+
+### 12.16 2026-09-13 原则修订：可靠能力参照、充分训练与无标签机制发现
+
+本节是用户确认后的当前设计。§12.15 的结果与原 gate 记录不变，但不再据此默认转向 task-conditioned reorganization：先排查训练不足、任务覆盖和评测错配，再决定是否把任务异质性作为主研究对象。本节是协议修订，不是训练启动、预算批准或实验完成记录。
+
+#### A. 研究问题和证据边界
+
+主问题：**有任务能力的 VLA 如何利用内部计算形成动作决策；这些计算在同一训练谱系中如何出现、改变或被下游招募？**
+
+“有能力”由固定任务上的实际行为确定；“内部机制”由冻结候选的匹配干预及行为后果检验。允许某些机制没有简洁的人类语义名称，允许不同任务使用不同计算，也不要求每个训练 checkpoint 的能力单调上升。
+
+| 主张 | 必需证据 | 不作为通用前提 |
+| --- | --- | --- |
+| 可访问的信息 | 留出数据上的读出与相关对照 | 闭环改善 |
+| 预测性交互表示 | 匹配信息预算后的未来风险与时序对照 | 完整世界或像素重建 |
+| 动作生成中的功能机制 | 留出数据上的阶段/方向干预超过匹配控制，信息来源有依据 | Contact/StableGrasp probe 或 G2b 必须通过 |
+| 对特定控制行为的因果贡献 | 配对闭环中的定向后果、success 与非目标损害 | 干预一定提高成功率；必要机制的敲除可能使性能下降 |
+| 任务相关充分性/压缩 | 预先限定任务和容差下的决策与闭环性能保持、残差信息检查 | 完整转移核恢复、所有物理变量可重建 |
+
+G2b 保留为已有探索性测量，不作为所有 E2/E4 候选的淘汰器。控制 AC 中的最终动作计划可能阻断中介路径；条件预测无增益不等于策略不用该信息。预测性和功能性分别报告，不能将它们当作必然递进的阶梯。RET 仅在后续需要检验预测表示这一具体假设时进入同 tap 比较。
+
+这一边界与 [Value Equivalence Principle](https://arxiv.org/abs/2011.03506) 中“针对指定策略/价值函数保留规划所需更新”的思想相容，但该理论不直接证明 SmolVLA 的隐状态充分，也不替代本项目的行为测量。
+
+#### B. 模型参照：官方强模型与同谱系时间轴同时保留
+
+| 比较 | 角色 | 可支持的解释 |
+| --- | --- | --- |
+| 固定官方 checkpoint vs 当前自训练 checkpoints | 强弱模型功能参照 | 同合同下的行为和内部计算差异；不是同次训练的前后因果归因 |
+| 自训练同谱系早期/中期/充分训练终点 | 能力形成主比较 | 在已审计初始化、数据和训练配置下，该谱系的计算与能力变化 |
+| 自训练终点 vs 官方 checkpoint | 复现质量与外部参照 | 是否达到预先定义的可比性能范围；不要求权重逐位一致 |
+
+每份模型单独登记 repo/revision、权重与 normalizer hash、架构/tap、训练来源及评测合同。官方正控制的 9/10 只属于其 checkpoint 与 Spatial task 0；不能继承给 G2b 的另一份 checkpoint，也不能当作整个 LIBERO 的 90% 成功率。官方模型和我们中途模型允许比较，但不把官方模型伪装成自训练的最终节点。
+
+共享架构不保证神经元坐标或 SAE atom 语义一致。先在同模型内做因果检验；跨模型比较使用验证过的共同坐标/特征匹配。跨模型 activation patch 必须额外核对基底、尺度、normalizer 和输入合同，不能把相同 atom 编号视作对齐。
+
+#### C. E0a：先核对训练是否充分与 task 3 是否真正被训练
+
+[SmolVLA v1 §4.3](https://arxiv.org/html/2506.01844v1#S4.SS3) 报告仿真训练 100,000 steps、batch size 64；这只是论文配方参照，不等于已确认每一个 Hub checkpoint 的完整训练合同。当前本地 [smoke 配置](../../../configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml) 为 1 epoch、batch size 2、tasks_per_suite=3；归档谱系为 254 episodes、16,435 steps。实际启动覆盖、梯度累积、resume 与数据采样须查训练产物，不从配置文件直接推断实际执行。
+
+`SFT100` 表示所定义数据子集的 100%，不等于官方预算完成度或模型已收敛。训练量按全局有效 batch、优化步、实际样本访问及任务覆盖共同核对，不能只比 step 数；state_bank holdout 与 policy 训练未见任务也分别标记。
+
+| 检查 | 必须取得的证据 | 对失败的解释 |
+| --- | --- | --- |
+| task 3 覆盖 | 实际训练 episode IDs、suite/task IDs、sampler 访问计数或可恢复的采样合同 | 未覆盖则按泛化问题解释；不直接称训练集欠拟合 |
+| 数据/输入 | 指令、相机映射、state/action 单位和归一化、时间对齐、动作 padding | 不匹配先修链路；旧输出保留为失配诊断 |
+| 优化预算 | 初始化 hash、optimizer/scheduler、有效 batch、resume step/状态、模块更新、分任务训练/验证曲线 | 预算不足或恢复错误不能包装为成熟模型机制 |
+| 评测链路 | 官方模型在相同任务/初始条件及已验证执行设置下的行为 | 双方失败优先排查共同链路；官方成功仍不能独自定位自训练失败原因 |
+
+task 3 无接触作为观测保留，不自动归因于 flow matching。task 0/1 方向相反也不能独自证明灾难性遗忘或梯度干扰；这些机制需要覆盖/优化审计和后续可区分实验。
+
+#### D. E0b：复现到可比能力并保留训练轨迹
+
+优先复用官方训练代码和经过核对的公开数据/配方。先判断能否继续现存谱系：有兼容 optimizer、scheduler、normalizer 和采样合同才称连续恢复；若改换配方、数据或重新初始化优化器，登记为分支/新训练，不与旧轨迹无差别拼接。无需从零重训 VLM；起点采用哪份 VLM/VLA 权重必须对应拟复现的官方实验。
+
+正式训练前必须形成一份可执行合同，包含以下字段；未测部分保持 TBD，不把论文预算直接当作已批准算力：
+
+- 官方目标：固定模型 revision、任务集合、eval contract；论文报告分数与本地复测分开。
+- 数据：版本、训练任务和 episodes、样本排除、训练/validation/最终确认分区；数据偏离官方时明确为适配。
+- 优化：可训练模块、有效 batch、累积、学习率/调度、总步数、训练 policy seed；推理噪声 seed 另记。
+- 资源：真实训练关键路径 smoke 的 seconds/update、峰值显存、预计 GPU 小时及存储；硬预算和终止规则为 TBD，完成测量后冻结。
+- 保存：初始化、按预定 update 间隔的中间 checkpoints、最终/validation-selected checkpoint，连同 optimizer/scheduler/RNG 和 preprocessing。间隔在看行为结果前确定，不能只保存成功率突增附近。
+- 评测：同一组 validation 初始条件定期看能力曲线；终点按预先冻结的 validation 规则选择。最终确认初始条件在选参期间不揭示；保留弱化任务，不能只汇报提升任务。
+
+“接近官方”需在同合同下定义差距容差：令 Δ 为自训练减官方的 task-macro success，冻结非劣容差 δ 与置信区间规则；拟采用配对 CI 下界大于 −δ，同时报告每任务差距及未达能力下限的任务。δ、任务能力下限、rollout 数量和预算须在正式确认前确定，不能由已观察到的测试效果反推。CI 跨零不代表等效。样本数按 validation 的配对结果/方差与目标精度规划，不照搬 9/10 或现有 40 次为固定充分样本。
+
+如果全任务达到官方附近的成本过高，可将结论限定到预先确定的任务子集；不得看 test 后删去 task 3 换取“复现成功”。即便尚未达到官方，单个有可靠能力的冻结模型仍可开展限定任务的机制研究；若要主张能力形成，则需同谱系内经留出行为确认的能力变化。训练充分后仍有任务异质性，再单独决定是否研究 task-conditioned reorganization；本修订不自动选择这一主线。
+
+#### E. E1–E4：无标签发现，外部测量解释
+
+Contact、StableGrasp、Phase、Recovery 不作为候选必须对应的内部字典，不用于 E2 候选排序、共享基底拟合或发现样本筛选。Recovery 尤其需要预定义失败/扰动和后续恢复的可操作标准，不能靠阶段名称自动生成真值。
+
+沿用 §12.4 的激活变化与功能响应变化两条发现通道：仅 discovery 数据拟合共享 PCA/SVD 或已验证 SAE；冻结候选后，用留出轨迹、连续几何、动作方向及 simulator 事件做解释。模型可能使用混合特征或多维子空间；无法命名而功能可重复的候选仍保留。稀疏、低秩与重建目标本身也是人为先验，需报告，不称“完全无先验”。
+
+动作响应筛选不能把同一批样本上的大 Δaction 再当作验证证据。候选、tap、剂量和预期行为方向在 discovery/validation 冻结，独立数据检验；未匹配或未通过的候选完整报告。
+
+物理标签是外部测量工具：例如严格五帧双侧接触只是 StableGrasp 的操作定义，不是全部成功操纵方式。保留连续几何、接触/抬升/轨迹与 success；检查边界样本和合理阈值敏感性，不按是否支持候选来调阈值。发现依据与事后命名分开存档，禁止因高标签相关性重新选择主候选。
+
+#### F. Flow 机制的评判标准
+
+沿用 t（环境时间）、k（训练步）、σ（生成阶段）、l（层）、j（action-token 位置）的区分。不得由图像生成类比预设早期规划、后期接触；这是需要实测的阶段假设。[Flow Matching](https://arxiv.org/abs/2210.02747) 给出的是生成建模方法，不是本项目任务失败的因果解释。
+
+| 等级 | 最小比较 | 支持什么；尚不支持什么 |
+| --- | --- | --- |
+| 局部计算 | 同 observation、x_sigma、sigma、normalizer 下的跨 checkpoint 查询 | 排除中间动作输入不同的混杂；不等于实际轨迹改变 |
+| 条件来源 | 有效匹配的图像/指令/proprio 对照及公共噪声重复 | 候选是否响应决策相关条件；混合输入离分布需测量 |
+| 生成阶段 | 高/中/低噪声的单阶段干预，同时记录 Δvelocity 和最终 Δaction | 定位作用时间；最终变化大不自动表示阶段更重要 |
+| 功能特异性 | 候选、同范数随机方向、低变化方向、剂量/反方向、no-op | 排除一般损伤和尺度效应；不自动证明某个人工概念 |
+| 物理后果 | 配对初始条件下验证预期轨迹/事件/成功与非目标损害 | 候选对限定行为的因果贡献；不等于所有任务通用机制 |
+
+自然积分轨迹与固定输入点查询并列保留；reference 轨迹点对其他 checkpoint 可能离分布，候选级反向 reference 检验仍适用。零编辑回放是工程检查，敲除后恢复原激活也不是独立的机制 rescue。
+
+主研究可检验“机制发生在 flow action expert 内”，无需先增加另一种模型。若升级为“任务差异由 flow matching 目标特有机制导致”，才增加匹配数据、backbone、预算和调参规则的非-flow 目标对照，或足以区分采样器因素的受控实验。只更换 solver 步数最多支持采样敏感性；不能单独证明训练目标因果作用。另列 action execution chunk length，避免将闭环反馈频率效应混作 flow 积分效应。
+
+#### G. 当前执行顺序与交付
+
+1. **立即审计**：核对 task 3 训练覆盖、现存训练合同、官方 checkpoint 身份及共同评测合同。交付训练/任务覆盖表与可复现实验参数；已有成功率原样保留。
+2. **建立参照**：固定官方模型的同任务能力结果；与当前 checkpoints 做强弱对照，明确非同谱系。
+3. **训练准备**：据审计结果形成继续训练或官方配方复现的具体配置、checkpoint 保存计划、验证规则、成本与停止上限。目标是获得可靠能力与可追溯轨迹，不预承诺达到官方分数。
+4. **机制发现**：在比较对象和行为能力确认后，补齐 E1 固定输入点和观察路径测量，按 E2 规则冻结候选。
+5. **功能与闭环验证**：E3 来源/阶段定位 → E4 匹配干预；旧 SAE family 独立复制要求继续适用，新候选单独验证。
+6. **按主张扩展**：G2b 用于预测解释，E5 用于任务相关充分性，RET/world model 为有明确问题时的对照。RL 保持冻结。
+
+下一阶段完成的判据是取得有来源的能力参照、明确训练充分性和比较谱系，并产出可验证的候选机制；不是额外完成多少探针或某个方法必须胜出。训练预算、官方等效容差和正式确认规模尚待训练合同审计及资源测量；本文件不把这些未决值伪造为已批准参数。
+
+#### H. 已实现的下一步接口（本地代码，尚未在服务器运行）
+
+训练合同审计复用现有 stage manifest 与 LeRobot episode catalog；训练任务、评测任务和待审计谱系必须在命令中分别声明。它独立报告 `training_coverage_complete`、`artifact_complete`、`resume_ready`、`execution_contract_complete` 与 `protocol_ready`，不再用单一 `reproduction_ready` 混合这些含义。缺失字段保持未知，不会把 `SFT100` 名称当成训练充分：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study \
+  libero stages audit-contract \
+  --config configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml \
+  --stage sft_100 \
+  --training-task libero_spatial:0 \
+  --training-task libero_spatial:1 \
+  --training-task libero_spatial:2 \
+  --evaluation-task libero_spatial:0 \
+  --evaluation-task libero_spatial:1 \
+  --evaluation-task libero_spatial:2 \
+  --evaluation-task libero_spatial:3
+```
+
+上述例子把 Spatial task 0–2 定义为当前 SFT 范围，把 task 3 定义为泛化评测；若服务器 manifest 证明了不同范围，应以新命令显式声明，不能覆盖旧 manifest。新 stage schema 将规划 batch 写入 manifest，训练命令读取该值；旧 schema 可审计和恢复，但不能无提示地作为新训练合同启动。
+
+物理事件 recorder v2 分开记录 `geometric_lift`、`supported_lift`、`unintended_drop`、`recovered_after_drop` 与 `normal_release`。最终 success 不会抹去先前 drop；`lift` 字段暂作为旧结果兼容别名，含义等于 `supported_lift`。已有 recorder v1 结果保持原样，其 release/drop 字段不得用于恢复机制结论，需由 v2 重跑或从逐帧数据重算。
+
+固定输入 flow 查询沿用 `flow_trace run`，增加 `--reference-trace`。参考 trace 必须是完整自然积分 trace，并与目标运行具有相同 StateBank、dataset、processor contract、solver steps、chunk 和 action dimensions；输出 binding 标记 `query_mode=fixed_reference_points`。这里固定的是参考模型自然路径上的 `x_sigma, sigma`，目标 checkpoint 仍使用自身在同一 observation 下形成的 observation/language/proprio 条件：
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study.libero.flow_trace run \
+  --checkpoint TARGET_CHECKPOINT \
+  --contract-checkpoint CONTRACT_CHECKPOINT \
+  --metadata METADATA \
+  --dataset-root DATASET \
+  --reference-trace NATURAL_REFERENCE_TRACE \
+  --output NEW_FIXED_QUERY_OUTPUT \
+  --device cuda --batch-size 4 --max-states 512 --noise-repeats 3
+```
+
+固定点输出只包含 `epsilon/sigma/x_sigma/velocity/expert_middle/expert_late`；不把强制替换每阶段输入后得到的 solver 终点称为自然生成动作。闭环和候选干预仍须在训练审计、能力比较与候选冻结后单独执行。

@@ -4,6 +4,7 @@ import torch
 from interaction_vla.representation_study.libero.flow_trace import (
     bind_policy_images,
     paired_inference_noise,
+    query_action_flow_at_points,
     trace_action_flow,
 )
 
@@ -66,3 +67,19 @@ def test_bind_policy_images_maps_two_libero_cameras_and_zeros_the_third():
     assert result["observation.images.camera2"] is wrist
     assert torch.count_nonzero(result["observation.images.camera3"]) == 0
     assert binding["observation.images.camera3"] == "zero_like:observation.images.image"
+
+
+def test_fixed_point_query_reuses_reference_path_without_following_native_path():
+    policy = FakePolicy()
+    noise = torch.ones(2, 2, 4)
+    reference = torch.stack((noise * 3, noise * 2, noise), dim=1)
+    result = query_action_flow_at_points(
+        policy, {}, noise, reference, np.array([1, 2 / 3, 1 / 3]),
+        policy.model.middle, policy.model.late,
+    )
+
+    np.testing.assert_allclose(result["x_sigma"], reference.numpy())
+    np.testing.assert_allclose(result["velocity"], reference.numpy() * 0.1 + np.array(
+        [1.0, 2 / 3, 1 / 3], dtype=np.float32)[None, :, None, None] * 0.1,
+        atol=1e-6,
+    )

@@ -10,7 +10,7 @@ from typing import Mapping, Sequence
 import numpy as np
 
 
-STAGE_SCHEMA = "libero_smolvla_stage_v1"
+STAGE_SCHEMA = "libero_smolvla_stage_v2"
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,7 @@ class StageManifest:
     subset_sha256: str
     seed: int
     epochs: int
+    batch_size: int
     training_steps: int
     checkpoint: str
     checkpoint_sha256: str | None
@@ -127,6 +128,7 @@ def build_stage_manifests(
         subset_sha256=_subset_hash(()),
         seed=seed,
         epochs=0,
+        batch_size=batch_size,
         training_steps=0,
         checkpoint=str(pretrained_path),
         checkpoint_sha256=pretrained_hash,
@@ -154,6 +156,7 @@ def build_stage_manifests(
             subset_sha256=_subset_hash(episode_indices),
             seed=seed,
             epochs=epochs,
+            batch_size=batch_size,
             training_steps=math.ceil(total_frames / batch_size) * epochs,
             checkpoint=str(checkpoint),
             checkpoint_sha256=checkpoint_hash,

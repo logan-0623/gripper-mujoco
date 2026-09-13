@@ -8,6 +8,7 @@ from interaction_vla.representation_study.libero.stages import (
 )
 from interaction_vla.representation_study.libero.training import (
     _tree_sha256,
+    audit_training_contract,
     build_stage_training_command,
 )
 import pytest
@@ -64,6 +65,7 @@ def test_absent_checkpoints_are_not_run_and_steps_scale_with_fraction(tmp_path: 
     assert manifests["sft_25"].training_steps < manifests["sft_50"].training_steps
     assert manifests["sft_50"].training_steps < manifests["sft_100"].training_steps
     assert manifests["sft_25"].subset_sha256 != manifests["sft_50"].subset_sha256
+    assert manifests["sft_100"].batch_size == 8
 
 
 def test_training_command_is_bound_to_nested_manifest(tmp_path: Path) -> None:
@@ -77,6 +79,7 @@ def test_training_command_is_bound_to_nested_manifest(tmp_path: Path) -> None:
         "dataset_revision": "a" * 40,
         "episode_indices": [1, 4, 7],
         "training_steps": 12,
+        "batch_size": 64,
     }
     write_json_atomic(tmp_path / "stages/sft_25/manifest.json", manifest)
     pretrained = tmp_path / "stages/pretrained/checkpoint"
@@ -93,6 +96,7 @@ def test_training_command_is_bound_to_nested_manifest(tmp_path: Path) -> None:
     command = build_stage_training_command(config, stage="sft_25")
     assert "--dataset.episodes=[1,4,7]" in command
     assert "--steps=12" in command
+    assert "--batch_size=64" in command
     assert "--cudnn_deterministic=true" in command
     assert "--policy.push_to_hub=false" in command
     assert (
@@ -103,3 +107,82 @@ def test_training_command_is_bound_to_nested_manifest(tmp_path: Path) -> None:
     (pretrained / "config.json").write_text('{"tampered": true}')
     with pytest.raises(ValueError, match="hash is stale"):
         build_stage_training_command(config, stage="sft_25")
+
+
+def test_training_contract_audit_exposes_missing_task_and_unknown_effective_batch(
+    tmp_path: Path,
+) -> None:
+    config = replace(
+        load_libero_study_config(
+            "configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml"
+        ),
+        output_dir=tmp_path,
+    )
+    episodes = _episodes()
+    for stage in ("sft_25", "sft_50", "sft_100"):
+        selected = [row.episode_index for row in episodes if row.task_id != 3]
+        checkpoint = tmp_path / f"stages/{stage}/run/checkpoints/000010"
+        model = checkpoint / "pretrained_model"
+        model.mkdir(parents=True)
+        (model / "config.json").write_text("{}")
+        (model / "model.safetensors").write_bytes(b"weights")
+        (model / "train_config.json").write_text('{"batch_size": 2}')
+        write_json_atomic(
+            tmp_path / f"stages/{stage}/manifest.json",
+            {
+                "stage": stage,
+                "status": "complete",
+                "episode_indices": selected,
+                "training_steps": 10,
+                "checkpoint": str(model),
+                "checkpoint_sha256": _tree_sha256(model),
+                "batch_size": 2,
+                "base_model": "base",
+                "base_revision": "a" * 40,
+            },
+        )
+
+    report = audit_training_contract(
+        config,
+        episodes,
+        training_tasks=(("libero_spatial", 0), ("libero_spatial", 1),
+                        ("libero_spatial", 2), ("libero_spatial", 3)),
+        evaluation_tasks=(("libero_spatial", 0), ("libero_spatial", 1),
+                          ("libero_spatial", 2), ("libero_spatial", 3)),
+        stages=("sft_100",),
+    )
+
+    assert report["training_coverage_complete"] is False
+    assert report["artifact_complete"] is True
+    assert report["resume_ready"] is False
+    assert report["protocol_ready"] is False
+    assert "libero_spatial/3" in report["stages"][0]["training_tasks_missing"]
+    assert report["stages"][0]["batch"]["effective"] is None
+
+
+def test_not_run_manifest_cannot_be_artifact_or_protocol_ready(tmp_path: Path) -> None:
+    config = replace(
+        load_libero_study_config(
+            "configs/representation_study/libero_smolvla_smoke_linux_cuda.yaml"
+        ), output_dir=tmp_path,
+    )
+    episodes = _episodes()
+    write_json_atomic(
+        tmp_path / "stages/sft_100/manifest.json",
+        {
+            "stage": "sft_100", "status": "not_run",
+            "episode_indices": [row.episode_index for row in episodes],
+            "training_steps": 10, "batch_size": 2,
+            "checkpoint": str(tmp_path / "fake"),
+        },
+    )
+    report = audit_training_contract(
+        config, episodes,
+        training_tasks=(("libero_spatial", 0),),
+        evaluation_tasks=(("libero_spatial", 0),),
+        stages=("sft_100",),
+    )
+    assert report["training_coverage_complete"] is True
+    assert report["artifact_complete"] is False
+    assert report["resume_ready"] is False
+    assert report["protocol_ready"] is False

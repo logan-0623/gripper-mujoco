@@ -30,7 +30,7 @@ def test_summarizes_grasp_lift_normal_release_and_drop() -> None:
         suite="libero_spatial", task_id=0, task_name="fixture", language="fixture",
         goal_atoms=(GoalAtom("on", ("target", "goal")),),
     )
-    frames = [frame(0, 0.0), frame(1, 0.01, contact=True), frame(2, 0.02, contact=True), frame(3, 0.0)]
+    frames = [frame(0, 0.0), frame(1, 0.01, contact=True), frame(2, 0.02, contact=True), frame(3, 0.0, goal=True)]
     tracker = EpisodeEventTracker(0, 10, 20, thresholds, 0.02, frames)
     result = _summarize(tracker, annotate_relocation_episode(frames, semantics, thresholds), success=True)
     assert result["stable_grasp"] and result["lift"] and result["normal_release"]
@@ -40,3 +40,25 @@ def test_summarizes_grasp_lift_normal_release_and_drop() -> None:
     tracker.frames = dropped
     result = _summarize(tracker, annotate_relocation_episode(dropped, semantics, thresholds), success=False)
     assert result["unintended_drop"] and not result["normal_release"]
+
+
+def test_drop_then_regrasp_success_preserves_drop_and_records_recovery() -> None:
+    thresholds = AnnotationThresholds(stable_window_frames=2, minimum_comotion_m=0.001)
+    semantics = TaskSemanticsRegistry.default().resolve(
+        suite="libero_spatial", task_id=0, task_name="fixture", language="fixture",
+        goal_atoms=(GoalAtom("on", ("target", "goal")),),
+    )
+    frames = [
+        frame(0, 0.0), frame(1, 0.02, contact=True), frame(2, 0.04, contact=True),
+        frame(3, 0.0), frame(4, 0.01, contact=True), frame(5, 0.02, contact=True),
+        frame(6, 0.02, goal=True),
+    ]
+    tracker = EpisodeEventTracker(0, 10, 20, thresholds, 0.02, frames)
+    result = _summarize(
+        tracker, annotate_relocation_episode(frames, semantics, thresholds), success=True
+    )
+    assert result["unintended_drop"] is True
+    assert result["recovered_after_drop"] is True
+    assert result["normal_release"] is True
+    assert result["geometric_lift"] is True
+    assert result["supported_lift"] is True

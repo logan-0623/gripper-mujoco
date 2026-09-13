@@ -8,8 +8,8 @@ target_venue:
   year: "2027"
   mode: "review"
 stage:
-  current: "smolvla_task_conditioned_reorganization_decision"
-  gate: "freeze_revised_task_conditioned_hypothesis_before_E2_or_recover_consistent_acquisition_lineage"
+  current: "smolvla_official_reference_and_training_contract_audit"
+  gate: "audit_explicit_training_scope_evaluation_scope_lineage_artifacts_resume_state_batch_binding_and_protocol_before_new_training_or_mechanism_discovery"
   updated_at: "2026-09-13"
 
 artifacts:
@@ -32,6 +32,7 @@ artifacts:
   sparse_feature_output: "outputs/representation_study/libero_smolvla/protocol_v5/sparse_features/"
   acquisition_flow_design: "docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md"
   acquisition_flow_evidence: "docs/results/libero_smolvla_acquisition_flow/"
+  acquisition_flow_training_audit: "outputs/representation_study/libero_smolvla/stages/training_contract_audit.json"
 
 scientific_contract:
   primary_question: "What physically grounded interaction information exists before manipulation SFT, what is selectively acquired or reorganized during SFT, where does it become action-proximal, and which factors are accessible, functionally used, or useful in closed loop?"
@@ -238,8 +239,8 @@ experiment_registry:
       confirmation_success_task_macro_delta_ci: [-0.05, 0.10]
       confirmation_integrity_passed: true
     finding: "Independent physical confirmation rejects a general ability-acquisition contrast and instead finds opposing task-conditioned changes: task 0 grasp/lift improves strongly while task 1 deteriorates."
-    limitation: "This single policy lineage supports task-conditioned reorganization, not a generic training law; E1 remains an eight-state natural-trajectory engineering smoke without fixed-input-point queries."
-    next_gate: "freeze a revised task-conditioned reorganization hypothesis and directional task contrast before E2, or recover a lineage with cross-task consistent acquisition"
+    limitation: "This single policy lineage supports task-conditioned reorganization, not a generic training law. Spatial task 3 was outside the configured three-task SFT scope unless server manifests prove otherwise. E0 physical-events v1 conflates final success with normal release, so archived release/drop fields cannot support recovery claims; success and other unaffected raw evidence remain preserved. E1 remains an eight-state natural-trajectory engineering smoke without a real-model fixed-input-point run."
+    next_gate: "audit official reference, task coverage, optimization budget, saved checkpoints, preprocessing, and evaluation contract; then obtain a sufficiently trained same-lineage comparison"
   - id: SECOND_VLA_REPLICATION
     name: "Targeted second-VLA replication"
     status: not_started

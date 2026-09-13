@@ -30,7 +30,10 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
     stable = [label.stable_grasp is True for label in labels]
     target_z = np.asarray([frame.target_pose[2, 3] for frame in tracker.frames])
     initial_z = float(target_z[0])
-    lift = [
+    geometric_lift = [
+        z - initial_z >= tracker.thresholds.lift_clearance_m for z in target_z
+    ]
+    supported_lift = [
         is_stable and z - initial_z >= tracker.thresholds.lift_clearance_m
         for is_stable, z in zip(stable, target_z, strict=True)
     ]
@@ -39,22 +42,16 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
         return next((i for i, value in enumerate(values[start:], start) if value), None)
 
     stable_onset = first(stable)
-    lift_onset = first(lift)
-    release_onset = (
-        first([not value for value in contact], stable_onset + 1)
-        if stable_onset is not None
-        else None
-    )
-    normal_release = bool(
-        release_onset is not None
-        and (
-            success
-            or any(frame.goal_satisfied for frame in tracker.frames[release_onset:])
-        )
-    )
+    geometric_lift_onset = first(geometric_lift)
+    lift_onset = first(supported_lift)
+    release_steps = [
+        index for index in range(1, len(contact))
+        if contact[index - 1] and not contact[index] and any(stable[:index])
+    ]
+    release_onset = release_steps[0] if release_steps else None
     max_lift = float(np.max(target_z - initial_z, initial=0.0))
     drop_onset = None
-    if lift_onset is not None and not normal_release:
+    if lift_onset is not None:
         peak = float(target_z[lift_onset])
         for index in range(lift_onset + 1, len(target_z)):
             peak = max(peak, float(target_z[index]))
@@ -65,6 +62,12 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
             ):
                 drop_onset = index
                 break
+    normal_release_steps = []
+    for release in release_steps:
+        next_contact = next((i for i in range(release + 1, len(contact)) if contact[i]), len(contact))
+        if any(frame.goal_satisfied for frame in tracker.frames[release:next_contact]):
+            normal_release_steps.append(release)
+    recovery_onset = None if drop_onset is None else first(stable, drop_onset + 1)
 
     longest = run = 0
     for value in stable:
@@ -78,16 +81,23 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
         "contact_onset_step": first(contact),
         "stable_grasp": any(stable),
         "stable_grasp_onset_step": stable_onset,
-        "lift": any(lift),
+        "geometric_lift": any(geometric_lift),
+        "geometric_lift_onset_step": geometric_lift_onset,
+        "supported_lift": any(supported_lift),
+        "supported_lift_onset_step": lift_onset,
+        "lift": any(supported_lift),
         "lift_onset_step": lift_onset,
         "max_target_lift_m": max_lift,
         "longest_stable_hold_steps": longest,
         "longest_stable_hold_s": longest / tracker.control_freq,
         "release_after_grasp": release_onset is not None,
         "release_onset_step": release_onset,
-        "normal_release": normal_release,
+        "normal_release": bool(normal_release_steps),
+        "normal_release_onset_step": normal_release_steps[0] if normal_release_steps else None,
         "unintended_drop": drop_onset is not None,
         "drop_onset_step": drop_onset,
+        "recovered_after_drop": recovery_onset is not None,
+        "recovery_onset_step": recovery_onset,
         "success": bool(success),
     }
 
@@ -112,7 +122,7 @@ def install_libero_event_recorder(
         write_json_atomic(
             output,
             {
-                "schema": "libero_capability_events_v1",
+                "schema": "libero_capability_events_v2",
                 "suite": suite,
                 "initial_state_offset": initial_state_offset,
                 "thresholds": thresholds.__dict__,

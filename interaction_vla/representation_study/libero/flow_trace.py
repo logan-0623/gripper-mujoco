@@ -202,6 +202,71 @@ def trace_action_flow(policy, processed, noise: torch.Tensor, middle_layer, late
     }
 
 
+def query_action_flow_at_points(policy, processed, noise: torch.Tensor, reference_x_sigma,
+                                reference_sigma, middle_layer, late_layer):
+    """Query one checkpoint at another trace's fixed (observation, x_sigma, sigma) points."""
+    points = torch.as_tensor(reference_x_sigma, device=noise.device, dtype=noise.dtype)
+    sigmas = np.asarray(reference_sigma, dtype=np.float32)
+    steps = int(policy.config.num_steps)
+    if points.shape != (len(noise), steps, *noise.shape[1:]) or sigmas.shape != (steps,):
+        raise ValueError("reference flow points do not match batch/noise/solver contract")
+    expected = np.arange(steps, 0, -1, dtype=np.float32) / steps
+    np.testing.assert_allclose(sigmas, expected, atol=1e-6, rtol=0)
+
+    flow = policy.model
+    original = flow.denoise_step
+    middle, late, velocity = [], [], []
+    handles = [
+        middle_layer.register_forward_hook(
+            lambda _m, _i, out: middle.append(_tensor_output(out).detach().cpu())
+        ),
+        late_layer.register_forward_hook(
+            lambda _m, _i, out: late.append(_tensor_output(out).detach().cpu())
+        ),
+    ]
+
+    def queried(*args, **kwargs):
+        index = len(velocity)
+        timestep = kwargs.get("timestep", args[3] if len(args) > 3 else None)
+        if timestep is None or index >= steps:
+            raise RuntimeError("SmolVLA denoise_step signature/count changed")
+        observed = float(torch.as_tensor(timestep).flatten()[0].detach().cpu())
+        if not np.isclose(observed, sigmas[index], atol=1e-6, rtol=0):
+            raise RuntimeError("solver sigma differs from frozen reference")
+        fixed = points[:, index]
+        if "x_t" in kwargs:
+            kwargs = dict(kwargs)
+            kwargs["x_t"] = fixed
+        else:
+            args = list(args)
+            args[2] = fixed
+        before = len(middle), len(late)
+        result = original(*args, **kwargs)
+        if (len(middle), len(late)) != (before[0] + 1, before[1] + 1):
+            raise RuntimeError("expert taps did not fire exactly once in a fixed-point query")
+        velocity.append(result.detach().cpu())
+        return result
+
+    flow.denoise_step = queried
+    try:
+        policy.reset()
+        with torch.inference_mode():
+            policy.predict_action_chunk(processed, noise=noise)
+    finally:
+        flow.denoise_step = original
+        for handle in handles:
+            handle.remove()
+    if not (len(velocity) == len(middle) == len(late) == steps):
+        raise RuntimeError(f"expected {steps} complete fixed-point queries")
+    return {
+        "sigma": sigmas,
+        "x_sigma": points.detach().cpu().float().numpy(),
+        "velocity": torch.stack(velocity, dim=1).float().numpy(),
+        "expert_middle": torch.stack(middle, dim=1).float().numpy(),
+        "expert_late": torch.stack(late, dim=1).float().numpy(),
+    }
+
+
 def _read_shard(path: Path, ids, binding_hash: str, repeats: int, binding):
     receipt = json.loads(path.with_suffix(".json").read_text())
     if receipt["binding_sha256"] != binding_hash or receipt["sha256"] != file_hash(path):
@@ -209,8 +274,9 @@ def _read_shard(path: Path, ids, binding_hash: str, repeats: int, binding):
     with np.load(path, allow_pickle=False) as data:
         if data["state_ids"].tolist() != list(ids):
             raise ValueError("shard state IDs/order mismatch")
-        required = {"epsilon", "sigma", "x_sigma", "velocity", "expert_middle",
-                    "expert_late", "final_x0", "action_normalized", "action_postprocessed"}
+        required = {"epsilon", "sigma", "x_sigma", "velocity", "expert_middle", "expert_late"}
+        if binding.get("query_mode") == "natural_integration":
+            required.update({"final_x0", "action_normalized", "action_postprocessed"})
         if not required.issubset(data.files):
             raise ValueError("incomplete flow trace shard")
         if data["epsilon"].shape[:2] != (len(ids), repeats):
@@ -241,7 +307,8 @@ def plan(bank: Path, *, partition: str, max_states: int, repeats: int):
 
 
 def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metadata: Path, output: Path, *,
-        device: str, batch_size: int, partition: str, max_states: int, repeats: int):
+        device: str, batch_size: int, partition: str, max_states: int, repeats: int,
+        reference_trace: Path | None = None):
     if batch_size <= 0 or repeats <= 0:
         raise ValueError("batch_size and repeats must be positive")
     if os.environ.get("HF_HUB_OFFLINE") != "1" or os.environ.get("TRANSFORMERS_OFFLINE") != "1":
@@ -250,6 +317,18 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
     if not manifest.get("audit_passed"):
         raise ValueError("StateBank audit has not passed")
     selected = select_records(records, split, partition=partition, max_states=max_states)
+    reference = None
+    if reference_trace is not None:
+        from .flow_diff import load_trace
+
+        reference_ids, reference_arrays, reference_binding, reference_manifest = load_trace(reference_trace)
+        if reference_binding.get("query_mode", "natural_integration") != "natural_integration":
+            raise ValueError("reference trace must be a natural integration trace")
+        if reference_ids.tolist() != [row.state_id for row in selected]:
+            raise ValueError("reference trace state IDs/order differ from this selection")
+        if reference_arrays["epsilon"].shape[1] != repeats:
+            raise ValueError("reference trace noise repeats differ")
+        reference = (reference_arrays, reference_binding, reference_manifest)
     revisions = {row.source_revision for row in selected}
     if len(revisions) != 1:
         raise ValueError("mixed dataset revisions")
@@ -285,11 +364,23 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
         "num_steps": int(policy.config.num_steps), "chunk_size": int(policy.config.chunk_size),
         "max_action_dim": int(policy.config.max_action_dim), "expert_layer_count": len(layers),
         "expert_middle_index": middle_index, "expert_late_index": late_index,
+        "query_mode": "fixed_reference_points" if reference is not None else "natural_integration",
+        "reference_trace": (
+            {"path": str(reference_trace.resolve()),
+             "binding_sha256": reference[2]["binding_sha256"]}
+            if reference is not None else None
+        ),
         "image_binding": image_binding,
         "runtime": _runtime_provenance(policy, batch_size=batch_size),
         "source_sha256": {path.name: file_hash(path) for path in
                           (Path(__file__), Path(__file__).with_name("latents.py"))},
     }
+    if reference is not None:
+        reference_binding = reference[1]
+        for key in ("state_bank_sha256", "dataset_revision", "dataset_scientific_sha256",
+                    "contract_tree_sha256", "num_steps", "chunk_size", "max_action_dim"):
+            if reference_binding.get(key) != binding.get(key):
+                raise ValueError(f"reference trace contract differs: {key}")
     if (output / "binding.json").exists():
         if json.loads((output / "binding.json").read_text()) != binding:
             raise ValueError("resume binding differs; use a new output directory")
@@ -316,14 +407,28 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
             processed = pre(batch)
             traces = []
             for repeat in range(repeats):
-                noise = paired_inference_noise(
-                    ids, repeat, (binding["chunk_size"], binding["max_action_dim"])
-                ).to(device)
-                trace = trace_action_flow(policy, processed, noise, layers[middle_index], layers[late_index])
-                action_dim = trace["action_normalized"].shape[-1]
-                trace["action_postprocessed"] = post(
-                    torch.from_numpy(trace["action_normalized"]).to(device).reshape(-1, action_dim)
-                ).reshape(len(rows), binding["chunk_size"], action_dim).detach().cpu().float().numpy()
+                if reference is None:
+                    noise = paired_inference_noise(
+                        ids, repeat, (binding["chunk_size"], binding["max_action_dim"])
+                    ).to(device)
+                    trace = trace_action_flow(
+                        policy, processed, noise, layers[middle_index], layers[late_index]
+                    )
+                    action_dim = trace["action_normalized"].shape[-1]
+                    trace["action_postprocessed"] = post(
+                        torch.from_numpy(trace["action_normalized"]).to(device).reshape(-1, action_dim)
+                    ).reshape(len(rows), binding["chunk_size"], action_dim).detach().cpu().float().numpy()
+                else:
+                    reference_arrays = reference[0]
+                    stop = start + len(rows)
+                    noise = torch.from_numpy(reference_arrays["epsilon"][start:stop, repeat]).to(device)
+                    trace = query_action_flow_at_points(
+                        policy, processed, noise,
+                        reference_arrays["x_sigma"][start:stop, repeat],
+                        reference_arrays["sigma"][repeat],
+                        layers[middle_index], layers[late_index],
+                    )
+                    trace["epsilon"] = noise.detach().cpu().float().numpy()
                 traces.append(trace)
             arrays = {
                 name: np.stack([trace[name] for trace in traces], axis=0 if name == "sigma" else 1)
@@ -373,6 +478,8 @@ def main():
     parser.add_argument("--partition", choices=("train", "validation", "test"), default="train")
     parser.add_argument("--max-states", type=int, default=512)
     parser.add_argument("--noise-repeats", type=int, default=3)
+    parser.add_argument("--reference-trace", type=Path,
+                        help="Natural trace whose x_sigma/sigma points are held fixed for this checkpoint")
     args = parser.parse_args()
     if args.command == "plan":
         print(json.dumps(plan(args.bank, partition=args.partition, max_states=args.max_states,
@@ -383,7 +490,8 @@ def main():
     print(json.dumps(run(args.bank, args.dataset_root, args.checkpoint,
                          args.contract_checkpoint or args.checkpoint, args.metadata, args.output,
                          device=args.device, batch_size=args.batch_size, partition=args.partition,
-                         max_states=args.max_states, repeats=args.noise_repeats), indent=2))
+                         max_states=args.max_states, repeats=args.noise_repeats,
+                         reference_trace=args.reference_trace), indent=2))
 
 
 if __name__ == "__main__":

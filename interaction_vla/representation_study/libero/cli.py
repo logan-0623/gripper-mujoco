@@ -24,6 +24,17 @@ INTERVENTION_CONDITIONS = (
 )
 
 
+def _task_ref(value: str) -> tuple[str, int]:
+    try:
+        suite, task = value.rsplit(":", 1)
+        result = suite, int(task)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("task must be SUITE:TASK_ID") from error
+    if not suite or result[1] < 0:
+        raise argparse.ArgumentTypeError("task must be SUITE:TASK_ID")
+    return result
+
+
 def add_libero_parser(families: argparse._SubParsersAction) -> None:
     parser = families.add_parser(
         "libero", help="shared LIBERO State Bank and longitudinal SmolVLA study"
@@ -52,6 +63,13 @@ def add_libero_parser(families: argparse._SubParsersAction) -> None:
     stage_train.add_argument("--resume", action="store_true")
     stage_snapshot = stage_commands.add_parser("snapshot")
     stage_snapshot.add_argument("--config", type=Path, required=True)
+    stage_audit = stage_commands.add_parser("audit-contract")
+    stage_audit.add_argument("--config", type=Path, required=True)
+    stage_audit.add_argument("--training-task", type=_task_ref, action="append", required=True)
+    stage_audit.add_argument("--evaluation-task", type=_task_ref, action="append", required=True)
+    stage_audit.add_argument("--stage", choices=("sft_25", "sft_50", "sft_100"),
+                             action="append", required=True)
+    stage_audit.add_argument("--protocol", type=Path)
 
     latents = commands.add_parser("latents", help="semantic SmolVLA latent cache")
     latent_commands = latents.add_subparsers(dest="libero_command", required=True)
@@ -373,7 +391,7 @@ def _plan_stages(config_path: Path, batch_size: int | None) -> dict[str, object]
     identity_keys = {
         "schema_version", "stage", "base_model", "base_revision", "dataset_repo_id",
         "dataset_revision", "data_fraction", "episode_indices", "subset_sha256", "seed",
-        "epochs", "training_steps", "checkpoint", "code_hash", "config_hash",
+        "epochs", "batch_size", "training_steps", "checkpoint", "code_hash", "config_hash",
     }
     for stage, manifest in manifests.items():
         manifest_path = config.output_dir / "stages" / stage / "manifest.json"
@@ -429,6 +447,21 @@ def dispatch(args: argparse.Namespace) -> dict[str, object]:
         from .training import snapshot_pretrained_stage
 
         return snapshot_pretrained_stage(load_libero_study_config(args.config))
+    if args.libero_family == "stages" and args.libero_command == "audit-contract":
+        from .training import audit_training_contract
+
+        config = load_libero_study_config(args.config)
+        catalog = load_source_catalog(config)
+        episodes = tuple(
+            EpisodeInfo(item.episode_index, item.descriptor.suite,
+                        item.descriptor.task_id, len(item.descriptor.actions))
+            for item in catalog.lerobot_episodes
+        )
+        return audit_training_contract(
+            config, episodes, training_tasks=args.training_task,
+            evaluation_tasks=args.evaluation_task, stages=args.stage,
+            protocol_path=args.protocol,
+        )
     if args.libero_family == "latents":
         from .latents import extract_smolvla_latents, inspect_stage_latents
 
