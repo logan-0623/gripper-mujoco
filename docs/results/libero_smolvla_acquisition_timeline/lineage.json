@@ -1,0 +1,161 @@
+{
+  "base_checkpoint": "/root/autodl-tmp/gripper-mujoco-outputs/representation_study/libero_smolvla/stages/pretrained/checkpoint",
+  "base_checkpoint_sha256": "bd8a2c55d285972df7cf3e87af2be93f503380e5088db90671f109135140e182",
+  "checkpoints": [
+    {
+      "checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/005000/pretrained_model",
+      "checkpoint_sha256": "de755b0d2814d9dc552ff7cb7f0dc8881f555f5617728a86a45943df7f0a0bee",
+      "step": 5000,
+      "train_config_sha256": "52d367747f9ba910af2bcd486ec129d77d0ce87775ec2fd8674a7703f6e06c11",
+      "training_state_sha256": "efc1d9e57c1306d587b4e81960cbca2612ce8ba128781a915e402bd9d7f31ada"
+    },
+    {
+      "checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/010000/pretrained_model",
+      "checkpoint_sha256": "dc7af5fb755bbe8c7f9ef0ed5fd690d22a9bacb6f56ff0ccad4a9e45c8a2584f",
+      "step": 10000,
+      "train_config_sha256": "52d367747f9ba910af2bcd486ec129d77d0ce87775ec2fd8674a7703f6e06c11",
+      "training_state_sha256": "4878fd4b04ac72a2f306b6607feb13d2d3cda8fa3c6e6fc631fc6daa8aa4fc83"
+    },
+    {
+      "checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/015000/pretrained_model",
+      "checkpoint_sha256": "a4c3f12764c9aa8ebb57f5d694e6293c50525865b01f644dae2e46e68449ebfe",
+      "step": 15000,
+      "train_config_sha256": "52d367747f9ba910af2bcd486ec129d77d0ce87775ec2fd8674a7703f6e06c11",
+      "training_state_sha256": "2c18162482fe9b433c32b40e319d8e834637753fabf840ea6ce6200bbcc2c789"
+    },
+    {
+      "checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/020000/pretrained_model",
+      "checkpoint_sha256": "84931a3ce9e820d7903b0680aebcf24f8f59cc8fcc0c7517ef9d699eda2a4c84",
+      "step": 20000,
+      "train_config_sha256": "52d367747f9ba910af2bcd486ec129d77d0ce87775ec2fd8674a7703f6e06c11",
+      "training_state_sha256": "1232dd8b94cd0ebf1ccd7bf518abaedee38000b7a7d0741c7e60924316de3585"
+    },
+    {
+      "checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/025000/pretrained_model",
+      "checkpoint_sha256": "e83c0ff7f8ba13be4410884ccc718c5368fd63e08670576ca7c0b4335873e5fb",
+      "step": 25000,
+      "train_config_sha256": "52d367747f9ba910af2bcd486ec129d77d0ce87775ec2fd8674a7703f6e06c11",
+      "training_state_sha256": "34797a430b1c7c05ce02680997d60c6681812892027a4232978c9e90272e4d12"
+    }
+  ],
+  "kind": "immutable_lineage",
+  "schema": "smolvla_acquisition_v1",
+  "training_contract": {
+    "batch_size": 32,
+    "dataset": {
+      "depth_output_unit": "mm",
+      "episodes": null,
+      "eval_split": 0.0,
+      "image_transforms": {
+        "enable": false,
+        "max_num_transforms": 3,
+        "random_order": false,
+        "tfs": {
+          "affine": {
+            "kwargs": {
+              "degrees": [
+                -5.0,
+                5.0
+              ],
+              "translate": [
+                0.05,
+                0.05
+              ]
+            },
+            "type": "RandomAffine",
+            "weight": 1.0
+          },
+          "brightness": {
+            "kwargs": {
+              "brightness": [
+                0.8,
+                1.2
+              ]
+            },
+            "type": "ColorJitter",
+            "weight": 1.0
+          },
+          "contrast": {
+            "kwargs": {
+              "contrast": [
+                0.8,
+                1.2
+              ]
+            },
+            "type": "ColorJitter",
+            "weight": 1.0
+          },
+          "hue": {
+            "kwargs": {
+              "hue": [
+                -0.05,
+                0.05
+              ]
+            },
+            "type": "ColorJitter",
+            "weight": 1.0
+          },
+          "saturation": {
+            "kwargs": {
+              "saturation": [
+                0.5,
+                1.5
+              ]
+            },
+            "type": "ColorJitter",
+            "weight": 1.0
+          },
+          "sharpness": {
+            "kwargs": {
+              "sharpness": [
+                0.5,
+                1.5
+              ]
+            },
+            "type": "SharpnessJitter",
+            "weight": 1.0
+          }
+        }
+      },
+      "repo_id": "lerobot/libero",
+      "repo_type": "dataset",
+      "return_uint8": false,
+      "revision": "a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4",
+      "root": "/root/autodl-tmp/gripper-mujoco-hf-cache/lerobot/hub/datasets--lerobot--libero/snapshots/a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4",
+      "streaming": false,
+      "use_imagenet_stats": false,
+      "video_backend": "torchcodec"
+    },
+    "optimizer": {
+      "betas": [
+        0.9,
+        0.95
+      ],
+      "eps": 1e-08,
+      "grad_clip_norm": 10.0,
+      "lr": 0.0001,
+      "type": "adamw",
+      "weight_decay": 1e-10
+    },
+    "policy_training": {
+      "freeze_vision_encoder": false,
+      "load_vlm_weights": true,
+      "pretrained_path": "/root/autodl-tmp/gripper-mujoco-outputs/representation_study/libero_smolvla/stages/pretrained/checkpoint",
+      "train_expert_only": false,
+      "train_state_proj": true
+    },
+    "rename_map": {
+      "observation.images.image": "observation.images.camera1",
+      "observation.images.image2": "observation.images.camera2"
+    },
+    "scheduler": {
+      "decay_lr": 2.5e-06,
+      "num_decay_steps": 25000,
+      "num_warmup_steps": 1000,
+      "peak_lr": 0.0001,
+      "type": "cosine_decay_with_warmup"
+    },
+    "seed": 1000,
+    "steps": 25000
+  }
+}
