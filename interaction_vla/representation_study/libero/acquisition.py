@@ -201,6 +201,17 @@ def discover_change_subspaces(traces: Mapping[str, Path], *, before: str, after:
     shapes = {value[1][tap].shape for value in loaded.values()}
     if len(shapes) != 1 or any(not np.array_equal(value[0], reference_ids) for value in loaded.values()):
         raise ValueError("traces must have aligned states and activation shapes")
+    query_modes = {value[2].get("query_mode", "natural_integration")
+                   for value in loaded.values()}
+    if len(query_modes) != 1:
+        raise ValueError("discovery traces must use one query mode")
+    reference_arrays = loaded[before][1]
+    paired_keys = ("epsilon", "sigma", "x_sigma") if query_modes == {
+        "fixed_reference_points"
+    } else ("epsilon", "sigma")
+    if any(not np.array_equal(value[1][key], reference_arrays[key])
+           for value in loaded.values() for key in paired_keys):
+        raise ValueError("discovery traces do not share fixed flow inputs")
     # State and solver stage are the sampling units; token/noise replicates are averaged.
     state_stage = {
         name: value[1][tap].mean(axis=(1, 3)) for name, value in loaded.items()
@@ -243,6 +254,7 @@ def discover_change_subspaces(traces: Mapping[str, Path], *, before: str, after:
         "schema": SCHEMA, "kind": "frozen_change_candidates", "before": before,
         "after": after, "tap": tap, "rank": effective_rank,
         "selection_uses_physical_labels": False,
+        "query_mode": next(iter(query_modes)),
         "sampling_unit": "state x solver_stage; token/noise averaged",
         "trace_bindings": {name: value[3]["binding_sha256"] for name, value in loaded.items()},
         "shared_basis_sha256": file_hash(output / "shared_basis.npz"),
@@ -250,6 +262,206 @@ def discover_change_subspaces(traces: Mapping[str, Path], *, before: str, after:
     }
     write_json_atomic(output / "candidates.json", report)
     return report
+
+
+def candidate_trajectory(traces: Mapping[str, Path], candidates: Path,
+                         output: Path) -> dict:
+    """Project frozen candidates through checkpoints without refitting them."""
+    if len(traces) < 2 or output.exists():
+        raise ValueError("trajectory requires at least two traces and a new output directory")
+    artifact = json.loads(candidates.read_text(encoding="utf-8"))
+    rows = artifact.get("candidates", [])
+    if not rows:
+        raise ValueError("candidate artifact is empty")
+    tap = artifact["tap"]
+    directions = np.asarray([row["direction"] for row in rows], dtype=np.float64)
+    loaded = {name: load_trace(path) for name, path in traces.items()}
+    reference_ids = next(iter(loaded.values()))[0]
+    query_modes = {value[2].get("query_mode", "natural_integration")
+                   for value in loaded.values()}
+    if query_modes != {artifact.get("query_mode", next(iter(query_modes)))}:
+        raise ValueError("trajectory query mode differs from frozen discovery")
+    reference_arrays = next(iter(loaded.values()))[1]
+    paired_keys = ("epsilon", "sigma", "x_sigma") if query_modes == {
+        "fixed_reference_points"
+    } else ("epsilon", "sigma")
+    arrays = {}
+    for name, (ids, values, _, _) in loaded.items():
+        if not np.array_equal(ids, reference_ids) or tap not in values:
+            raise ValueError(f"unaligned or incomplete trajectory trace: {name}")
+        if any(not np.array_equal(values[key], reference_arrays[key]) for key in paired_keys):
+            raise ValueError(f"trajectory trace does not share flow inputs: {name}")
+        activations = values[tap]
+        if activations.ndim != 5 or activations.shape[-1] != directions.shape[1]:
+            raise ValueError("candidate direction and activation widths differ")
+        arrays[name] = np.einsum(
+            "nrsd,cd->ncrs", activations.mean(axis=3), directions, optimize=True
+        )
+    before, after = artifact["before"], artifact["after"]
+    if before not in arrays or after not in arrays:
+        raise ValueError("trajectory must include the frozen discovery endpoints")
+    endpoint_delta = arrays[after].mean(axis=(0, 2, 3)) - arrays[before].mean(axis=(0, 2, 3))
+    summaries = []
+    for name, values in arrays.items():
+        mean = values.mean(axis=(0, 2))
+        shift = values.mean(axis=(0, 2, 3)) - arrays[before].mean(axis=(0, 2, 3))
+        progress = np.divide(shift, endpoint_delta, out=np.full_like(shift, np.nan),
+                             where=np.abs(endpoint_delta) > 1e-12)
+        summaries.append({
+            "checkpoint": name,
+            "candidate_stage_mean": mean.tolist(),
+            "candidate_stage_std": values.std(axis=(0, 2)).tolist(),
+            "relative_endpoint_progress": progress.tolist(),
+        })
+    buffer = io.BytesIO()
+    np.savez(buffer, state_ids=reference_ids,
+             checkpoint_names=np.asarray(list(arrays)),
+             candidate_ids=np.asarray([row["id"] for row in rows]),
+             **{f"projection_{name}": value.astype(np.float32)
+                for name, value in arrays.items()})
+    write_bytes_atomic(output / "projections.npz", buffer.getvalue())
+    report = {
+        "schema": SCHEMA, "kind": "frozen_candidate_trajectory",
+        "candidate_sha256": file_hash(candidates), "tap": tap,
+        "selection_uses_physical_labels": False,
+        "state_ids": reference_ids.tolist(), "summaries": summaries,
+        "trace_bindings": {name: value[3]["binding_sha256"]
+                           for name, value in loaded.items()},
+        "projections_sha256": file_hash(output / "projections.npz"),
+    }
+    write_json_atomic(output / "report.json", report)
+    return report
+
+
+def _incremental_r2(y: np.ndarray, nuisance: np.ndarray, target: np.ndarray) -> float:
+    keep = np.isfinite(y) & np.isfinite(target) & np.isfinite(nuisance).all(axis=1)
+    y, nuisance, target = y[keep], nuisance[keep], target[keep]
+    if len(y) < nuisance.shape[1] + 3 or np.var(y) < 1e-12:
+        return float("nan")
+    base = np.column_stack((np.ones(len(y)), nuisance))
+    full = np.column_stack((base, target))
+    error_base = np.square(y - base @ np.linalg.lstsq(base, y, rcond=None)[0]).sum()
+    error_full = np.square(y - full @ np.linalg.lstsq(full, y, rcond=None)[0]).sum()
+    return float((error_base - error_full) / error_base) if error_base > 1e-12 else float("nan")
+
+
+def interpret_candidates(trajectory: Path, state_bank: Path, checkpoint: str,
+                         output: Path) -> dict:
+    """Interpret already-frozen candidates; never select candidates here."""
+    if output.exists():
+        raise FileExistsError(f"refusing to overwrite interpretation: {output}")
+    report = json.loads((trajectory / "report.json").read_text(encoding="utf-8"))
+    if report.get("kind") != "frozen_candidate_trajectory" or (
+        report["projections_sha256"] != file_hash(trajectory / "projections.npz")
+    ):
+        raise ValueError("trajectory artifact is incomplete or changed")
+    records, _, _, _ = load_state_bank(state_bank)
+    by_id = {row.state_id: row for row in records}
+    with np.load(trajectory / "projections.npz", allow_pickle=False) as data:
+        ids = data["state_ids"].tolist()
+        key = f"projection_{checkpoint}"
+        if key not in data.files or any(item not in by_id for item in ids):
+            raise ValueError("checkpoint or StateBank coverage differs from trajectory")
+        values = data[key].mean(axis=2)  # state x candidate x solver stage
+        candidate_ids = data["candidate_ids"].tolist()
+    selected = [by_id[item] for item in ids]
+    task_values = sorted({row.task_id for row in selected})
+    nuisance = np.column_stack((
+        np.asarray([row.frame_index for row in selected], dtype=float),
+        *[np.asarray([row.task_id == task for row in selected], dtype=float)
+          for task in task_values[1:]],
+    ))
+    labels = {
+        "contact": np.asarray([
+            float(row.labels.contact.gripper_target)
+            if row.labels.contact is not None else np.nan for row in selected
+        ]),
+        "stable_grasp": np.asarray([
+            float(row.labels.stable_grasp)
+            if row.labels.stable_grasp is not None else np.nan for row in selected
+        ]),
+        "gripper_target_distance": np.asarray([
+            row.labels.geometry.gripper_target_distance
+            if row.labels.geometry is not None else np.nan for row in selected
+        ]),
+        "target_goal_distance": np.asarray([
+            row.labels.geometry.target_goal_distance
+            if row.labels.geometry is not None else np.nan for row in selected
+        ]),
+        "action_norm": np.asarray([np.linalg.norm(row.observation.action) for row in selected]),
+        "action_gripper": np.asarray([row.observation.action[6] for row in selected]),
+    }
+    phases = sorted({row.labels.phase for row in selected if row.labels.phase is not None})
+    for phase in phases:
+        labels[f"phase:{phase}"] = np.asarray([
+            float(row.labels.phase == phase) if row.labels.phase is not None else np.nan
+            for row in selected
+        ])
+    rows = []
+    for candidate_index, candidate_id in enumerate(candidate_ids):
+        for stage in range(values.shape[2]):
+            y = values[:, candidate_index, stage]
+            rows.append({
+                "candidate_id": candidate_id, "stage": stage,
+                "conditional_incremental_r2": {
+                    name: _incremental_r2(y, nuisance, target)
+                    for name, target in labels.items()
+                },
+            })
+    result = {
+        "schema": SCHEMA, "kind": "post_freeze_candidate_interpretation",
+        "trajectory_sha256": file_hash(trajectory / "report.json"),
+        "state_bank_sha256": file_hash(state_bank / "manifest.json"),
+        "checkpoint": checkpoint, "selection_performed": False,
+        "nuisance": ["frame_index", "task_identity"],
+        "action_fields_are_leakage_diagnostics": True,
+        "unavailable_state_labels": ["geometric_lift", "supported_lift", "success"],
+        "closed_loop_metrics_are_reported_only_after_intervention": True,
+        "rows": rows,
+    }
+    write_json_atomic(output, result)
+    return result
+
+
+def intervention_smoke_command(bank: Path, dataset_root: Path, checkpoint: Path,
+                               contract: Path, metadata: Path, candidates: Path,
+                               candidate_id: str, output: Path, *, device: str,
+                               max_states: int, dose: float, stages: Sequence[int]) -> dict:
+    """Run one baseline plus signed, stage-local edits through the real trace path."""
+    if max_states <= 0 or dose <= 0 or not stages or min(stages) < 0 or max(stages) >= 10:
+        raise ValueError("smoke states, dose, and stages are invalid")
+    groups = {"early": tuple(x for x in stages if x <= 2),
+              "middle": tuple(x for x in stages if 3 <= x <= 6),
+              "late": tuple(x for x in stages if x >= 7),
+              "all": tuple(stages)}
+    groups = {name: value for name, value in groups.items() if value}
+    common = [sys.executable, "-W", "error::RuntimeWarning", "-m",
+              "interaction_vla.representation_study.libero.flow_trace", "run",
+              "--bank", str(bank), "--dataset-root", str(dataset_root),
+              "--checkpoint", str(checkpoint), "--contract-checkpoint", str(contract),
+              "--metadata", str(metadata), "--device", device, "--batch-size", "1",
+              "--max-states", str(max_states), "--noise-repeats", "1"]
+    commands = [common + ["--output", str(output / "baseline")]]
+    for name, selected_stages in groups.items():
+        for sign in (-1, 1):
+            destination = output / f"{name}_{sign:+d}"
+            command = common + ["--output", str(destination), "--candidates", str(candidates),
+                                "--candidate-id", candidate_id, "--dose", str(sign * dose)]
+            for stage in selected_stages:
+                command.extend(("--edit-stage", str(stage)))
+            commands.append(command)
+    for command in commands:
+        destination = Path(command[command.index("--output") + 1])
+        if (destination / "manifest.json").is_file():
+            continue
+        subprocess.run(command, check=True)
+    result = {"schema": SCHEMA, "kind": "real_policy_intervention_smoke",
+              "candidate_sha256": file_hash(candidates), "candidate_id": candidate_id,
+              "dose": dose, "stage_groups": {key: list(value) for key, value in groups.items()},
+              "max_states": max_states, "conditions": [Path(command[command.index("--output") + 1]).name
+                                                         for command in commands]}
+    write_json_atomic(output / "report.json", result)
+    return result
 
 
 def offline_action_gate(baseline: Path, edited: Mapping[str, Path], candidates: Path,
@@ -443,6 +655,28 @@ def main() -> None:
     discover.add_argument("--before", required=True); discover.add_argument("--after", required=True)
     discover.add_argument("--tap", choices=("expert_middle", "expert_late"), required=True)
     discover.add_argument("--rank", type=int, default=32); discover.add_argument("--output", type=Path, required=True)
+    trajectory = commands.add_parser("candidate-trajectory")
+    trajectory.add_argument("--trace", action="append", default=[], required=True)
+    trajectory.add_argument("--candidates", type=Path, required=True)
+    trajectory.add_argument("--output", type=Path, required=True)
+    interpret = commands.add_parser("candidate-interpret")
+    interpret.add_argument("--trajectory", type=Path, required=True)
+    interpret.add_argument("--state-bank", type=Path, required=True)
+    interpret.add_argument("--checkpoint", required=True)
+    interpret.add_argument("--output", type=Path, required=True)
+    smoke = commands.add_parser("intervention-smoke")
+    smoke.add_argument("--bank", type=Path, required=True)
+    smoke.add_argument("--dataset-root", type=Path, required=True)
+    smoke.add_argument("--checkpoint", type=Path, required=True)
+    smoke.add_argument("--contract-checkpoint", type=Path, required=True)
+    smoke.add_argument("--metadata", type=Path, required=True)
+    smoke.add_argument("--candidates", type=Path, required=True)
+    smoke.add_argument("--candidate-id", required=True)
+    smoke.add_argument("--output", type=Path, required=True)
+    smoke.add_argument("--device", default="cuda")
+    smoke.add_argument("--max-states", type=int, default=2)
+    smoke.add_argument("--dose", type=float, default=1.0)
+    smoke.add_argument("--edit-stage", type=int, action="append", default=[])
     gate = commands.add_parser("gate")
     gate.add_argument("--baseline", type=Path, required=True)
     gate.add_argument("--edited", action="append", default=[], required=True)
@@ -468,6 +702,9 @@ def main() -> None:
     elif args.command == "evaluate": result = evaluate_timeline(args.lineage, args.output, args.task or range(4), initial_state_offset=args.initial_state_offset, episodes=args.episodes, dry_run=args.dry_run)
     elif args.command == "summarize": result = summarize_timeline(args.lineage, args.root, args.output)
     elif args.command == "discover": result = discover_change_subspaces(_assignments(args.trace), before=args.before, after=args.after, tap=args.tap, rank=args.rank, output=args.output)
+    elif args.command == "candidate-trajectory": result = candidate_trajectory(_assignments(args.trace), args.candidates, args.output)
+    elif args.command == "candidate-interpret": result = interpret_candidates(args.trajectory, args.state_bank, args.checkpoint, args.output)
+    elif args.command == "intervention-smoke": result = intervention_smoke_command(args.bank, args.dataset_root, args.checkpoint, args.contract_checkpoint, args.metadata, args.candidates, args.candidate_id, args.output, device=args.device, max_states=args.max_states, dose=args.dose, stages=args.edit_stage or tuple(range(10)))
     elif args.command == "gate": result = offline_action_gate(args.baseline, _assignments(args.edited), args.candidates, args.output)
     elif args.command == "closed-loop": result = run_closed_loop(args.checkpoint, args.candidates, args.gate, args.output, args.task or range(4), args.candidate_id, dose=args.dose, stages=args.edit_stage or (0, 5, 9), initial_state_offset=args.initial_state_offset, episodes=args.episodes, dry_run=args.dry_run)
     else: result = summarize_closed_loop(args.root, args.output)

@@ -14,6 +14,8 @@ def _trace(offset: float):
         "expert_middle": values,
         "expert_late": values,
         "action_postprocessed": rng.normal(size=(6, 2, 4, 7)).astype("float32"),
+        "epsilon": np.zeros((6, 2, 4, 8), dtype="float32"),
+        "sigma": np.zeros((2, 3), dtype="float32"),
     }
     return np.array([f"s{i}" for i in range(6)]), arrays, {}, {"binding_sha256": str(offset)}
 
@@ -50,6 +52,55 @@ def test_label_blind_discovery_freezes_formation_and_controls(tmp_path: Path, mo
     assert result["selection_uses_physical_labels"] is False
     assert (output / "shared_basis.npz").is_file()
     assert (output / "candidates.json").is_file()
+
+
+def test_frozen_candidate_trajectory_does_not_refit(tmp_path: Path, monkeypatch):
+    candidates = tmp_path / "candidates.json"
+    candidates.write_text(json.dumps({
+        "tap": "expert_middle", "before": "5k", "after": "10k",
+        "candidates": [{"id": "formation_0", "direction": [1.0, 0, 0, 0, 0, 0, 0, 0]}],
+    }))
+    traces = {"5k": _trace(0.0), "10k": _trace(2.0), "15k": _trace(3.0)}
+    monkeypatch.setattr(acquisition, "load_trace", lambda path: traces[path.name])
+    output = tmp_path / "trajectory"
+    result = acquisition.candidate_trajectory(
+        {name: Path(name) for name in traces}, candidates, output
+    )
+    assert result["selection_uses_physical_labels"] is False
+    assert [row["checkpoint"] for row in result["summaries"]] == ["5k", "10k", "15k"]
+    with np.load(output / "projections.npz", allow_pickle=False) as values:
+        assert values["projection_15k"].shape == (6, 1, 2, 3)
+
+
+def test_intervention_smoke_runs_signed_stage_groups(tmp_path: Path, monkeypatch):
+    candidates = tmp_path / "candidates.json"; candidates.write_text("{}")
+    calls = []
+
+    def run(command, check):
+        assert check is True
+        calls.append(command)
+
+    monkeypatch.setattr(acquisition.subprocess, "run", run)
+    result = acquisition.intervention_smoke_command(
+        tmp_path / "bank", tmp_path / "dataset", tmp_path / "checkpoint",
+        tmp_path / "contract", tmp_path / "metadata", candidates, "formation_0",
+        tmp_path / "smoke", device="cuda", max_states=2, dose=1.0,
+        stages=tuple(range(10)),
+    )
+    assert result["stage_groups"] == {
+        "early": [0, 1, 2], "middle": [3, 4, 5, 6],
+        "late": [7, 8, 9], "all": list(range(10)),
+    }
+    assert len(calls) == 9
+    assert any("-1.0" in command for command in calls)
+    assert any("1.0" in command for command in calls)
+
+
+def test_incremental_r2_detects_signal_after_nuisance():
+    nuisance = np.arange(20, dtype=float)[:, None]
+    target = np.tile((0.0, 1.0), 10)
+    y = nuisance[:, 0] + 5 * target
+    assert acquisition._incremental_r2(y, nuisance, target) > 0.5
 
 
 def test_timeline_summary_checks_paired_state_ids(tmp_path: Path):
