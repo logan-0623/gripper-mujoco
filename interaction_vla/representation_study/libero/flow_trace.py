@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
@@ -22,6 +23,68 @@ from .state_bank import load_state_bank
 
 
 SCHEMA = "smolvla_conditional_flow_trace_v1"
+
+
+@dataclass(frozen=True)
+class FlowEdit:
+    tap: str
+    stages: tuple[int, ...]
+    direction: torch.Tensor
+    dose: float
+
+    def __post_init__(self) -> None:
+        if self.tap not in {"expert_middle", "expert_late"}:
+            raise ValueError("flow edit tap must be expert_middle or expert_late")
+        if not self.stages or min(self.stages) < 0 or self.direction.ndim != 1:
+            raise ValueError("flow edit requires stages and a one-dimensional direction")
+        if not np.isfinite(self.dose) or self.dose == 0:
+            raise ValueError("flow edit dose must be finite and non-zero")
+
+
+def _replace_tensor_output(output, changed: torch.Tensor):
+    if isinstance(output, torch.Tensor):
+        return changed
+    if isinstance(output, tuple):
+        return (changed, *output[1:])
+    if isinstance(output, list):
+        return [changed, *output[1:]]
+    raise TypeError("expert tap must return a tensor or tensor-first tuple/list")
+
+
+def _capture_hook(values: list[torch.Tensor], *, tap: str, edit: FlowEdit | None):
+    def hook(_module, _inputs, output):
+        tensor = _tensor_output(output)
+        stage = len(values)
+        if edit is not None and edit.tap == tap and stage in edit.stages:
+            direction = edit.direction.to(device=tensor.device, dtype=tensor.dtype)
+            if direction.shape != (tensor.shape[-1],):
+                raise ValueError("flow edit direction does not match expert hidden width")
+            tensor = tensor + edit.dose * direction
+            output = _replace_tensor_output(output, tensor)
+        values.append(tensor.detach().cpu())
+        return output
+    return hook
+
+
+def install_flow_edit(policy, layer, edit: FlowEdit):
+    """Install the same stage edit used by trace/query on a live policy."""
+    if max(edit.stages) >= int(policy.config.num_steps):
+        raise ValueError("flow edit stage exceeds the policy solver length")
+    counter = 0
+
+    def hook(_module, _inputs, output):
+        nonlocal counter
+        stage = counter % int(policy.config.num_steps)
+        counter += 1
+        if stage not in edit.stages:
+            return output
+        tensor = _tensor_output(output)
+        direction = edit.direction.to(device=tensor.device, dtype=tensor.dtype)
+        if direction.shape != (tensor.shape[-1],):
+            raise ValueError("flow edit direction does not match expert hidden width")
+        return _replace_tensor_output(output, tensor + edit.dose * direction)
+
+    return layer.register_forward_hook(hook)
 
 
 def file_hash(path: Path) -> str:
@@ -147,14 +210,15 @@ def _tensor_output(output):
     raise TypeError("expert tap must return a tensor or a tuple whose first item is a tensor")
 
 
-def trace_action_flow(policy, processed, noise: torch.Tensor, middle_layer, late_layer):
+def trace_action_flow(policy, processed, noise: torch.Tensor, middle_layer, late_layer,
+                      edit: FlowEdit | None = None):
     """Capture every actual denoise call while leaving native integration untouched."""
     flow = policy.model
     original = flow.denoise_step
     middle, late, noisy, velocity, sigma = [], [], [], [], []
     handles = [
-        middle_layer.register_forward_hook(lambda _m, _i, out: middle.append(_tensor_output(out).detach().cpu())),
-        late_layer.register_forward_hook(lambda _m, _i, out: late.append(_tensor_output(out).detach().cpu())),
+        middle_layer.register_forward_hook(_capture_hook(middle, tap="expert_middle", edit=edit)),
+        late_layer.register_forward_hook(_capture_hook(late, tap="expert_late", edit=edit)),
     ]
 
     def traced(*args, **kwargs):
@@ -203,7 +267,8 @@ def trace_action_flow(policy, processed, noise: torch.Tensor, middle_layer, late
 
 
 def query_action_flow_at_points(policy, processed, noise: torch.Tensor, reference_x_sigma,
-                                reference_sigma, middle_layer, late_layer):
+                                reference_sigma, middle_layer, late_layer,
+                                edit: FlowEdit | None = None):
     """Query one checkpoint at another trace's fixed (observation, x_sigma, sigma) points."""
     points = torch.as_tensor(reference_x_sigma, device=noise.device, dtype=noise.dtype)
     sigmas = np.asarray(reference_sigma, dtype=np.float32)
@@ -217,12 +282,8 @@ def query_action_flow_at_points(policy, processed, noise: torch.Tensor, referenc
     original = flow.denoise_step
     middle, late, velocity = [], [], []
     handles = [
-        middle_layer.register_forward_hook(
-            lambda _m, _i, out: middle.append(_tensor_output(out).detach().cpu())
-        ),
-        late_layer.register_forward_hook(
-            lambda _m, _i, out: late.append(_tensor_output(out).detach().cpu())
-        ),
+        middle_layer.register_forward_hook(_capture_hook(middle, tap="expert_middle", edit=edit)),
+        late_layer.register_forward_hook(_capture_hook(late, tap="expert_late", edit=edit)),
     ]
 
     def queried(*args, **kwargs):
@@ -306,9 +367,23 @@ def plan(bank: Path, *, partition: str, max_states: int, repeats: int):
             "state_ids": [row.state_id for row in selected]}
 
 
+def load_flow_edit(path: Path, candidate_id: str, dose: float,
+                   stages: Sequence[int]) -> tuple[FlowEdit, str]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("candidates", [])
+    row = next((item for item in rows if item.get("id") == candidate_id), None)
+    if row is None:
+        raise ValueError(f"candidate not found: {candidate_id}")
+    direction = torch.tensor(row["direction"], dtype=torch.float32)
+    edit = FlowEdit(str(row["tap"]), tuple(sorted(set(int(x) for x in stages))), direction, dose)
+    return edit, file_hash(path)
+
+
 def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metadata: Path, output: Path, *,
         device: str, batch_size: int, partition: str, max_states: int, repeats: int,
-        reference_trace: Path | None = None):
+        reference_trace: Path | None = None, candidate_path: Path | None = None,
+        candidate_id: str | None = None, dose: float = 1.0,
+        edit_stages: Sequence[int] = (0, 5, 9)):
     if batch_size <= 0 or repeats <= 0:
         raise ValueError("batch_size and repeats must be positive")
     if os.environ.get("HF_HUB_OFFLINE") != "1" or os.environ.get("TRANSFORMERS_OFFLINE") != "1":
@@ -329,6 +404,12 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
         if reference_arrays["epsilon"].shape[1] != repeats:
             raise ValueError("reference trace noise repeats differ")
         reference = (reference_arrays, reference_binding, reference_manifest)
+    edit = None
+    candidate_hash = None
+    if candidate_path is not None or candidate_id is not None:
+        if candidate_path is None or candidate_id is None:
+            raise ValueError("candidate path and ID must be supplied together")
+        edit, candidate_hash = load_flow_edit(candidate_path, candidate_id, dose, edit_stages)
     revisions = {row.source_revision for row in selected}
     if len(revisions) != 1:
         raise ValueError("mixed dataset revisions")
@@ -343,6 +424,8 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
                              video_backend="torchcodec")
     checkpoint_hash = _tree_sha256(checkpoint)
     policy, pre, post = load_frozen_policy(checkpoint, contract, metadata, device)
+    if edit is not None and max(edit.stages) >= int(policy.config.num_steps):
+        raise ValueError("flow edit stage exceeds the policy solver length")
     adapter = SmolVLAAdapter()
     adapter.policy = policy
     layers = adapter.get_layer_groups()["expert"]
@@ -369,6 +452,12 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
             {"path": str(reference_trace.resolve()),
              "binding_sha256": reference[2]["binding_sha256"]}
             if reference is not None else None
+        ),
+        "flow_edit": (
+            {"candidate_path": str(candidate_path.resolve()), "candidate_sha256": candidate_hash,
+             "candidate_id": candidate_id, "tap": edit.tap, "stages": list(edit.stages),
+             "dose": edit.dose}
+            if edit is not None else None
         ),
         "image_binding": image_binding,
         "runtime": _runtime_provenance(policy, batch_size=batch_size),
@@ -412,7 +501,7 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
                         ids, repeat, (binding["chunk_size"], binding["max_action_dim"])
                     ).to(device)
                     trace = trace_action_flow(
-                        policy, processed, noise, layers[middle_index], layers[late_index]
+                        policy, processed, noise, layers[middle_index], layers[late_index], edit
                     )
                     action_dim = trace["action_normalized"].shape[-1]
                     trace["action_postprocessed"] = post(
@@ -426,7 +515,7 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
                         policy, processed, noise,
                         reference_arrays["x_sigma"][start:stop, repeat],
                         reference_arrays["sigma"][repeat],
-                        layers[middle_index], layers[late_index],
+                        layers[middle_index], layers[late_index], edit,
                     )
                     trace["epsilon"] = noise.detach().cpu().float().numpy()
                 traces.append(trace)
@@ -480,6 +569,10 @@ def main():
     parser.add_argument("--noise-repeats", type=int, default=3)
     parser.add_argument("--reference-trace", type=Path,
                         help="Natural trace whose x_sigma/sigma points are held fixed for this checkpoint")
+    parser.add_argument("--candidates", type=Path)
+    parser.add_argument("--candidate-id")
+    parser.add_argument("--dose", type=float, default=1.0)
+    parser.add_argument("--edit-stage", type=int, action="append")
     args = parser.parse_args()
     if args.command == "plan":
         print(json.dumps(plan(args.bank, partition=args.partition, max_states=args.max_states,
@@ -491,7 +584,9 @@ def main():
                          args.contract_checkpoint or args.checkpoint, args.metadata, args.output,
                          device=args.device, batch_size=args.batch_size, partition=args.partition,
                          max_states=args.max_states, repeats=args.noise_repeats,
-                         reference_trace=args.reference_trace), indent=2))
+                         reference_trace=args.reference_trace, candidate_path=args.candidates,
+                         candidate_id=args.candidate_id, dose=args.dose,
+                         edit_stages=args.edit_stage or (0, 5, 9)), indent=2))
 
 
 if __name__ == "__main__":

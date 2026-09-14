@@ -2,9 +2,11 @@ import numpy as np
 import torch
 
 from interaction_vla.representation_study.libero.flow_trace import (
+    FlowEdit,
     bind_policy_images,
     paired_inference_noise,
     query_action_flow_at_points,
+    install_flow_edit,
     trace_action_flow,
 )
 
@@ -83,3 +85,30 @@ def test_fixed_point_query_reuses_reference_path_without_following_native_path()
         [1.0, 2 / 3, 1 / 3], dtype=np.float32)[None, :, None, None] * 0.1,
         atol=1e-6,
     )
+
+
+def test_flow_edit_changes_only_the_selected_tap_and_stage():
+    policy = FakePolicy()
+    noise = torch.ones(2, 2, 4)
+    edit = FlowEdit("expert_middle", (1,), torch.ones(4), 2.0)
+    result = trace_action_flow(
+        policy, {}, noise, policy.model.middle, policy.model.late, edit
+    )
+    baseline_policy = FakePolicy()
+    baseline = trace_action_flow(
+        baseline_policy, {}, noise, baseline_policy.model.middle, baseline_policy.model.late
+    )
+    assert result["expert_middle"][:, 1].mean() > result["expert_middle"][:, 0].mean()
+    assert not np.allclose(result["action_normalized"], baseline["action_normalized"])
+
+
+def test_live_flow_edit_restarts_stage_count_for_each_action_chunk():
+    policy = FakePolicy()
+    edit = FlowEdit("expert_middle", (0,), torch.ones(4), 1.0)
+    handle = install_flow_edit(policy, policy.model.middle, edit)
+    try:
+        first = policy.predict_action_chunk({}, noise=torch.ones(1, 2, 4))
+        second = policy.predict_action_chunk({}, noise=torch.ones(1, 2, 4))
+    finally:
+        handle.remove()
+    torch.testing.assert_close(first, second)

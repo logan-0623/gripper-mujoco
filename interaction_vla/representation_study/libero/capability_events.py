@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +20,7 @@ class EpisodeEventTracker:
     thresholds: AnnotationThresholds
     drop_height_m: float
     frames: list[PrivilegedFrame]
+    actions: list[list[float]] = field(default_factory=list)
 
     def add(self, frame: PrivilegedFrame) -> None:
         self.frames.append(replace(frame, frame_index=len(self.frames)))
@@ -99,6 +100,7 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
         "recovered_after_drop": recovery_onset is not None,
         "recovery_onset_step": recovery_onset,
         "success": bool(success),
+        "executed_actions": tracker.actions,
     }
 
 
@@ -122,7 +124,7 @@ def install_libero_event_recorder(
         write_json_atomic(
             output,
             {
-                "schema": "libero_capability_events_v2",
+                "schema": "libero_capability_events_v3",
                 "suite": suite,
                 "initial_state_offset": initial_state_offset,
                 "thresholds": thresholds.__dict__,
@@ -171,6 +173,7 @@ def install_libero_event_recorder(
         return result
 
     def step(env, action):
+        monitors[id(env)][1].actions.append(np.asarray(action, dtype=float).reshape(-1).tolist())
         result = original_step(env, action)
         adapter, tracker, finished = monitors[id(env)]
         adapter._observation = adapter.domain._get_observations()
