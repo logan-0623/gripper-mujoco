@@ -16,6 +16,7 @@ from ..state_bank.io import write_bytes_atomic, write_json_atomic
 from .flow_diff import load_trace
 from .flow_trace import file_hash
 from .latents import _tree_sha256
+from .state_bank import load_state_bank
 
 
 SCHEMA = "smolvla_acquisition_v1"

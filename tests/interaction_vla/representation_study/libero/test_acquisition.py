@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -103,6 +104,37 @@ def test_incremental_r2_detects_signal_after_nuisance():
     target = np.tile((0.0, 1.0), 10)
     y = nuisance[:, 0] + 5 * target
     assert acquisition._incremental_r2(y, nuisance, target) > 0.5
+
+
+def test_candidate_interpretation_runs_only_after_freeze(tmp_path: Path, monkeypatch):
+    trajectory = tmp_path / "trajectory"; trajectory.mkdir()
+    projections = trajectory / "projections.npz"
+    ids = np.asarray([f"s{i}" for i in range(8)])
+    values = np.arange(8, dtype="float32")[:, None, None, None]
+    np.savez(projections, state_ids=ids, candidate_ids=np.asarray(["formation_0"]),
+             projection_25k=np.repeat(values, 3, axis=3))
+    (trajectory / "report.json").write_text(json.dumps({
+        "kind": "frozen_candidate_trajectory",
+        "projections_sha256": acquisition.file_hash(projections),
+    }))
+    bank = tmp_path / "bank"; bank.mkdir(); (bank / "manifest.json").write_text("{}")
+    records = []
+    for i, state_id in enumerate(ids.tolist()):
+        labels = SimpleNamespace(
+            contact=SimpleNamespace(gripper_target=bool(i % 2)), stable_grasp=bool(i % 2),
+            geometry=SimpleNamespace(gripper_target_distance=float(i), target_goal_distance=float(7 - i)),
+            phase="grasp" if i % 2 else "approach",
+        )
+        records.append(SimpleNamespace(
+            state_id=state_id, task_id=i % 2, frame_index=i, labels=labels,
+            observation=SimpleNamespace(action=(0, 0, 0, 0, 0, 0, i % 2)),
+        ))
+    monkeypatch.setattr(acquisition, "load_state_bank", lambda _: (records, {}, None, None))
+    output = tmp_path / "interpret.json"
+    result = acquisition.interpret_candidates(trajectory, bank, "25k", output)
+    assert result["selection_performed"] is False
+    assert result["action_fields_are_leakage_diagnostics"] is True
+    assert output.is_file()
 
 
 def test_timeline_summary_checks_paired_state_ids(tmp_path: Path):
