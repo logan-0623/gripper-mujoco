@@ -300,18 +300,30 @@ def candidate_trajectory(traces: Mapping[str, Path], candidates: Path,
     before, after = artifact["before"], artifact["after"]
     if before not in arrays or after not in arrays:
         raise ValueError("trajectory must include the frozen discovery endpoints")
-    endpoint_delta = arrays[after].mean(axis=(0, 2, 3)) - arrays[before].mean(axis=(0, 2, 3))
+    endpoint_delta = arrays[after] - arrays[before]
     summaries = []
     for name, values in arrays.items():
         mean = values.mean(axis=(0, 2))
-        shift = values.mean(axis=(0, 2, 3)) - arrays[before].mean(axis=(0, 2, 3))
-        progress = np.divide(shift, endpoint_delta, out=np.full_like(shift, np.nan),
-                             where=np.abs(endpoint_delta) > 1e-12)
+        shift = values - arrays[before]
+        dot = np.einsum("ncrs,ncrs->c", shift, endpoint_delta)
+        endpoint_energy = np.einsum("ncrs,ncrs->c", endpoint_delta, endpoint_delta)
+        shift_energy = np.einsum("ncrs,ncrs->c", shift, shift)
+        coefficient = np.divide(dot, endpoint_energy,
+                                out=np.full_like(dot, np.nan), where=endpoint_energy > 1e-12)
+        cosine = np.divide(dot, np.sqrt(shift_energy * endpoint_energy),
+                           out=np.full_like(dot, np.nan),
+                           where=(shift_energy * endpoint_energy) > 1e-12)
+        relative_rms = np.sqrt(np.divide(
+            shift_energy, endpoint_energy, out=np.full_like(dot, np.nan),
+            where=endpoint_energy > 1e-12,
+        ))
         summaries.append({
             "checkpoint": name,
             "candidate_stage_mean": mean.tolist(),
             "candidate_stage_std": values.std(axis=(0, 2)).tolist(),
-            "relative_endpoint_progress": progress.tolist(),
+            "endpoint_projection_coefficient": coefficient.tolist(),
+            "endpoint_cosine": cosine.tolist(),
+            "relative_endpoint_rms": relative_rms.tolist(),
         })
     buffer = io.BytesIO()
     np.savez(buffer, state_ids=reference_ids,

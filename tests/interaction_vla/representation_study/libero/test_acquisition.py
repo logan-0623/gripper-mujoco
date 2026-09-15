@@ -68,6 +68,8 @@ def test_frozen_candidate_trajectory_does_not_refit(tmp_path: Path, monkeypatch)
     )
     assert result["selection_uses_physical_labels"] is False
     assert [row["checkpoint"] for row in result["summaries"]] == ["5k", "10k", "15k"]
+    assert abs(result["summaries"][0]["endpoint_projection_coefficient"][0]) < 1e-12
+    assert abs(result["summaries"][1]["endpoint_projection_coefficient"][0] - 1) < 1e-12
     with np.load(output / "projections.npz", allow_pickle=False) as values:
         assert values["projection_15k"].shape == (6, 1, 2, 3)
 
