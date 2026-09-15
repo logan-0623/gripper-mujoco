@@ -169,13 +169,16 @@ def bind_policy_images(batch: dict[str, object], input_features) -> tuple[dict[s
     return result, binding
 
 
-def select_records(records, split, *, partition: str, max_states: int, seed: int = 42):
+def select_records(records, split, *, partition: str, max_states: int, seed: int = 42,
+                   suite: str | None = None, task_ids: Sequence[int] = ()):
     """Label-blind, task-balanced sampling; episode diversity is favored within each task."""
     if max_states <= 0:
         raise ValueError("max_states must be positive")
     groups = {}
     for record in records:
-        if split.assignments[record.state_id] == partition:
+        if (split.assignments[record.state_id] == partition
+                and (suite is None or record.suite == suite)
+                and (not task_ids or record.task_id in task_ids)):
             groups.setdefault((record.suite, record.task_id), {}).setdefault(
                 record.lerobot_episode_index, []
             ).append(record)
@@ -350,15 +353,18 @@ def _read_shard(path: Path, ids, binding_hash: str, repeats: int, binding):
             raise ValueError("non-finite flow trace")
 
 
-def plan(bank: Path, *, partition: str, max_states: int, repeats: int):
+def plan(bank: Path, *, partition: str, max_states: int, repeats: int,
+         suite: str | None = None, task_ids: Sequence[int] = ()):
     records, manifest, split, _ = load_state_bank(bank)
     if not manifest.get("audit_passed"):
         raise ValueError("StateBank audit has not passed")
-    selected = select_records(records, split, partition=partition, max_states=max_states)
+    selected = select_records(records, split, partition=partition, max_states=max_states,
+                              suite=suite, task_ids=task_ids)
     # Current SmolVLA expert width; run records observed shapes in its manifest.
     expert_hidden_dim = 720
     bytes_per_state_repeat = 4 * (50 * 32 * (1 + 2 * 10 + 1) + 2 * 10 * 50 * expert_hidden_dim + 2 * 50 * 7)
-    return {"schema": SCHEMA, "partition": partition, "requested_states": max_states,
+    return {"schema": SCHEMA, "partition": partition, "suite": suite,
+            "task_ids": list(task_ids), "requested_states": max_states,
             "selected_states": len(selected), "noise_repeats": repeats,
             "action_chunk_generations_per_checkpoint": len(selected) * repeats,
             "denoise_stage_records_per_checkpoint": len(selected) * repeats * 10,
@@ -383,7 +389,8 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
         device: str, batch_size: int, partition: str, max_states: int, repeats: int,
         reference_trace: Path | None = None, candidate_path: Path | None = None,
         candidate_id: str | None = None, dose: float = 1.0,
-        edit_stages: Sequence[int] = (0, 5, 9)):
+        edit_stages: Sequence[int] = (0, 5, 9), suite: str | None = None,
+        task_ids: Sequence[int] = ()):
     if batch_size <= 0 or repeats <= 0:
         raise ValueError("batch_size and repeats must be positive")
     if os.environ.get("HF_HUB_OFFLINE") != "1" or os.environ.get("TRANSFORMERS_OFFLINE") != "1":
@@ -391,7 +398,8 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
     records, manifest, split, _ = load_state_bank(bank)
     if not manifest.get("audit_passed"):
         raise ValueError("StateBank audit has not passed")
-    selected = select_records(records, split, partition=partition, max_states=max_states)
+    selected = select_records(records, split, partition=partition, max_states=max_states,
+                              suite=suite, task_ids=task_ids)
     reference = None
     if reference_trace is not None:
         from .flow_diff import load_trace
@@ -442,6 +450,7 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
             for pattern in ("meta/**/*.json", "meta/**/*.parquet", "data/**/*.parquet", "videos/**/*.mp4")
             for path in sorted(dataset_root.glob(pattern))}),
         "upstream": source, "partition": partition, "selection_seed": 42,
+        "suite_filter": suite, "task_id_filter": list(task_ids),
         "state_ids": [row.state_id for row in selected], "batch_size": batch_size,
         "noise_repeats": repeats, "noise": "flow-trace:v1 keyed by state_id and repeat; checkpoint-independent CPU float32",
         "num_steps": int(policy.config.num_steps), "chunk_size": int(policy.config.chunk_size),
@@ -565,6 +574,8 @@ def main():
     parser.add_argument("--device", choices=("cpu", "mps", "cuda"), default="cpu")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--partition", choices=("train", "validation", "test"), default="train")
+    parser.add_argument("--suite")
+    parser.add_argument("--task-id", type=int, action="append", default=[])
     parser.add_argument("--max-states", type=int, default=512)
     parser.add_argument("--noise-repeats", type=int, default=3)
     parser.add_argument("--reference-trace", type=Path,
@@ -576,7 +587,8 @@ def main():
     args = parser.parse_args()
     if args.command == "plan":
         print(json.dumps(plan(args.bank, partition=args.partition, max_states=args.max_states,
-                              repeats=args.noise_repeats), indent=2))
+                              repeats=args.noise_repeats, suite=args.suite,
+                              task_ids=args.task_id), indent=2))
         return
     if args.checkpoint is None or args.output is None:
         parser.error("run requires --checkpoint and --output")
@@ -586,7 +598,8 @@ def main():
                          max_states=args.max_states, repeats=args.noise_repeats,
                          reference_trace=args.reference_trace, candidate_path=args.candidates,
                          candidate_id=args.candidate_id, dose=args.dose,
-                         edit_stages=args.edit_stage or (0, 5, 9)), indent=2))
+                         edit_stages=args.edit_stage or (0, 5, 9), suite=args.suite,
+                         task_ids=args.task_id), indent=2))
 
 
 if __name__ == "__main__":

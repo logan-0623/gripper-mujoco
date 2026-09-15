@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from types import SimpleNamespace
 
 from interaction_vla.representation_study.libero.flow_trace import (
     FlowEdit,
@@ -7,8 +8,26 @@ from interaction_vla.representation_study.libero.flow_trace import (
     paired_inference_noise,
     query_action_flow_at_points,
     install_flow_edit,
+    select_records,
     trace_action_flow,
 )
+
+
+def test_select_records_filters_suite_and_tasks_before_balancing():
+    records = [
+        SimpleNamespace(state_id=f"s{i}", suite=suite, task_id=task,
+                        lerobot_episode_index=i)
+        for i, (suite, task) in enumerate((
+            ("libero_spatial", 0), ("libero_spatial", 3), ("libero_spatial", 4),
+            ("libero_object", 0),
+        ))
+    ]
+    split = SimpleNamespace(assignments={row.state_id: "train" for row in records})
+    selected = select_records(records, split, partition="train", max_states=10,
+                              suite="libero_spatial", task_ids=(0, 3))
+    assert {(row.suite, row.task_id) for row in selected} == {
+        ("libero_spatial", 0), ("libero_spatial", 3)
+    }
 
 
 class FakeFlow(torch.nn.Module):
