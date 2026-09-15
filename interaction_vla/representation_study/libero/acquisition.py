@@ -438,7 +438,9 @@ def interpret_candidates(trajectory: Path, state_bank: Path, checkpoint: str,
 def intervention_smoke_command(bank: Path, dataset_root: Path, checkpoint: Path,
                                contract: Path, metadata: Path, candidates: Path,
                                candidate_id: str, output: Path, *, device: str,
-                               max_states: int, dose: float, stages: Sequence[int]) -> dict:
+                               max_states: int, dose: float, stages: Sequence[int],
+                               partition: str = "validation", split_group: str = "episode",
+                               suite: str | None = None, task_ids: Sequence[int] = ()) -> dict:
     """Run one baseline plus signed, stage-local edits through the real trace path."""
     if max_states <= 0 or dose <= 0 or not stages or min(stages) < 0 or max(stages) >= 10:
         raise ValueError("smoke states, dose, and stages are invalid")
@@ -452,7 +454,12 @@ def intervention_smoke_command(bank: Path, dataset_root: Path, checkpoint: Path,
               "--bank", str(bank), "--dataset-root", str(dataset_root),
               "--checkpoint", str(checkpoint), "--contract-checkpoint", str(contract),
               "--metadata", str(metadata), "--device", device, "--batch-size", "1",
-              "--max-states", str(max_states), "--noise-repeats", "1"]
+              "--max-states", str(max_states), "--noise-repeats", "1",
+              "--partition", partition, "--split-group", split_group]
+    if suite is not None:
+        common.extend(("--suite", suite))
+    for task_id in task_ids:
+        common.extend(("--task-id", str(task_id)))
     commands = [common + ["--output", str(output / "baseline")]]
     for name, selected_stages in groups.items():
         for sign in (-1, 1):
@@ -470,7 +477,9 @@ def intervention_smoke_command(bank: Path, dataset_root: Path, checkpoint: Path,
     result = {"schema": SCHEMA, "kind": "real_policy_intervention_smoke",
               "candidate_sha256": file_hash(candidates), "candidate_id": candidate_id,
               "dose": dose, "stage_groups": {key: list(value) for key, value in groups.items()},
-              "max_states": max_states, "conditions": [Path(command[command.index("--output") + 1]).name
+              "max_states": max_states, "partition": partition, "split_group": split_group,
+              "suite": suite, "task_ids": list(task_ids),
+              "conditions": [Path(command[command.index("--output") + 1]).name
                                                          for command in commands]}
     write_json_atomic(output / "report.json", result)
     return result
@@ -689,6 +698,10 @@ def main() -> None:
     smoke.add_argument("--max-states", type=int, default=2)
     smoke.add_argument("--dose", type=float, default=1.0)
     smoke.add_argument("--edit-stage", type=int, action="append", default=[])
+    smoke.add_argument("--partition", choices=("train", "validation", "test"), default="validation")
+    smoke.add_argument("--split-group", choices=("task", "episode"), default="episode")
+    smoke.add_argument("--suite")
+    smoke.add_argument("--task-id", type=int, action="append", default=[])
     gate = commands.add_parser("gate")
     gate.add_argument("--baseline", type=Path, required=True)
     gate.add_argument("--edited", action="append", default=[], required=True)
@@ -716,7 +729,7 @@ def main() -> None:
     elif args.command == "discover": result = discover_change_subspaces(_assignments(args.trace), before=args.before, after=args.after, tap=args.tap, rank=args.rank, output=args.output)
     elif args.command == "candidate-trajectory": result = candidate_trajectory(_assignments(args.trace), args.candidates, args.output)
     elif args.command == "candidate-interpret": result = interpret_candidates(args.trajectory, args.state_bank, args.checkpoint, args.output)
-    elif args.command == "intervention-smoke": result = intervention_smoke_command(args.bank, args.dataset_root, args.checkpoint, args.contract_checkpoint, args.metadata, args.candidates, args.candidate_id, args.output, device=args.device, max_states=args.max_states, dose=args.dose, stages=args.edit_stage or tuple(range(10)))
+    elif args.command == "intervention-smoke": result = intervention_smoke_command(args.bank, args.dataset_root, args.checkpoint, args.contract_checkpoint, args.metadata, args.candidates, args.candidate_id, args.output, device=args.device, max_states=args.max_states, dose=args.dose, stages=args.edit_stage or tuple(range(10)), partition=args.partition, split_group=args.split_group, suite=args.suite, task_ids=args.task_id)
     elif args.command == "gate": result = offline_action_gate(args.baseline, _assignments(args.edited), args.candidates, args.output)
     elif args.command == "closed-loop": result = run_closed_loop(args.checkpoint, args.candidates, args.gate, args.output, args.task or range(4), args.candidate_id, dose=args.dose, stages=args.edit_stage or (0, 5, 9), initial_state_offset=args.initial_state_offset, episodes=args.episodes, dry_run=args.dry_run)
     else: result = summarize_closed_loop(args.root, args.output)

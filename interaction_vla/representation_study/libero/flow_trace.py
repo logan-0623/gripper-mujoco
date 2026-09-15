@@ -354,8 +354,12 @@ def _read_shard(path: Path, ids, binding_hash: str, repeats: int, binding):
 
 
 def plan(bank: Path, *, partition: str, max_states: int, repeats: int,
-         suite: str | None = None, task_ids: Sequence[int] = ()):
-    records, manifest, split, _ = load_state_bank(bank)
+         suite: str | None = None, task_ids: Sequence[int] = (),
+         split_group: str = "task"):
+    if split_group not in {"task", "episode"}:
+        raise ValueError("split_group must be task or episode")
+    records, manifest, task_split, episode_split = load_state_bank(bank)
+    split = task_split if split_group == "task" else episode_split
     if not manifest.get("audit_passed"):
         raise ValueError("StateBank audit has not passed")
     selected = select_records(records, split, partition=partition, max_states=max_states,
@@ -363,7 +367,8 @@ def plan(bank: Path, *, partition: str, max_states: int, repeats: int,
     # Current SmolVLA expert width; run records observed shapes in its manifest.
     expert_hidden_dim = 720
     bytes_per_state_repeat = 4 * (50 * 32 * (1 + 2 * 10 + 1) + 2 * 10 * 50 * expert_hidden_dim + 2 * 50 * 7)
-    return {"schema": SCHEMA, "partition": partition, "suite": suite,
+    return {"schema": SCHEMA, "partition": partition, "split_group": split_group,
+            "suite": suite,
             "task_ids": list(task_ids), "requested_states": max_states,
             "selected_states": len(selected), "noise_repeats": repeats,
             "action_chunk_generations_per_checkpoint": len(selected) * repeats,
@@ -390,12 +395,15 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
         reference_trace: Path | None = None, candidate_path: Path | None = None,
         candidate_id: str | None = None, dose: float = 1.0,
         edit_stages: Sequence[int] = (0, 5, 9), suite: str | None = None,
-        task_ids: Sequence[int] = ()):
+        task_ids: Sequence[int] = (), split_group: str = "task"):
     if batch_size <= 0 or repeats <= 0:
         raise ValueError("batch_size and repeats must be positive")
+    if split_group not in {"task", "episode"}:
+        raise ValueError("split_group must be task or episode")
     if os.environ.get("HF_HUB_OFFLINE") != "1" or os.environ.get("TRANSFORMERS_OFFLINE") != "1":
         raise ValueError("Set HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1")
-    records, manifest, split, _ = load_state_bank(bank)
+    records, manifest, task_split, episode_split = load_state_bank(bank)
+    split = task_split if split_group == "task" else episode_split
     if not manifest.get("audit_passed"):
         raise ValueError("StateBank audit has not passed")
     selected = select_records(records, split, partition=partition, max_states=max_states,
@@ -449,7 +457,8 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
             str(path.relative_to(dataset_root)): file_hash(path)
             for pattern in ("meta/**/*.json", "meta/**/*.parquet", "data/**/*.parquet", "videos/**/*.mp4")
             for path in sorted(dataset_root.glob(pattern))}),
-        "upstream": source, "partition": partition, "selection_seed": 42,
+        "upstream": source, "partition": partition, "split_group": split_group,
+        "selection_seed": 42,
         "suite_filter": suite, "task_id_filter": list(task_ids),
         "state_ids": [row.state_id for row in selected], "batch_size": batch_size,
         "noise_repeats": repeats, "noise": "flow-trace:v1 keyed by state_id and repeat; checkpoint-independent CPU float32",
@@ -574,6 +583,7 @@ def main():
     parser.add_argument("--device", choices=("cpu", "mps", "cuda"), default="cpu")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--partition", choices=("train", "validation", "test"), default="train")
+    parser.add_argument("--split-group", choices=("task", "episode"), default="task")
     parser.add_argument("--suite")
     parser.add_argument("--task-id", type=int, action="append", default=[])
     parser.add_argument("--max-states", type=int, default=512)
@@ -588,7 +598,7 @@ def main():
     if args.command == "plan":
         print(json.dumps(plan(args.bank, partition=args.partition, max_states=args.max_states,
                               repeats=args.noise_repeats, suite=args.suite,
-                              task_ids=args.task_id), indent=2))
+                              task_ids=args.task_id, split_group=args.split_group), indent=2))
         return
     if args.checkpoint is None or args.output is None:
         parser.error("run requires --checkpoint and --output")
@@ -599,7 +609,7 @@ def main():
                          reference_trace=args.reference_trace, candidate_path=args.candidates,
                          candidate_id=args.candidate_id, dose=args.dose,
                          edit_stages=args.edit_stage or (0, 5, 9), suite=args.suite,
-                         task_ids=args.task_id), indent=2))
+                         task_ids=args.task_id, split_group=args.split_group), indent=2))
 
 
 if __name__ == "__main__":
