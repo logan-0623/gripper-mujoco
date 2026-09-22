@@ -19,7 +19,7 @@ from .latents import _tree_sha256
 from .state_bank import load_state_bank
 
 
-SCHEMA = "smolvla_acquisition_v1"
+SCHEMA = "smolvla_acquisition_v2"
 EVENT_KEYS = (
     "contact", "stable_grasp", "geometric_lift", "supported_lift",
     "normal_release", "unintended_drop", "recovered_after_drop", "success",
@@ -72,8 +72,9 @@ def checkpoint_lineage(checkpoint_root: Path, base_checkpoint: Path,
 
 
 def _evaluation_command(checkpoint: Path, task: int, output: Path,
-                        initial_state_offset: int, episodes: int) -> tuple[str, ...]:
-    return (
+                        initial_state_offset: int, episodes: int,
+                        initial_state_count: int | None = None) -> tuple[str, ...]:
+    command = [
         sys.executable, "-W", "error::RuntimeWarning", "-m",
         "interaction_vla.representation_study.libero.capability_events",
         "--events-output", str(output / "physical_events.json"),
@@ -88,13 +89,62 @@ def _evaluation_command(checkpoint: Path, task: int, output: Path,
         f"--eval.n_episodes={episodes}", "--eval.batch_size=1",
         "--eval.use_async_envs=false", "--eval.recording=false", "--seed=2057736129",
         f"--output_dir={output}",
-    )
+    ]
+    if initial_state_count is not None:
+        command[command.index("--rendered-episodes") + 2:command.index("--rendered-episodes") + 2] = [
+            "--initial-state-count", str(initial_state_count)
+        ]
+    return tuple(command)
+
+
+def _actual_state_ids(offset: int, episodes: int, state_count: int | None) -> list[int]:
+    if state_count is not None and (state_count <= 0 or episodes > state_count):
+        raise ValueError("initial_state_count must be positive and actual states must not repeat")
+    requested = range(offset, offset + episodes)
+    return [int(state % state_count) for state in requested] if state_count else list(requested)
+
+
+def _plan_actual_cells(path: Path, plan: Mapping[str, object]) -> set[tuple[int, int]]:
+    cells: set[tuple[int, int]] = set()
+    incomplete = False
+    commands = plan.get("commands", [])
+    for command in commands:
+        if not isinstance(command, list) or "--events-output" not in command:
+            incomplete = True
+            continue
+        event_path = Path(command[command.index("--events-output") + 1])
+        if not event_path.is_absolute():
+            event_path = path.parent / event_path
+        if not event_path.is_file():
+            incomplete = True
+            continue
+        payload = json.loads(event_path.read_text(encoding="utf-8"))
+        episodes = payload.get("episodes", [])
+        if len(episodes) != int(plan["episodes_per_task"]):
+            incomplete = True
+        for row in episodes:
+            if "task_id" in row and "initial_state_id" in row:
+                cells.add((int(row["task_id"]), int(row["initial_state_id"])))
+            else:
+                incomplete = True
+    if cells and not incomplete and {task for task, _ in cells} == set(plan["tasks"]):
+        return cells
+    offset = int(plan["initial_state_offset"])
+    count = int(plan["episodes_per_task"])
+    state_count = plan.get("initial_state_count")
+    if not state_count:
+        raise ValueError(f"historical initial_state_count or complete actual records required: {path}")
+    actual = _actual_state_ids(offset, count, int(state_count))
+    return cells | {(int(task), state) for task in plan["tasks"] for state in actual}
 
 
 def evaluate_timeline(lineage: Path, output: Path, tasks: Sequence[int], *,
-                      initial_state_offset: int, episodes: int, dry_run: bool) -> dict:
+                      initial_state_offset: int, episodes: int, dry_run: bool,
+                      initial_state_count: int | None = None) -> dict:
     if not tasks or min(tasks) < 0 or initial_state_offset < 0 or episodes <= 0:
         raise ValueError("tasks, initial-state offset, and episode count are invalid")
+    if initial_state_count is None or initial_state_count <= 0:
+        raise ValueError("timeline evaluation requires initial_state_count")
     manifest = json.loads(lineage.read_text(encoding="utf-8"))
     if manifest.get("kind") != "immutable_lineage":
         raise ValueError("lineage manifest is incompatible")
@@ -106,7 +156,8 @@ def evaluate_timeline(lineage: Path, output: Path, tasks: Sequence[int], *,
         for task in tasks:
             destination = output / f"step_{int(row['step']):06d}" / f"task{task}"
             command = _evaluation_command(
-                checkpoint, task, destination, initial_state_offset, episodes
+                checkpoint, task, destination, initial_state_offset, episodes,
+                initial_state_count
             )
             commands.append(list(command))
             if dry_run:
@@ -123,10 +174,49 @@ def evaluate_timeline(lineage: Path, output: Path, tasks: Sequence[int], *,
         "schema": SCHEMA, "kind": "timeline_evaluation",
         "lineage_sha256": file_hash(lineage), "tasks": list(tasks),
         "initial_state_offset": initial_state_offset, "episodes_per_task": episodes,
-        "dry_run": dry_run, "commands": commands,
+        "initial_state_count": initial_state_count, "dry_run": dry_run, "commands": commands,
     }
     write_json_atomic(output / "evaluation_plan.json", plan)
     return plan
+
+
+def _load_event_rows(path: Path, plan: Mapping[str, object], task: int) -> dict[int, dict[str, object]]:
+    """Load one task's events and fail closed on missing or duplicated cells."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("episodes")
+    if not isinstance(rows, list):
+        raise ValueError(f"event file has no episode list: {path}")
+    try:
+        episodes = int(plan["episodes_per_task"])
+        offset = int(plan["initial_state_offset"])
+        state_count = int(plan["initial_state_count"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"event contract lacks initial_state_count: {path}") from exc
+    expected_ids = _actual_state_ids(offset, episodes, state_count)
+    requested_ids = list(range(offset, offset + episodes))
+    expected_requested = dict(zip(expected_ids, requested_ids, strict=True))
+    if len(rows) != episodes:
+        raise ValueError(f"episode count differs: {path}: {len(rows)} != {episodes}")
+    result: dict[int, dict[str, object]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValueError(f"invalid event row: {path}")
+        if int(row.get("task_id", -1)) != int(task):
+            raise ValueError(f"event task identity differs: {path}")
+        state_id = int(row.get("initial_state_id", -1))
+        if state_id in result:
+            raise ValueError(f"duplicate initial_state_id {state_id}: {path}")
+        if int(row.get("initial_state_count", -1)) != state_count:
+            raise ValueError(f"event state-count identity differs: {path}")
+        requested = row.get("requested_initial_state_id")
+        if requested is None or int(requested) != expected_requested.get(state_id, -1):
+            raise ValueError(f"requested/actual state identity differs: {path}")
+        result[state_id] = dict(row)
+    if set(result) != set(expected_ids):
+        missing = sorted(set(expected_ids) - set(result))
+        extra = sorted(set(result) - set(expected_ids))
+        raise ValueError(f"missing or unexpected initial states in {path}: missing={missing}, extra={extra}")
+    return result
 
 
 def summarize_timeline(lineage: Path, root: Path, output: Path) -> dict:
@@ -134,36 +224,56 @@ def summarize_timeline(lineage: Path, root: Path, output: Path) -> dict:
     plan = json.loads((root / "evaluation_plan.json").read_text(encoding="utf-8"))
     if plan["lineage_sha256"] != file_hash(lineage):
         raise ValueError("timeline evaluation belongs to another lineage")
+    if not isinstance(plan.get("initial_state_count"), int) or plan["initial_state_count"] <= 0:
+        raise ValueError("timeline summary requires explicit initial_state_count")
     rows = []
+    task_cells: dict[int, set[int]] = {}
     for checkpoint in manifest["checkpoints"]:
         step = int(checkpoint["step"])
         for task in plan["tasks"]:
             directory = root / f"step_{step:06d}" / f"task{task}"
             events_path, eval_path = directory / "physical_events.json", directory / "eval_info.json"
-            events = json.loads(events_path.read_text(encoding="utf-8"))["episodes"]
-            if [int(row["initial_state_id"]) for row in events] != list(range(
-                int(plan["initial_state_offset"]),
-                int(plan["initial_state_offset"]) + int(plan["episodes_per_task"]),
-            )):
-                raise ValueError(f"initial-state contract differs: {directory}")
-            successes = json.loads(eval_path.read_text(encoding="utf-8"))[
-                "per_task"
-            ][0]["metrics"]["successes"]
-            row = {"step": step, "task": int(task), "episodes": len(events)}
-            row.update({key: sum(bool(item.get(key)) for item in events) for key in EVENT_KEYS})
-            if row["success"] != sum(bool(value) for value in successes):
+            event_rows = _load_event_rows(events_path, plan, int(task))
+            expected_ids = _actual_state_ids(
+                int(plan["initial_state_offset"]), int(plan["episodes_per_task"]),
+                int(plan["initial_state_count"]),
+            )
+            current = set(event_rows)
+            previous = task_cells.setdefault(int(task), current)
+            if current != previous:
+                raise ValueError(f"paired initial-state set differs: {directory}")
+            eval_payload = json.loads(eval_path.read_text(encoding="utf-8"))
+            successes = eval_payload["per_task"][0]["metrics"]["successes"]
+            if len(successes) != len(expected_ids):
+                raise ValueError(f"evaluation count differs: {directory}")
+            event_list = [event_rows[state_id] for state_id in expected_ids]
+            success_count = sum(bool(value) for value in successes)
+            event_success_count = sum(bool(item.get("success")) for item in event_list)
+            if event_success_count != success_count:
                 raise ValueError(f"success records disagree: {directory}")
-            row["eval_info_sha256"] = file_hash(eval_path)
-            row["physical_events_sha256"] = file_hash(events_path)
+            row = {
+                "step": step, "task": int(task), "episodes": len(event_list),
+                "initial_state_ids": expected_ids,
+                "eval_info_sha256": file_hash(eval_path),
+                "physical_events_sha256": file_hash(events_path),
+            }
+            row.update({key: sum(bool(item.get(key)) for item in event_list) for key in EVENT_KEYS})
             rows.append(row)
+    expected_steps = [int(row["step"]) for row in manifest["checkpoints"]]
+    if sorted({int(row["step"]) for row in rows}) != expected_steps:
+        raise ValueError("timeline is missing checkpoint rows")
     aggregate = []
-    for step in sorted({row["step"] for row in rows}):
+    for step in expected_steps:
         selected = [row for row in rows if row["step"] == step]
         aggregate.append({"step": step, **{
             key: sum(int(row[key]) for row in selected) for key in ("episodes", *EVENT_KEYS)
         }})
-    report = {"schema": SCHEMA, "kind": "capability_timeline", "rows": rows,
-              "aggregate": aggregate, "lineage_sha256": file_hash(lineage)}
+    report = {
+        "schema": SCHEMA, "kind": "capability_timeline", "complete": True,
+        "initial_state_count": int(plan["initial_state_count"]),
+        "paired_initial_state_ids": {str(task): sorted(values) for task, values in task_cells.items()},
+        "rows": rows, "aggregate": aggregate, "lineage_sha256": file_hash(lineage),
+    }
     write_json_atomic(output / "report.json", report)
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=list(rows[0]))
@@ -171,7 +281,6 @@ def summarize_timeline(lineage: Path, root: Path, output: Path) -> dict:
     (output / "results.csv").parent.mkdir(parents=True, exist_ok=True)
     (output / "results.csv").write_text(buffer.getvalue(), encoding="utf-8")
     return report
-
 
 def _orthogonal_random(existing: list[np.ndarray], dimension: int,
                        count: int, seed: int) -> list[np.ndarray]:
@@ -185,6 +294,37 @@ def _orthogonal_random(existing: list[np.ndarray], dimension: int,
         if norm > 1e-8:
             result.append(value / norm)
     return result
+
+
+def expand_random_controls(candidates: Path, output: Path, *, count: int = 8) -> dict:
+    """Freeze additional deterministic random controls without changing target directions."""
+    if output.exists():
+        raise FileExistsError(f"control output exists: {output}")
+    if count < 1:
+        raise ValueError("random control count must be positive")
+    source = json.loads(candidates.read_text(encoding="utf-8"))
+    rows = source.get("candidates", [])
+    retained = [row for row in rows if row["role"] != "matched_random"]
+    if not retained:
+        raise ValueError("candidate artifact has no retained directions")
+    existing = [np.asarray(row["direction"], dtype=float) for row in retained]
+    randoms = _orthogonal_random(existing, len(existing[0]), count, 2057736129)
+    expanded = [*retained, *[
+        {"id": f"matched_random_{index}", "role": "matched_random",
+         "tap": retained[0]["tap"], "direction": direction.tolist()}
+        for index, direction in enumerate(randoms)
+    ]]
+    basis_source = candidates.with_name("shared_basis.npz")
+    if not basis_source.is_file():
+        raise FileNotFoundError(f"shared basis is missing: {basis_source}")
+    output.mkdir(parents=True)
+    write_bytes_atomic(output / "shared_basis.npz", basis_source.read_bytes())
+    report = {**source, "kind": "frozen_change_candidates_with_random_panel",
+              "source_candidate_sha256": file_hash(candidates),
+              "random_control_count": count, "candidates": expanded,
+              "shared_basis_sha256": file_hash(output / "shared_basis.npz")}
+    write_json_atomic(output / "candidates.json", report)
+    return report
 
 
 def discover_change_subspaces(traces: Mapping[str, Path], *, before: str, after: str,
@@ -340,6 +480,11 @@ def candidate_trajectory(traces: Mapping[str, Path], candidates: Path,
         "state_ids": reference_ids.tolist(), "summaries": summaries,
         "trace_bindings": {name: value[3]["binding_sha256"]
                            for name, value in loaded.items()},
+        "trace_checkpoint_sha256": {
+            name: (value[2].get("checkpoint_tree_sha256")
+                   or value[2].get("checkpoint_sha256"))
+            for name, value in loaded.items()
+        },
         "projections_sha256": file_hash(output / "projections.npz"),
     }
     write_json_atomic(output / "report.json", report)
@@ -436,6 +581,285 @@ def interpret_candidates(trajectory: Path, state_bank: Path, checkpoint: str,
     return result
 
 
+def candidate_context_analysis(trace: Path, candidates: Path, state_bank: Path,
+                               output: Path, candidate_ids: Sequence[str] = ()) -> dict:
+    """Episode-held-out description of frozen candidates; never selects directions."""
+    if output.exists():
+        raise FileExistsError(f"refusing to overwrite candidate context analysis: {output}")
+    artifact = json.loads(candidates.read_text(encoding="utf-8"))
+    tap = artifact["tap"]
+    rows = [row for row in artifact["candidates"]
+            if (not candidate_ids and row["role"] == "formation")
+            or row["id"] in candidate_ids]
+    if not rows:
+        raise ValueError("candidate context analysis has no selected candidates")
+    state_ids, arrays, binding, _ = load_trace(trace)
+    records, _, _, _ = load_state_bank(state_bank)
+    by_id = {row.state_id: row for row in records}
+    if tap not in arrays or any(state_id not in by_id for state_id in state_ids.tolist()):
+        raise ValueError("trace tap or StateBank coverage is incomplete")
+    selected = [by_id[state_id] for state_id in state_ids.tolist()]
+    directions = np.asarray([row["direction"] for row in rows], dtype=np.float64)
+    activations = arrays[tap]
+    if activations.ndim != 5 or activations.shape[-1] != directions.shape[1]:
+        raise ValueError("candidate direction and trace activation shapes differ")
+    projections = np.einsum(
+        "nrsd,cd->ncrs", activations.mean(axis=3), directions, optimize=True
+    ).mean(axis=2)
+    tasks = np.asarray([row.task_id for row in selected], dtype=int)
+    episodes = np.asarray([
+        f"{row.suite}/{row.task_id}/{row.source_episode_id}" for row in selected
+    ])
+    task_values = sorted(set(tasks.tolist()))
+    phases = sorted({row.labels.phase for row in selected if row.labels.phase is not None})
+    base = np.column_stack((
+        np.asarray([row.frame_index for row in selected], dtype=float),
+        *[tasks == task for task in task_values[1:]],
+    ))
+    robot = np.asarray([row.observation.robot_state for row in selected], dtype=float)
+    action = np.asarray([row.observation.action for row in selected], dtype=float)
+    physical = np.column_stack((
+        np.asarray([row.labels.geometry.gripper_target_distance
+                    if row.labels.geometry is not None else np.nan for row in selected]),
+        np.asarray([row.labels.geometry.target_goal_distance
+                    if row.labels.geometry is not None else np.nan for row in selected]),
+        np.asarray([float(row.labels.contact.gripper_target)
+                    if row.labels.contact is not None else np.nan for row in selected]),
+        np.asarray([float(row.labels.stable_grasp)
+                    if row.labels.stable_grasp is not None else np.nan for row in selected]),
+        *[np.asarray([float(row.labels.phase == phase)
+                     if row.labels.phase is not None else np.nan for row in selected])
+          for phase in phases],
+    ))
+    groups = {
+        "task_time": base,
+        "task_time_robot": np.column_stack((base, robot)),
+        "task_time_action": np.column_stack((base, action)),
+        "task_time_physical": np.column_stack((base, physical)),
+        "task_time_robot_action": np.column_stack((base, robot, action)),
+        "task_time_robot_action_physical": np.column_stack(
+            (base, robot, action, physical)),
+    }
+
+    def cross_validated_prediction(features: np.ndarray, target: np.ndarray) -> np.ndarray:
+        prediction = np.full(len(target), np.nan, dtype=float)
+        for episode in np.unique(episodes):
+            test = episodes == episode
+            train = ~test
+            x_train, x_test = features[train].copy(), features[test].copy()
+            mean = np.nanmean(x_train, axis=0)
+            mean[~np.isfinite(mean)] = 0.0
+            x_train = np.where(np.isfinite(x_train), x_train, mean)
+            x_test = np.where(np.isfinite(x_test), x_test, mean)
+            scale = x_train.std(axis=0)
+            scale[scale < 1e-8] = 1.0
+            x_train, x_test = (x_train - mean) / scale, (x_test - mean) / scale
+            y_mean = float(target[train].mean())
+            gram = x_train.T @ x_train + np.eye(x_train.shape[1])
+            coefficient = np.linalg.solve(gram, x_train.T @ (target[train] - y_mean))
+            prediction[test] = y_mean + x_test @ coefficient
+        if not np.isfinite(prediction).all():
+            raise ValueError("candidate context cross-validation produced non-finite predictions")
+        return prediction
+
+    def task_episode_state_mean(values: np.ndarray) -> float:
+        per_task = []
+        for task in task_values:
+            task_episodes = np.unique(episodes[tasks == task])
+            per_task.append(np.mean([
+                values[(tasks == task) & (episodes == episode)].mean()
+                for episode in task_episodes
+            ]))
+        return float(np.mean(per_task))
+
+    results = []
+    for candidate_index, row in enumerate(rows):
+        for stage in range(projections.shape[2]):
+            target = projections[:, candidate_index, stage]
+            null_error = task_episode_state_mean(np.square(target - target.mean()))
+            metrics = {}
+            for name, features in groups.items():
+                prediction = cross_validated_prediction(features, target)
+                error = task_episode_state_mean(np.square(target - prediction))
+                metrics[name] = {"risk": error, "predictive_r2": (
+                    float(1.0 - error / null_error) if null_error > 1e-12 else float("nan")
+                )}
+            base_risk = metrics["task_time"]["risk"]
+            for metric in metrics.values():
+                metric["risk_reduction_over_task_time"] = float(base_risk - metric["risk"])
+            results.append({"candidate_id": row["id"], "stage": stage,
+                            "metrics": metrics})
+    report = {
+        "schema": SCHEMA, "kind": "episode_held_out_candidate_context",
+        "candidate_sha256": file_hash(candidates),
+        "trace_binding_sha256": binding.get("binding_sha256"),
+        "state_bank_sha256": file_hash(state_bank / "manifest.json"),
+        "selection_performed": False, "tap": tap,
+        "states": len(selected), "independent_episodes": len(np.unique(episodes)),
+        "tasks": task_values,
+        "cross_validation_unit": "source_episode",
+        "aggregation": "task equal, episode equal within task, state equal within episode",
+        "ridge_alpha": 1.0,
+        "action_fields_are_leakage_diagnostics": True,
+        "results": results,
+    }
+    write_json_atomic(output, report)
+    return report
+
+
+
+def audit_longitudinal_evidence(
+    lineage: Path,
+    timeline: Path,
+    candidates: Path,
+    trajectory: Path,
+    functional_reports: Mapping[str, Path],
+    output: Path,
+) -> dict:
+    """Audit that R_k, U_k and S_k artifacts cover the same frozen lineage."""
+    if output.exists():
+        raise FileExistsError(f"refusing to overwrite longitudinal audit: {output}")
+    lineage_value = json.loads(lineage.read_text(encoding="utf-8"))
+    if lineage_value.get("kind") != "immutable_lineage":
+        raise ValueError("lineage artifact is incompatible")
+    checkpoints = lineage_value.get("checkpoints", [])
+    if len(checkpoints) < 2:
+        raise ValueError("longitudinal audit requires at least two checkpoints")
+    checkpoint_steps = [int(row["step"]) for row in checkpoints]
+    checkpoint_hashes = {str(row["checkpoint_sha256"]) for row in checkpoints}
+    if checkpoint_steps != sorted(set(checkpoint_steps)):
+        raise ValueError("lineage checkpoint steps are not unique and ordered")
+
+    timeline_value = json.loads(timeline.read_text(encoding="utf-8"))
+    timeline_ok = (
+        timeline_value.get("kind") == "capability_timeline"
+        and timeline_value.get("complete") is True
+        and timeline_value.get("lineage_sha256") == file_hash(lineage)
+    )
+    timeline_rows = timeline_value.get("rows", [])
+    timeline_steps = sorted({int(row["step"]) for row in timeline_rows})
+    if timeline_ok and timeline_steps != checkpoint_steps:
+        timeline_ok = False
+    timeline_cells = timeline_value.get("paired_initial_state_ids", {})
+    if timeline_ok and not timeline_cells:
+        timeline_ok = False
+    timeline_seen: set[tuple[int, int]] = set()
+    timeline_by_step: dict[int, dict[str, list[int]]] = {}
+    for row in timeline_rows:
+        try:
+            step, task = int(row["step"]), int(row["task"])
+            ids = [int(value) for value in row["initial_state_ids"]]
+            episodes = int(row["episodes"])
+        except (KeyError, TypeError, ValueError):
+            timeline_ok = False
+            continue
+        key = (step, task)
+        if key in timeline_seen or len(ids) != len(set(ids)) or episodes != len(ids):
+            timeline_ok = False
+        timeline_seen.add(key)
+        timeline_by_step.setdefault(step, {})[str(task)] = sorted(ids)
+    if timeline_ok:
+        first_cells = timeline_by_step.get(checkpoint_steps[0], {})
+        if any(timeline_by_step.get(step) != first_cells for step in checkpoint_steps):
+            timeline_ok = False
+
+    candidate_value = json.loads(candidates.read_text(encoding="utf-8"))
+    candidate_hash = file_hash(candidates)
+    candidate_ids = [str(row["id"]) for row in candidate_value.get("candidates", [])]
+    trajectory_value = json.loads((trajectory / "report.json").read_text(encoding="utf-8"))
+    projection_path = trajectory / "projections.npz"
+    representation_reasons = []
+    if trajectory_value.get("kind") != "frozen_candidate_trajectory":
+        representation_reasons.append("trajectory kind is incompatible")
+    if trajectory_value.get("candidate_sha256") != candidate_hash:
+        representation_reasons.append("trajectory candidate hash differs")
+    if trajectory_value.get("selection_uses_physical_labels") is not False:
+        representation_reasons.append("trajectory selection was not label-blind")
+    if not projection_path.is_file() or trajectory_value.get("projections_sha256") != file_hash(projection_path):
+        representation_reasons.append("trajectory projection artifact is stale or missing")
+    trajectory_names = [str(row.get("checkpoint")) for row in trajectory_value.get("summaries", [])]
+    if len(trajectory_names) < 2 or len(set(trajectory_names)) != len(trajectory_names):
+        representation_reasons.append("trajectory lacks unique cross-checkpoint summaries")
+    trace_hashes = {
+        str(value) for value in trajectory_value.get("trace_checkpoint_sha256", {}).values()
+        if value
+    }
+    if trace_hashes != checkpoint_hashes:
+        representation_reasons.append("trajectory traces do not cover the frozen lineage")
+    state_ids = trajectory_value.get("state_ids", [])
+    if not state_ids or len(state_ids) != len(set(state_ids)):
+        representation_reasons.append("trajectory state IDs are missing or duplicated")
+    try:
+        with np.load(projection_path, allow_pickle=False) as values:
+            projected_ids = [str(item) for item in values["candidate_ids"].tolist()]
+            if projected_ids != candidate_ids:
+                representation_reasons.append("trajectory candidate IDs differ")
+            for name in trajectory_names:
+                key = f"projection_{name}"
+                if key not in values.files or not np.isfinite(values[key]).all():
+                    representation_reasons.append(f"trajectory projection is missing or non-finite: {name}")
+    except (KeyError, OSError, ValueError) as exc:
+        representation_reasons.append(f"trajectory projection cannot be read: {exc}")
+
+    functional_seen: set[str] = set()
+    functional_rows = []
+    functional_reasons = []
+    for name, path in functional_reports.items():
+        value = json.loads(path.read_text(encoding="utf-8"))
+        report_hash = value.get("checkpoint_sha256")
+        if value.get("kind") != "offline_action_gate":
+            functional_reasons.append(f"{name}: incompatible gate kind")
+        if value.get("candidate_sha256") != candidate_hash:
+            functional_reasons.append(f"{name}: candidate hash differs")
+        if report_hash not in checkpoint_hashes:
+            functional_reasons.append(f"{name}: checkpoint hash is not in lineage")
+        if int(value.get("independent_episodes", 0)) <= 0:
+            functional_reasons.append(f"{name}: no independent episodes")
+        consistency = value.get("numerical_self_consistency", {})
+        if consistency.get("all_arrays_finite") is not True or consistency.get("shared_state_noise_sigma") is not True:
+            functional_reasons.append(f"{name}: numerical self-consistency failed")
+        if report_hash:
+            functional_seen.add(str(report_hash))
+        functional_rows.append({
+            "name": name, "path": str(path), "checkpoint_sha256": report_hash,
+            "independent_episodes": value.get("independent_episodes"),
+        })
+    missing_functional = sorted(checkpoint_hashes - functional_seen)
+    if missing_functional:
+        functional_reasons.append("functional reports do not cover every lineage checkpoint")
+
+    result = {
+        "schema": SCHEMA,
+        "kind": "longitudinal_evidence_audit",
+        "lineage_sha256": file_hash(lineage),
+        "checkpoint_steps": checkpoint_steps,
+        "checkpoint_sha256s": [str(row["checkpoint_sha256"]) for row in checkpoints],
+        "representation_alignment": {
+            "passed": not representation_reasons,
+            "candidate_sha256": candidate_hash,
+            "trajectory_sha256": file_hash(trajectory / "report.json"),
+            "reasons": representation_reasons,
+        },
+        "capability_comparison": {
+            "passed": timeline_ok,
+            "timeline_sha256": file_hash(timeline),
+            "steps": timeline_steps,
+            "paired_initial_state_ids": timeline_cells,
+        },
+        "functional_dependence": {
+            "passed": not functional_reasons,
+            "reports": functional_rows,
+            "missing_checkpoint_sha256s": missing_functional,
+            "reasons": functional_reasons,
+        },
+        "primary_comparison": ["R_k", "U_k", "S_k"],
+        "protocol_ready": bool(
+            not representation_reasons and timeline_ok and not functional_reasons
+        ),
+    }
+    write_json_atomic(output, result)
+    return result
+
 def intervention_smoke_command(bank: Path, dataset_root: Path, checkpoint: Path,
                                contract: Path, metadata: Path, candidates: Path,
                                candidate_id: str, output: Path, *, device: str,
@@ -487,44 +911,143 @@ def intervention_smoke_command(bank: Path, dataset_root: Path, checkpoint: Path,
 
 
 def offline_action_gate(baseline: Path, edited: Mapping[str, Path], candidates: Path,
-                        output: Path, *, bootstrap_samples: int = 10000) -> dict:
+                        state_bank: Path, output: Path, *, executed_steps: int = 10,
+                        minimum_episodes: int = 8,
+                        bootstrap_samples: int = 10000) -> dict:
     if bootstrap_samples <= 0:
         raise ValueError("bootstrap_samples must be positive")
+    if executed_steps <= 0 or minimum_episodes < 2:
+        raise ValueError("executed steps and minimum episodes are invalid")
     if output.exists():
         raise FileExistsError(f"refusing to overwrite offline gate: {output}")
     candidate_rows = {row["id"]: row for row in json.loads(
         candidates.read_text(encoding="utf-8")
     )["candidates"]}
-    base_ids, base, _, _ = load_trace(baseline)
-    effects = {}
-    for candidate_id, path in edited.items():
-        ids, arrays, _, _ = load_trace(path)
+    records, _, _, _ = load_state_bank(state_bank)
+    by_id = {row.state_id: row for row in records}
+    base_ids, base, base_binding, _ = load_trace(baseline)
+    if any(state_id not in by_id for state_id in base_ids.tolist()):
+        raise ValueError("StateBank does not cover every trace state")
+    episodes = np.asarray([
+        f"{by_id[state_id].suite}/{by_id[state_id].task_id}/"
+        f"{by_id[state_id].source_episode_id}" for state_id in base_ids.tolist()
+    ])
+    unique_episodes = np.unique(episodes)
+    effects, action_deltas, conditions = {}, {}, {}
+    for condition, path in edited.items():
+        ids, arrays, binding, _ = load_trace(path)
+        edit = binding.get("flow_edit") or {}
+        candidate_id = edit.get("candidate_id")
         if candidate_id not in candidate_rows or not np.array_equal(ids, base_ids):
-            raise ValueError(f"edited trace is unbound: {candidate_id}")
-        delta = arrays["action_postprocessed"] - base["action_postprocessed"]
-        effects[candidate_id] = np.sqrt(np.mean(np.square(delta), axis=(1, 2, 3)))
-    controls = [value for key, value in effects.items()
-                if candidate_rows[key]["role"] in {"low_change", "matched_random"}]
-    if not controls:
-        raise ValueError("offline gate requires edited matched controls")
-    control = np.mean(np.stack(controls), axis=0)
+            raise ValueError(f"edited trace is unbound: {condition}")
+        if any(not np.array_equal(arrays[key], base[key]) for key in ("epsilon", "sigma")):
+            raise ValueError(f"edited trace does not share baseline noise/sigma: {condition}")
+        action = arrays["action_postprocessed"]
+        baseline_action = base["action_postprocessed"]
+        if action.shape != baseline_action.shape or executed_steps > action.shape[2]:
+            raise ValueError("action trace shape or executed prefix is invalid")
+        delta = action - baseline_action
+        action_deltas[condition] = delta[:, :, :executed_steps]
+
+        def rms(value: np.ndarray, slc: slice) -> np.ndarray:
+            return np.sqrt(np.mean(np.square(value[..., slc]), axis=(1, 2, 3)))
+
+        effects[condition] = {
+            "executed_full": rms(delta[:, :, :executed_steps], slice(None)),
+            "executed_translation": rms(delta[:, :, :executed_steps], slice(0, 3)),
+            "executed_rotation": rms(delta[:, :, :executed_steps], slice(3, 6)),
+            "executed_gripper": rms(delta[:, :, :executed_steps], slice(6, 7)),
+            "planned_full": rms(delta, slice(None)),
+        }
+        conditions[condition] = {
+            "candidate_id": candidate_id,
+            "role": candidate_rows[candidate_id]["role"],
+            "stages": tuple(edit.get("stages", ())),
+            "dose": float(edit.get("dose", np.nan)),
+        }
+
+    def episode_means(values: np.ndarray) -> np.ndarray:
+        return np.asarray([values[episodes == episode].mean() for episode in unique_episodes])
+
     rng = np.random.default_rng(2057736129)
     rows = []
-    for candidate_id, effect in effects.items():
-        if candidate_rows[candidate_id]["role"] != "formation":
+    for condition, metadata in conditions.items():
+        if metadata["role"] != "formation":
             continue
-        difference = effect - control
+        matched = [name for name, row in conditions.items()
+                   if row["role"] in {"low_change", "matched_random"}
+                   and row["stages"] == metadata["stages"]
+                   and row["dose"] == metadata["dose"]]
+        if not matched:
+            rows.append({"condition": condition, **metadata, "passed": False,
+                         "reason": "missing stage-and-dose-matched controls"})
+            continue
+        control = np.mean(np.stack([
+            effects[name]["executed_full"] for name in matched
+        ]), axis=0)
+        target = effects[condition]["executed_full"]
+        difference = episode_means(target - control)
         boot = np.asarray([rng.choice(difference, len(difference), replace=True).mean()
                            for _ in range(bootstrap_samples)])
         interval = np.quantile(boot, [0.025, 0.975])
-        rows.append({"candidate_id": candidate_id, "mean_action_rms": float(effect.mean()),
-                     "mean_control_rms": float(control.mean()),
+        enough = len(unique_episodes) >= minimum_episodes
+        rows.append({"condition": condition, **metadata,
+                     "matched_controls": matched,
+                     "independent_episodes": int(len(unique_episodes)),
+                     "mean_executed_action_rms": {
+                         key.removeprefix("executed_"): float(value.mean())
+                         for key, value in effects[condition].items()
+                         if key.startswith("executed_")
+                     },
+                     "mean_planned_full_rms": float(
+                         effects[condition]["planned_full"].mean()),
+                     "mean_control_executed_full_rms": float(control.mean()),
                      "target_minus_control_ci95": interval.tolist(),
-                     "passed": bool(interval[0] > 0)})
+                     "passed": bool(enough and interval[0] > 0),
+                     "reason": ("passed" if enough and interval[0] > 0 else
+                                "too few independent episodes" if not enough else
+                                "episode-clustered interval includes zero")})
+    signed_pairs = []
+    for name, row in conditions.items():
+        if row["dose"] <= 0:
+            continue
+        opposite = next((other for other, candidate in conditions.items()
+                         if candidate["candidate_id"] == row["candidate_id"]
+                         and candidate["stages"] == row["stages"]
+                         and candidate["dose"] == -row["dose"]), None)
+        if opposite is None:
+            continue
+        first, second = action_deltas[name], action_deltas[opposite]
+        denominator = 0.5 * (np.sqrt(np.mean(first ** 2)) + np.sqrt(np.mean(second ** 2)))
+        signed_pairs.append({
+            "positive": name, "negative": opposite,
+            "antisymmetry_residual_ratio": (
+                float(np.sqrt(np.mean((first + second) ** 2)) / denominator)
+                if denominator > 0 else 0.0),
+        })
+    direction_norm_error = max((abs(np.linalg.norm(row["direction"]) - 1.0)
+                                for row in candidate_rows.values()
+                                if "direction" in row), default=0.0)
     report = {"schema": SCHEMA, "kind": "offline_action_gate",
               "candidate_sha256": file_hash(candidates), "state_ids": base_ids.tolist(),
+              "state_bank_sha256": file_hash(state_bank / "manifest.json"),
+              "checkpoint_sha256": (base_binding.get("checkpoint_sha256")
+                                     or base_binding.get("checkpoint_tree_sha256")),
+              "baseline_binding_sha256": base_binding.get("binding_sha256"),
+              "primary_metric": f"first_{executed_steps}_actions_full_rms",
+              "secondary_metrics": ["translation", "rotation", "gripper", "planned_full"],
+              "bootstrap_unit": "source_episode",
+              "independent_episodes": int(len(unique_episodes)),
+              "minimum_episodes": minimum_episodes,
+              "numerical_self_consistency": {
+                  "all_arrays_finite": True,
+                  "shared_state_noise_sigma": True,
+                  "maximum_candidate_unit_norm_error": float(direction_norm_error),
+                  "signed_pair_checks": signed_pairs,
+              },
               "bootstrap_samples": bootstrap_samples, "rows": rows,
-              "passed_candidate_ids": [row["candidate_id"] for row in rows if row["passed"]]}
+              "passed_candidate_ids": sorted({row["candidate_id"] for row in rows
+                                                if row.get("passed")})}
     write_json_atomic(output, report)
     return report
 
@@ -532,13 +1055,19 @@ def offline_action_gate(baseline: Path, edited: Mapping[str, Path], candidates: 
 def _intervention_command(checkpoint: Path, task: int, output: Path, candidates: Path,
                           gate: Path, candidate_id: str, dose: float,
                           stages: Sequence[int], offset: int, episodes: int,
-                          control: bool) -> tuple[str, ...]:
-    base = list(_evaluation_command(checkpoint, task, output, offset, episodes))
+                          control: bool, edit_mode: str = "additive",
+                          match_candidate_id: str | None = None,
+                          initial_state_count: int | None = None) -> tuple[str, ...]:
+    base = list(_evaluation_command(checkpoint, task, output, offset, episodes,
+                                    initial_state_count))
     module_index = base.index("interaction_vla.representation_study.libero.capability_events")
     base[module_index] = "interaction_vla.representation_study.libero.flow_intervention_eval"
     separator = base.index("--")
     prefix = ["--candidates", str(candidates), "--gate", str(gate),
-              "--candidate-id", candidate_id, "--dose", str(dose)]
+              "--candidate-id", candidate_id, "--dose", str(dose),
+              "--edit-mode", edit_mode]
+    if match_candidate_id is not None:
+        prefix.extend(("--match-candidate-id", match_candidate_id))
     for stage in stages:
         prefix.extend(("--edit-stage", str(stage)))
     if control:
@@ -546,14 +1075,89 @@ def _intervention_command(checkpoint: Path, task: int, output: Path, candidates:
     return tuple(base[:separator] + prefix + base[separator:])
 
 
+def freeze_confirmation_contract(output: Path, tasks: Sequence[int], *,
+                                 initial_state_offset: int, episodes: int,
+                                 used_plans: Sequence[Path] = (),
+                                 binding: Mapping[str, object] | None = None,
+                                 initial_state_count: int | None = None) -> dict:
+    """Freeze unseen simulator cells and reject overlap with recorded plans."""
+    if output.exists():
+        raise FileExistsError(f"refusing to overwrite confirmation contract: {output}")
+    if not tasks or min(tasks) < 0 or initial_state_offset < 0 or episodes <= 0:
+        raise ValueError("confirmation task and initial-state contract is invalid")
+    if initial_state_count is None or initial_state_count <= 0:
+        raise ValueError("confirmation requires positive initial_state_count")
+    requested_ids = list(range(initial_state_offset, initial_state_offset + episodes))
+    actual_ids = _actual_state_ids(initial_state_offset, episodes, initial_state_count)
+    requested = {(int(task), state) for task in tasks for state in actual_ids}
+    used, bindings = set(), {}
+    for path in used_plans:
+        plan = json.loads(path.read_text(encoding="utf-8"))
+        used.update(_plan_actual_cells(path, plan))
+        bindings[str(path.resolve())] = file_hash(path)
+    overlap = sorted(requested & used)
+    if overlap:
+        raise ValueError(f"confirmation cells were used previously: {overlap}")
+    contract_binding = dict(binding or {})
+    contract_binding.update({
+        "tasks": sorted(set(int(task) for task in tasks)),
+        "initial_state_offset": int(initial_state_offset),
+        "episodes_per_task": int(episodes),
+        "requested_initial_state_ids": requested_ids,
+        "actual_initial_state_ids": actual_ids,
+        "initial_state_count": initial_state_count,
+    })
+    required_binding = (
+        "checkpoint_sha256", "processor_sha256", "candidate_sha256", "tap",
+        "gate_sha256", "initial_state_count",
+        "stages", "dose", "edit_mode", "candidate_ids", "executed_steps",
+        "noise_rule", "primary_metric", "secondary_metrics", "controls",
+        "estimator", "confidence_level", "comparison_family", "budget",
+        "history_usage",
+        # Longitudinal §0.6 binding: R_k/U_k/S_k share one frozen lineage.
+        "lineage_sha256", "checkpoint_steps", "training_contract_sha256",
+        "candidate_trajectory_sha256", "candidate_alignment",
+        "readout_protocol_sha256", "readout_protocol",
+        "dose_calibration_sha256", "primary_comparison",
+        "longitudinal_audit_sha256",
+    )
+    def present(key: str) -> bool:
+        value = contract_binding.get(key)
+        return value is not None and value != "" and value != [] and value != {} and value != "TBD"
+    missing_binding = [key for key in required_binding if not present(key)]
+    report = {
+        "schema": SCHEMA, "kind": "frozen_confirmation_contract",
+        "tasks": contract_binding["tasks"],
+        "initial_state_offset": initial_state_offset,
+        "episodes_per_task": episodes,
+        "requested_initial_state_ids": requested_ids,
+        "actual_initial_state_ids": actual_ids,
+        "initial_state_count": initial_state_count,
+        "selection_uses_confirmation_results": False,
+        "used_plan_bindings": bindings,
+        "binding": contract_binding,
+        "contract_complete": not missing_binding,
+        "missing_binding": missing_binding,
+    }
+    write_json_atomic(output, report)
+    return report
+
+
 def run_closed_loop(checkpoint: Path, candidates: Path, gate: Path, output: Path,
                     tasks: Sequence[int], candidate_ids: Sequence[str], *, dose: float,
                     stages: Sequence[int], initial_state_offset: int, episodes: int,
-                    dry_run: bool) -> dict:
+                    dry_run: bool, confirmation_contract: Path | None = None,
+                    edit_mode: str = "additive",
+                    initial_state_count: int | None = None) -> dict:
+    if output.exists():
+        raise FileExistsError(f"refusing to relabel existing closed-loop output: {output}")
     if not tasks or min(tasks) < 0 or episodes <= 0 or initial_state_offset < 0:
         raise ValueError("closed-loop task and episode contract is invalid")
     if not stages or min(stages) < 0 or max(stages) >= 10 or dose == 0:
         raise ValueError("closed-loop flow stages/dose are invalid")
+    if initial_state_count is None or initial_state_count <= 0:
+        raise ValueError("closed-loop runs require initial_state_count")
+    _actual_state_ids(initial_state_offset, episodes, initial_state_count)
     artifact = json.loads(candidates.read_text(encoding="utf-8"))
     rows = {row["id"]: row for row in artifact["candidates"]}
     gate_value = json.loads(gate.read_text(encoding="utf-8"))
@@ -566,23 +1170,61 @@ def run_closed_loop(checkpoint: Path, candidates: Path, gate: Path, output: Path
     ]
     if not selected or any(key not in rows for key in selected):
         raise ValueError("closed-loop candidate selection is empty or unknown")
+    confirmation_sha256 = None
+    if confirmation_contract is not None:
+        confirmation = json.loads(confirmation_contract.read_text(encoding="utf-8"))
+        expected = (sorted(set(int(task) for task in tasks)), initial_state_offset, episodes)
+        observed = (confirmation.get("tasks"), confirmation.get("initial_state_offset"),
+                    confirmation.get("episodes_per_task"))
+        if confirmation.get("kind") != "frozen_confirmation_contract" or observed != expected:
+            raise ValueError("closed-loop run differs from frozen confirmation contract")
+        if not confirmation.get("contract_complete"):
+            raise ValueError(
+                "confirmation contract is incomplete; missing "
+                + ", ".join(confirmation.get("missing_binding", []))
+            )
+        binding = confirmation["binding"]
+        if binding.get("checkpoint_sha256") != _tree_sha256(checkpoint):
+            raise ValueError("confirmation checkpoint hash differs")
+        if binding.get("candidate_sha256") != file_hash(candidates):
+            raise ValueError("confirmation candidate hash differs")
+        if binding.get("gate_sha256") not in (None, file_hash(gate)):
+            raise ValueError("confirmation gate hash differs")
+        expected_binding = {
+            "tasks": sorted(set(int(task) for task in tasks)),
+            "initial_state_offset": int(initial_state_offset),
+            "episodes_per_task": int(episodes),
+            "initial_state_count": initial_state_count,
+            "stages": list(stages), "dose": float(dose),
+            "edit_mode": edit_mode,
+            "candidate_ids": list(selected),
+            "executed_steps": 10,
+        }
+        for key, value in expected_binding.items():
+            if value is not None and binding.get(key) != value:
+                raise ValueError(f"confirmation binding differs: {key}")
+        confirmation_sha256 = file_hash(confirmation_contract)
+    formation_ids = [key for key in selected if rows[key]["role"] == "formation"]
+    match_target = formation_ids[0] if len(formation_ids) == 1 else None
+    if edit_mode != "additive" and match_target is None:
+        raise ValueError("suppression closed loop requires exactly one formation target")
     commands = []
     conditions = ("baseline", *selected)
     for condition in conditions:
         for task in tasks:
             destination = output / condition / f"task{task}"
             command = (_evaluation_command(checkpoint, task, destination,
-                                            initial_state_offset, episodes)
+                                            initial_state_offset, episodes,
+                                            initial_state_count)
                        if condition == "baseline" else
                        _intervention_command(checkpoint, task, destination, candidates, gate,
                                              condition, dose, stages, initial_state_offset,
-                                             episodes, rows[condition]["role"] != "formation"))
+                                             episodes, rows[condition]["role"] != "formation",
+                                             edit_mode,
+                                             match_target if rows[condition]["role"] != "formation" else None,
+                                             initial_state_count))
             commands.append(list(command))
             if dry_run:
-                continue
-            if (destination / "eval_info.json").is_file() and (
-                destination / "physical_events.json"
-            ).is_file():
                 continue
             if destination.exists():
                 raise FileExistsError(f"incomplete closed-loop output: {destination}")
@@ -593,7 +1235,11 @@ def run_closed_loop(checkpoint: Path, candidates: Path, gate: Path, output: Path
             "candidate_sha256": file_hash(candidates), "gate_sha256": file_hash(gate),
             "conditions": list(conditions), "tasks": list(tasks), "dose": dose,
             "stages": list(stages), "initial_state_offset": initial_state_offset,
-            "episodes_per_task": episodes, "dry_run": dry_run, "commands": commands}
+            "initial_state_count": initial_state_count,
+            "episodes_per_task": episodes, "dry_run": dry_run,
+            "edit_mode": edit_mode, "match_target": match_target,
+            "analysis_role": "confirmation" if confirmation_sha256 else "development",
+            "confirmation_contract_sha256": confirmation_sha256, "commands": commands}
     write_json_atomic(output / "plan.json", plan)
     return plan
 
@@ -602,46 +1248,109 @@ def summarize_closed_loop(root: Path, output: Path, *, bootstrap_samples: int = 
     plan = json.loads((root / "plan.json").read_text(encoding="utf-8"))
     if plan.get("dry_run"):
         raise ValueError("cannot summarize a dry-run plan")
-    baseline = {}
+    if not isinstance(plan.get("initial_state_count"), int) or plan["initial_state_count"] <= 0:
+        raise ValueError("closed-loop summary requires explicit initial_state_count")
+    if bootstrap_samples <= 0:
+        raise ValueError("bootstrap_samples must be positive")
+
+    baseline: dict[tuple[int, int], dict[str, object]] = {}
+    task_cells: dict[int, set[int]] = {}
     for task in plan["tasks"]:
-        values = json.loads((root / "baseline" / f"task{task}" /
-                             "physical_events.json").read_text(encoding="utf-8"))["episodes"]
-        baseline.update({(int(task), int(row["initial_state_id"])): row for row in values})
+        path = root / "baseline" / f"task{task}" / "physical_events.json"
+        rows = _load_event_rows(path, plan, int(task))
+        task_cells[int(task)] = set(rows)
+        baseline.update({(int(task), state_id): row for state_id, row in rows.items()})
+
     rng, summaries = np.random.default_rng(2057736129), []
     for condition in plan["conditions"][1:]:
-        differences, action_groups = [], {"translation": [], "rotation": [], "gripper": []}
+        differences, task_ids = [], []
+        action_groups = {"full": [], "translation": [], "rotation": [], "gripper": []}
+        action_task_ids = {key: [] for key in action_groups}
         event_delta = {key: [] for key in EVENT_KEYS}
+        condition_cells: dict[int, set[int]] = {}
         for task in plan["tasks"]:
-            values = json.loads((root / condition / f"task{task}" /
-                                 "physical_events.json").read_text(encoding="utf-8"))["episodes"]
-            for row in values:
-                key = (int(task), int(row["initial_state_id"])); original = baseline[key]
+            path = root / condition / f"task{task}" / "physical_events.json"
+            rows = _load_event_rows(path, plan, int(task))
+            condition_cells[int(task)] = set(rows)
+            if condition_cells[int(task)] != task_cells[int(task)]:
+                raise ValueError(f"paired initial-state set differs: {path}")
+            for state_id in sorted(rows):
+                row = rows[state_id]
+                original = baseline[(int(task), state_id)]
                 differences.append(int(bool(row["success"])) - int(bool(original["success"])))
+                task_ids.append(int(task))
                 for event in EVENT_KEYS:
-                    event_delta[event].append(int(bool(row[event])) - int(bool(original[event])))
-                first, second = np.asarray(original["executed_actions"]), np.asarray(row["executed_actions"])
+                    event_delta[event].append(
+                        int(bool(row.get(event))) - int(bool(original.get(event)))
+                    )
+                first = np.asarray(original.get("executed_actions", []), dtype=float)
+                second = np.asarray(row.get("executed_actions", []), dtype=float)
+                if first.ndim != 2 or second.ndim != 2 or first.shape[1:] != second.shape[1:]:
+                    raise ValueError(f"paired action shape differs: {path}")
                 length = min(len(first), len(second))
                 if length:
                     delta = second[:length] - first[:length]
+                    action_groups["full"].append(float(np.sqrt(np.mean(delta ** 2))))
                     action_groups["translation"].append(float(np.sqrt(np.mean(delta[:, :3] ** 2))))
                     action_groups["rotation"].append(float(np.sqrt(np.mean(delta[:, 3:6] ** 2))))
                     action_groups["gripper"].append(float(np.sqrt(np.mean(delta[:, 6:7] ** 2))))
+                    for metric in action_groups:
+                        action_task_ids[metric].append(int(task))
         differences = np.asarray(differences, dtype=float)
-        boot = np.asarray([rng.choice(differences, len(differences), replace=True).mean()
-                           for _ in range(bootstrap_samples)])
-        summaries.append({"condition": condition, "pairs": len(differences),
-                          "delta_success": float(differences.mean()),
-                          "delta_success_ci95": np.quantile(boot, [0.025, 0.975]).tolist(),
-                          "event_rate_deltas": {key: float(np.mean(value))
-                                                for key, value in event_delta.items()},
-                          "mean_executed_action_rms": {key: float(np.mean(value))
-                                                       for key, value in action_groups.items()}})
-    report = {"schema": SCHEMA, "kind": "paired_closed_loop_report",
-              "plan_sha256": file_hash(root / "plan.json"),
-              "bootstrap_samples": bootstrap_samples, "conditions": summaries}
+        task_ids = np.asarray(task_ids, dtype=int)
+        if len(differences) != sum(len(cells) for cells in task_cells.values()):
+            raise ValueError(f"paired count differs for condition: {condition}")
+        task_values = np.unique(task_ids)
+
+        def task_macro(values, ids):
+            values, ids = np.asarray(values, dtype=float), np.asarray(ids, dtype=int)
+            return float(np.mean([
+                values[ids == task].mean() for task in np.unique(ids) if np.any(ids == task)
+            ]))
+
+        boot = np.asarray([
+            np.mean([rng.choice(differences[task_ids == task], np.sum(task_ids == task), replace=True).mean()
+                     for task in task_values])
+            for _ in range(bootstrap_samples)
+        ])
+        per_task = {}
+        for task in task_values:
+            mask = task_ids == task
+            per_task[str(int(task))] = {
+                "pairs": int(mask.sum()),
+                "initial_state_ids": sorted(task_cells[int(task)]),
+                "delta_success": float(differences[mask].mean()),
+                "event_rate_deltas": {
+                    key: float(np.asarray(value)[mask].mean())
+                    for key, value in event_delta.items()
+                },
+            }
+        summaries.append({
+            "condition": condition,
+            "pairs": len(differences),
+            "paired_initial_state_ids": {str(task): sorted(values) for task, values in condition_cells.items()},
+            "delta_success": task_macro(differences, task_ids),
+            "delta_success_ci95": np.quantile(boot, [0.025, 0.975]).tolist(),
+            "event_rate_deltas": {key: task_macro(value, task_ids) for key, value in event_delta.items()},
+            "mean_executed_action_rms": {
+                key: task_macro(value, action_task_ids[key])
+                for key, value in action_groups.items() if value
+            },
+            "action_pairs": {key: len(value) for key, value in action_groups.items()},
+            "per_task": per_task,
+        })
+    report = {
+        "schema": SCHEMA, "kind": "paired_closed_loop_report", "complete": True,
+        "initial_state_count": int(plan["initial_state_count"]),
+        "paired_initial_state_ids": {str(task): sorted(values) for task, values in task_cells.items()},
+        "plan_sha256": file_hash(root / "plan.json"),
+        "bootstrap_samples": bootstrap_samples,
+        "bootstrap_unit": "task-stratified paired initial condition",
+        "primary_action_metric": "actually executed actions",
+        "conditions": summaries,
+    }
     write_json_atomic(output, report)
     return report
-
 
 def _assignments(values: Sequence[str]) -> dict[str, Path]:
     result = {}
@@ -666,6 +1375,7 @@ def main() -> None:
     evaluate.add_argument("--output", type=Path, required=True)
     evaluate.add_argument("--task", type=int, action="append", default=[])
     evaluate.add_argument("--initial-state-offset", type=int, default=10)
+    evaluate.add_argument("--initial-state-count", type=int)
     evaluate.add_argument("--episodes", type=int, default=10)
     evaluate.add_argument("--dry-run", action="store_true")
     summarize = commands.add_parser("summarize")
@@ -686,6 +1396,16 @@ def main() -> None:
     interpret.add_argument("--state-bank", type=Path, required=True)
     interpret.add_argument("--checkpoint", required=True)
     interpret.add_argument("--output", type=Path, required=True)
+    context = commands.add_parser("candidate-context")
+    context.add_argument("--trace", type=Path, required=True)
+    context.add_argument("--candidates", type=Path, required=True)
+    context.add_argument("--state-bank", type=Path, required=True)
+    context.add_argument("--candidate-id", action="append", default=[])
+    context.add_argument("--output", type=Path, required=True)
+    expand = commands.add_parser("expand-random-controls")
+    expand.add_argument("--candidates", type=Path, required=True)
+    expand.add_argument("--output", type=Path, required=True)
+    expand.add_argument("--count", type=int, default=8)
     smoke = commands.add_parser("intervention-smoke")
     smoke.add_argument("--bank", type=Path, required=True)
     smoke.add_argument("--dataset-root", type=Path, required=True)
@@ -707,7 +1427,25 @@ def main() -> None:
     gate.add_argument("--baseline", type=Path, required=True)
     gate.add_argument("--edited", action="append", default=[], required=True)
     gate.add_argument("--candidates", type=Path, required=True)
+    gate.add_argument("--state-bank", type=Path, required=True)
+    gate.add_argument("--executed-steps", type=int, default=10)
+    gate.add_argument("--minimum-episodes", type=int, default=8)
     gate.add_argument("--output", type=Path, required=True)
+    audit = commands.add_parser("audit-longitudinal")
+    audit.add_argument("--lineage", type=Path, required=True)
+    audit.add_argument("--timeline", type=Path, required=True)
+    audit.add_argument("--candidates", type=Path, required=True)
+    audit.add_argument("--trajectory", type=Path, required=True)
+    audit.add_argument("--functional-report", action="append", default=[])
+    audit.add_argument("--output", type=Path, required=True)
+    freeze = commands.add_parser("freeze-confirmation")
+    freeze.add_argument("--output", type=Path, required=True)
+    freeze.add_argument("--task", type=int, action="append", required=True)
+    freeze.add_argument("--initial-state-offset", type=int, required=True)
+    freeze.add_argument("--episodes", type=int, required=True)
+    freeze.add_argument("--initial-state-count", type=int)
+    freeze.add_argument("--used-plan", type=Path, action="append", default=[])
+    freeze.add_argument("--binding", type=Path)
     closed = commands.add_parser("closed-loop")
     closed.add_argument("--checkpoint", type=Path, required=True)
     closed.add_argument("--candidates", type=Path, required=True)
@@ -718,21 +1456,47 @@ def main() -> None:
     closed.add_argument("--dose", type=float, default=1.0)
     closed.add_argument("--edit-stage", type=int, action="append", default=[])
     closed.add_argument("--initial-state-offset", type=int, default=20)
+    closed.add_argument("--initial-state-count", type=int)
     closed.add_argument("--episodes", type=int, default=10)
     closed.add_argument("--dry-run", action="store_true")
+    closed.add_argument("--edit-mode", choices=("additive", "suppress", "matched_suppress"),
+                        default="additive")
+    closed.add_argument("--confirmation-contract", type=Path)
     closed_summary = commands.add_parser("closed-loop-summary")
     closed_summary.add_argument("--root", type=Path, required=True)
     closed_summary.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "lineage": result = checkpoint_lineage(args.checkpoint_root, args.base_checkpoint, args.step, args.output)
-    elif args.command == "evaluate": result = evaluate_timeline(args.lineage, args.output, args.task or range(4), initial_state_offset=args.initial_state_offset, episodes=args.episodes, dry_run=args.dry_run)
+    elif args.command == "evaluate": result = evaluate_timeline(args.lineage, args.output, args.task or range(4), initial_state_offset=args.initial_state_offset, episodes=args.episodes, dry_run=args.dry_run, initial_state_count=args.initial_state_count)
     elif args.command == "summarize": result = summarize_timeline(args.lineage, args.root, args.output)
     elif args.command == "discover": result = discover_change_subspaces(_assignments(args.trace), before=args.before, after=args.after, tap=args.tap, rank=args.rank, output=args.output)
     elif args.command == "candidate-trajectory": result = candidate_trajectory(_assignments(args.trace), args.candidates, args.output)
     elif args.command == "candidate-interpret": result = interpret_candidates(args.trajectory, args.state_bank, args.checkpoint, args.output)
+    elif args.command == "candidate-context": result = candidate_context_analysis(
+        args.trace, args.candidates, args.state_bank, args.output, args.candidate_id)
+    elif args.command == "expand-random-controls": result = expand_random_controls(
+        args.candidates, args.output, count=args.count)
     elif args.command == "intervention-smoke": result = intervention_smoke_command(args.bank, args.dataset_root, args.checkpoint, args.contract_checkpoint, args.metadata, args.candidates, args.candidate_id, args.output, device=args.device, max_states=args.max_states, dose=args.dose, stages=args.edit_stage or tuple(range(10)), partition=args.partition, split_group=args.split_group, suite=args.suite, task_ids=args.task_id)
-    elif args.command == "gate": result = offline_action_gate(args.baseline, _assignments(args.edited), args.candidates, args.output)
-    elif args.command == "closed-loop": result = run_closed_loop(args.checkpoint, args.candidates, args.gate, args.output, args.task or range(4), args.candidate_id, dose=args.dose, stages=args.edit_stage or (0, 5, 9), initial_state_offset=args.initial_state_offset, episodes=args.episodes, dry_run=args.dry_run)
+    elif args.command == "gate": result = offline_action_gate(
+        args.baseline, _assignments(args.edited), args.candidates, args.state_bank,
+        args.output, executed_steps=args.executed_steps,
+        minimum_episodes=args.minimum_episodes)
+    elif args.command == "audit-longitudinal": result = audit_longitudinal_evidence(
+        args.lineage, args.timeline, args.candidates, args.trajectory,
+        _assignments(args.functional_report), args.output)
+    elif args.command == "freeze-confirmation": result = freeze_confirmation_contract(
+        args.output, args.task, initial_state_offset=args.initial_state_offset,
+        episodes=args.episodes, used_plans=args.used_plan,
+        initial_state_count=args.initial_state_count,
+        binding=(json.loads(args.binding.read_text(encoding="utf-8"))
+                 if args.binding else None))
+    elif args.command == "closed-loop": result = run_closed_loop(
+        args.checkpoint, args.candidates, args.gate, args.output,
+        args.task or range(4), args.candidate_id, dose=args.dose,
+        stages=args.edit_stage or (0, 5, 9),
+        initial_state_offset=args.initial_state_offset, episodes=args.episodes,
+        dry_run=args.dry_run, confirmation_contract=args.confirmation_contract,
+        edit_mode=args.edit_mode, initial_state_count=args.initial_state_count)
     else: result = summarize_closed_loop(args.root, args.output)
     print(json.dumps(result, indent=2))
 

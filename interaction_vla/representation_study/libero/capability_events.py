@@ -21,6 +21,8 @@ class EpisodeEventTracker:
     drop_height_m: float
     frames: list[PrivilegedFrame]
     actions: list[list[float]] = field(default_factory=list)
+    requested_initial_state_id: int = -1
+    initial_state_count: int = 0
 
     def add(self, frame: PrivilegedFrame) -> None:
         self.frames.append(replace(frame, frame_index=len(self.frames)))
@@ -53,15 +55,18 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
     max_lift = float(np.max(target_z - initial_z, initial=0.0))
     drop_onset = None
     if lift_onset is not None:
-        peak = float(target_z[lift_onset])
-        for index in range(lift_onset + 1, len(target_z)):
-            peak = max(peak, float(target_z[index]))
-            if (
-                not contact[index]
-                and not tracker.frames[index].goal_satisfied
-                and peak - float(target_z[index]) >= tracker.drop_height_m
-            ):
-                drop_onset = index
+        for release in release_steps:
+            if release <= lift_onset:
+                continue
+            # Last contact bounds the unobserved release between sampled frames.
+            release_z = float(target_z[release - 1])
+            for index in range(release, len(target_z)):
+                if contact[index] or tracker.frames[index].goal_satisfied:
+                    break
+                if release_z - float(target_z[index]) >= tracker.drop_height_m:
+                    drop_onset = index
+                    break
+            if drop_onset is not None:
                 break
     normal_release_steps = []
     for release in release_steps:
@@ -77,6 +82,8 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
     return {
         "task_id": tracker.task_id,
         "initial_state_id": tracker.initial_state_id,
+        "requested_initial_state_id": tracker.requested_initial_state_id,
+        "initial_state_count": tracker.initial_state_count,
         "steps": len(tracker.frames) - 1,
         "contact": any(contact),
         "contact_onset_step": first(contact),
@@ -109,6 +116,7 @@ def install_libero_event_recorder(
     output: Path,
     suite: str,
     initial_state_offset: int,
+    initial_state_count: int | None,
     thresholds: AnnotationThresholds,
     drop_height_m: float,
 ) -> None:
@@ -116,6 +124,8 @@ def install_libero_event_recorder(
 
     if initial_state_offset < 0 or drop_height_m <= 0:
         raise ValueError("initial_state_offset must be non-negative and drop_height_m positive")
+    if initial_state_count is not None and initial_state_count <= 0:
+        raise ValueError("initial_state_count must be positive")
     rows: list[dict[str, object]] = []
     monitors: dict[int, tuple[LiberoOffscreenSimulator, EpisodeEventTracker, bool]] = {}
     original_reset, original_step, original_close = LiberoEnv.reset, LiberoEnv.step, LiberoEnv.close
@@ -124,9 +134,11 @@ def install_libero_event_recorder(
         write_json_atomic(
             output,
             {
-                "schema": "libero_capability_events_v3",
+                "schema": "libero_capability_events_v4",
+                "drop_definition": "post-contact-loss descent from last-contact height; excludes goal satisfaction; not an intent label",
                 "suite": suite,
                 "initial_state_offset": initial_state_offset,
+                "initial_state_count": initial_state_count,
                 "thresholds": thresholds.__dict__,
                 "drop_height_m": drop_height_m,
                 "episodes": rows,
@@ -148,10 +160,18 @@ def install_libero_event_recorder(
 
     def reset(env, seed=None, **kwargs):
         finish(env)
+        state_count = len(env._init_states)
         if not getattr(env, "_capability_offset_applied", False):
-            env.init_state_id += initial_state_offset
+            requested_initial_state_id = int(env.init_state_id) + initial_state_offset
+            env.init_state_id = requested_initial_state_id
             env._capability_offset_applied = True
-        initial_state_id = int(env.init_state_id % len(env._init_states))
+        else:
+            requested_initial_state_id = int(env.init_state_id)
+        if initial_state_count is not None and initial_state_count != state_count:
+            raise ValueError(
+                f"initial state count differs: contract={initial_state_count}, simulator={state_count}"
+            )
+        initial_state_id = int(requested_initial_state_id % state_count)
         result = original_reset(env, seed=seed, **kwargs)
         adapter = LiberoOffscreenSimulator.from_live_env(
             env._env,
@@ -163,6 +183,8 @@ def install_libero_event_recorder(
         tracker = EpisodeEventTracker(
             task_id=int(env.task_id),
             initial_state_id=initial_state_id,
+            requested_initial_state_id=requested_initial_state_id,
+            initial_state_count=state_count,
             control_freq=int(env.control_freq),
             thresholds=thresholds,
             drop_height_m=drop_height_m,
@@ -197,6 +219,7 @@ def main() -> None:
     parser.add_argument("--events-output", type=Path, required=True)
     parser.add_argument("--suite", default="libero_spatial")
     parser.add_argument("--initial-state-offset", type=int, default=10)
+    parser.add_argument("--initial-state-count", type=int)
     parser.add_argument("--stable-window-frames", type=int, default=5)
     parser.add_argument("--lift-clearance-m", type=float, default=0.01)
     parser.add_argument("--drop-height-m", type=float, default=0.02)
@@ -208,6 +231,7 @@ def main() -> None:
         output=args.events_output,
         suite=args.suite,
         initial_state_offset=args.initial_state_offset,
+        initial_state_count=args.initial_state_count,
         thresholds=AnnotationThresholds(
             stable_window_frames=args.stable_window_frames,
             lift_clearance_m=args.lift_clearance_m,

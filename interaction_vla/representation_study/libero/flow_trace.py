@@ -31,6 +31,9 @@ class FlowEdit:
     stages: tuple[int, ...]
     direction: torch.Tensor
     dose: float
+    mode: str = "additive"
+    center: torch.Tensor | None = None
+    coefficient_direction: torch.Tensor | None = None
 
     def __post_init__(self) -> None:
         if self.tap not in {"expert_middle", "expert_late"}:
@@ -39,6 +42,27 @@ class FlowEdit:
             raise ValueError("flow edit requires stages and a one-dimensional direction")
         if not np.isfinite(self.dose) or self.dose == 0:
             raise ValueError("flow edit dose must be finite and non-zero")
+        if self.mode not in {"additive", "suppress", "matched_suppress"}:
+            raise ValueError("unknown flow edit mode")
+        if self.mode != "additive" and (
+            self.center is None or self.coefficient_direction is None
+        ):
+            raise ValueError("suppression requires a center and coefficient direction")
+
+
+def _edited_tensor(tensor: torch.Tensor, edit: FlowEdit) -> torch.Tensor:
+    direction = edit.direction.to(device=tensor.device, dtype=tensor.dtype)
+    if direction.shape != (tensor.shape[-1],):
+        raise ValueError("flow edit direction does not match expert hidden width")
+    if edit.mode == "additive":
+        return tensor + edit.dose * direction
+    center = edit.center.to(device=tensor.device, dtype=tensor.dtype)
+    coefficient_direction = edit.coefficient_direction.to(
+        device=tensor.device, dtype=tensor.dtype)
+    if center.shape != direction.shape or coefficient_direction.shape != direction.shape:
+        raise ValueError("suppression vectors do not match expert hidden width")
+    coefficient = torch.einsum("...d,d->...", tensor - center, coefficient_direction)
+    return tensor - edit.dose * coefficient[..., None] * direction
 
 
 def _replace_tensor_output(output, changed: torch.Tensor):
@@ -56,10 +80,7 @@ def _capture_hook(values: list[torch.Tensor], *, tap: str, edit: FlowEdit | None
         tensor = _tensor_output(output)
         stage = len(values)
         if edit is not None and edit.tap == tap and stage in edit.stages:
-            direction = edit.direction.to(device=tensor.device, dtype=tensor.dtype)
-            if direction.shape != (tensor.shape[-1],):
-                raise ValueError("flow edit direction does not match expert hidden width")
-            tensor = tensor + edit.dose * direction
+            tensor = _edited_tensor(tensor, edit)
             output = _replace_tensor_output(output, tensor)
         values.append(tensor.detach().cpu())
         return output
@@ -79,10 +100,7 @@ def install_flow_edit(policy, layer, edit: FlowEdit):
         if stage not in edit.stages:
             return output
         tensor = _tensor_output(output)
-        direction = edit.direction.to(device=tensor.device, dtype=tensor.dtype)
-        if direction.shape != (tensor.shape[-1],):
-            raise ValueError("flow edit direction does not match expert hidden width")
-        return _replace_tensor_output(output, tensor + edit.dose * direction)
+        return _replace_tensor_output(output, _edited_tensor(tensor, edit))
 
     return layer.register_forward_hook(hook)
 
@@ -176,7 +194,10 @@ def select_records(records, split, *, partition: str, max_states: int, seed: int
         raise ValueError("max_states must be positive")
     groups = {}
     for record in records:
-        if (split.assignments[record.state_id] == partition
+        assigned = split.assignments[record.state_id]
+        selected_partition = (assigned in {"validation", "test"}
+                              if partition == "holdout" else assigned == partition)
+        if (selected_partition
                 and (suite is None or record.suite == suite)
                 and (not task_ids or record.task_id in task_ids)):
             groups.setdefault((record.suite, record.task_id), {}).setdefault(
@@ -355,7 +376,7 @@ def _read_shard(path: Path, ids, binding_hash: str, repeats: int, binding):
 
 def plan(bank: Path, *, partition: str, max_states: int, repeats: int,
          suite: str | None = None, task_ids: Sequence[int] = (),
-         split_group: str = "task"):
+         split_group: str = "task", minimum_episodes: int = 1):
     if split_group not in {"task", "episode"}:
         raise ValueError("split_group must be task or episode")
     records, manifest, task_split, episode_split = load_state_bank(bank)
@@ -364,6 +385,11 @@ def plan(bank: Path, *, partition: str, max_states: int, repeats: int,
         raise ValueError("StateBank audit has not passed")
     selected = select_records(records, split, partition=partition, max_states=max_states,
                               suite=suite, task_ids=task_ids)
+    episode_count = len({(row.suite, row.task_id, row.source_episode_id)
+                         for row in selected})
+    if minimum_episodes < 1 or episode_count < minimum_episodes:
+        raise ValueError(f"selected {episode_count} independent episodes; "
+                         f"need at least {minimum_episodes}")
     # Current SmolVLA expert width; run records observed shapes in its manifest.
     expert_hidden_dim = 720
     bytes_per_state_repeat = 4 * (50 * 32 * (1 + 2 * 10 + 1) + 2 * 10 * 50 * expert_hidden_dim + 2 * 50 * 7)
@@ -371,6 +397,7 @@ def plan(bank: Path, *, partition: str, max_states: int, repeats: int,
             "suite": suite,
             "task_ids": list(task_ids), "requested_states": max_states,
             "selected_states": len(selected), "noise_repeats": repeats,
+            "independent_episodes": episode_count,
             "action_chunk_generations_per_checkpoint": len(selected) * repeats,
             "denoise_stage_records_per_checkpoint": len(selected) * repeats * 10,
             "storage_estimate_expert_hidden_dim": expert_hidden_dim,
@@ -379,14 +406,29 @@ def plan(bank: Path, *, partition: str, max_states: int, repeats: int,
 
 
 def load_flow_edit(path: Path, candidate_id: str, dose: float,
-                   stages: Sequence[int]) -> tuple[FlowEdit, str]:
+                   stages: Sequence[int], *, mode: str = "additive",
+                   match_candidate_id: str | None = None) -> tuple[FlowEdit, str]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     rows = payload.get("candidates", [])
     row = next((item for item in rows if item.get("id") == candidate_id), None)
     if row is None:
         raise ValueError(f"candidate not found: {candidate_id}")
     direction = torch.tensor(row["direction"], dtype=torch.float32)
-    edit = FlowEdit(str(row["tap"]), tuple(sorted(set(int(x) for x in stages))), direction, dose)
+    center = coefficient_direction = None
+    if mode != "additive":
+        basis = path.with_name("shared_basis.npz")
+        if not basis.is_file():
+            raise FileNotFoundError(f"suppression basis is missing: {basis}")
+        with np.load(basis, allow_pickle=False) as values:
+            center = torch.tensor(values["mean"], dtype=torch.float32)
+        coefficient_id = match_candidate_id or candidate_id
+        coefficient_row = next((item for item in rows if item.get("id") == coefficient_id), None)
+        if coefficient_row is None or coefficient_row["tap"] != row["tap"]:
+            raise ValueError("matched suppression candidate is missing or uses another tap")
+        coefficient_direction = torch.tensor(
+            coefficient_row["direction"], dtype=torch.float32)
+    edit = FlowEdit(str(row["tap"]), tuple(sorted(set(int(x) for x in stages))),
+                    direction, dose, mode, center, coefficient_direction)
     return edit, file_hash(path)
 
 
@@ -395,7 +437,9 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
         reference_trace: Path | None = None, candidate_path: Path | None = None,
         candidate_id: str | None = None, dose: float = 1.0,
         edit_stages: Sequence[int] = (0, 5, 9), suite: str | None = None,
-        task_ids: Sequence[int] = (), split_group: str = "task"):
+        task_ids: Sequence[int] = (), split_group: str = "task",
+        minimum_episodes: int = 1, edit_mode: str = "additive",
+        match_candidate_id: str | None = None):
     if batch_size <= 0 or repeats <= 0:
         raise ValueError("batch_size and repeats must be positive")
     if split_group not in {"task", "episode"}:
@@ -408,6 +452,11 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
         raise ValueError("StateBank audit has not passed")
     selected = select_records(records, split, partition=partition, max_states=max_states,
                               suite=suite, task_ids=task_ids)
+    episode_count = len({(row.suite, row.task_id, row.source_episode_id)
+                         for row in selected})
+    if minimum_episodes < 1 or episode_count < minimum_episodes:
+        raise ValueError(f"selected {episode_count} independent episodes; "
+                         f"need at least {minimum_episodes}")
     reference = None
     if reference_trace is not None:
         from .flow_diff import load_trace
@@ -425,7 +474,9 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
     if candidate_path is not None or candidate_id is not None:
         if candidate_path is None or candidate_id is None:
             raise ValueError("candidate path and ID must be supplied together")
-        edit, candidate_hash = load_flow_edit(candidate_path, candidate_id, dose, edit_stages)
+        edit, candidate_hash = load_flow_edit(
+            candidate_path, candidate_id, dose, edit_stages, mode=edit_mode,
+            match_candidate_id=match_candidate_id)
     revisions = {row.source_revision for row in selected}
     if len(revisions) != 1:
         raise ValueError("mixed dataset revisions")
@@ -461,6 +512,7 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
         "selection_seed": 42,
         "suite_filter": suite, "task_id_filter": list(task_ids),
         "state_ids": [row.state_id for row in selected], "batch_size": batch_size,
+        "independent_episodes": episode_count,
         "noise_repeats": repeats, "noise": "flow-trace:v1 keyed by state_id and repeat; checkpoint-independent CPU float32",
         "num_steps": int(policy.config.num_steps), "chunk_size": int(policy.config.chunk_size),
         "max_action_dim": int(policy.config.max_action_dim), "expert_layer_count": len(layers),
@@ -474,7 +526,8 @@ def run(bank: Path, dataset_root: Path, checkpoint: Path, contract: Path, metada
         "flow_edit": (
             {"candidate_path": str(candidate_path.resolve()), "candidate_sha256": candidate_hash,
              "candidate_id": candidate_id, "tap": edit.tap, "stages": list(edit.stages),
-             "dose": edit.dose}
+             "dose": edit.dose, "mode": edit.mode,
+             "match_candidate_id": match_candidate_id}
             if edit is not None else None
         ),
         "image_binding": image_binding,
@@ -582,11 +635,13 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--device", choices=("cpu", "mps", "cuda"), default="cpu")
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--partition", choices=("train", "validation", "test"), default="train")
+    parser.add_argument("--partition", choices=("train", "validation", "test", "holdout"),
+                        default="train")
     parser.add_argument("--split-group", choices=("task", "episode"), default="task")
     parser.add_argument("--suite")
     parser.add_argument("--task-id", type=int, action="append", default=[])
     parser.add_argument("--max-states", type=int, default=512)
+    parser.add_argument("--minimum-episodes", type=int, default=1)
     parser.add_argument("--noise-repeats", type=int, default=3)
     parser.add_argument("--reference-trace", type=Path,
                         help="Natural trace whose x_sigma/sigma points are held fixed for this checkpoint")
@@ -594,11 +649,15 @@ def main():
     parser.add_argument("--candidate-id")
     parser.add_argument("--dose", type=float, default=1.0)
     parser.add_argument("--edit-stage", type=int, action="append")
+    parser.add_argument("--edit-mode", choices=("additive", "suppress", "matched_suppress"),
+                        default="additive")
+    parser.add_argument("--match-candidate-id")
     args = parser.parse_args()
     if args.command == "plan":
         print(json.dumps(plan(args.bank, partition=args.partition, max_states=args.max_states,
                               repeats=args.noise_repeats, suite=args.suite,
-                              task_ids=args.task_id, split_group=args.split_group), indent=2))
+                              task_ids=args.task_id, split_group=args.split_group,
+                              minimum_episodes=args.minimum_episodes), indent=2))
         return
     if args.checkpoint is None or args.output is None:
         parser.error("run requires --checkpoint and --output")
@@ -609,7 +668,10 @@ def main():
                          reference_trace=args.reference_trace, candidate_path=args.candidates,
                          candidate_id=args.candidate_id, dose=args.dose,
                          edit_stages=args.edit_stage or (0, 5, 9), suite=args.suite,
-                         task_ids=args.task_id, split_group=args.split_group), indent=2))
+                         task_ids=args.task_id, split_group=args.split_group,
+                         minimum_episodes=args.minimum_episodes,
+                         edit_mode=args.edit_mode,
+                         match_candidate_id=args.match_candidate_id), indent=2))
 
 
 if __name__ == "__main__":

@@ -65,8 +65,12 @@ class RawReplayEpisode:
         actions = np.asarray(self.actions)
         if states.ndim != 2 or actions.ndim != 2:
             raise ValueError("replay states and actions must be matrices")
+        if not len(actions) or not states.shape[1] or not actions.shape[1]:
+            raise ValueError("replay states and actions must be non-empty")
         if states.shape[0] not in {actions.shape[0], actions.shape[0] + 1}:
             raise ValueError("replay states must contain actions or actions + 1 rows")
+        if len(states) < 2:
+            raise ValueError("replay requires at least one verifiable state transition")
         if not np.isfinite(states).all() or not np.isfinite(actions).all():
             raise ValueError("replay states and actions must be finite")
         if not self.model_xml.strip():
@@ -123,10 +127,10 @@ def replay_episode(
     state_l2_p95_tolerance: float | None = None,
     state_max_abs_tolerance: float | None = None,
 ) -> ReplayResult:
-    if action_atol <= 0:
-        raise ValueError("action_atol must be positive")
     l2_tolerance = action_atol if state_l2_p95_tolerance is None else state_l2_p95_tolerance
     max_tolerance = action_atol if state_max_abs_tolerance is None else state_max_abs_tolerance
+    if any(not np.isfinite(value) or value <= 0 for value in (action_atol, l2_tolerance, max_tolerance)):
+        raise ValueError("replay tolerances must be finite and positive")
     simulator.reset_from_xml_string(episode.model_xml)
     validation_transform = getattr(simulator, "replay_validation_vector", None)
     validation_vector = str(
@@ -155,6 +159,8 @@ def replay_episode(
         current = np.asarray(simulator.get_state_flattened(), dtype=np.float64).copy()
         if current.shape != expected_current.shape:
             raise ValueError("simulator state shape differs from raw state shape")
+        if not np.isfinite(current).all():
+            raise ValueError("restored simulator state must be finite")
         pre_error = float(np.max(np.abs(current - expected_current), initial=0.0))
         if pre_error > max_tolerance:
             raise ValueError(f"simulator failed to restore raw state at frame {index}")

@@ -39,8 +39,10 @@ def test_linux_requirements_and_readme_expose_the_formal_libero_path() -> None:
     assert "smolvla" in requirements
     assert "libero" in requirements
     readme = Path("README.md").read_text(encoding="utf-8")
-    assert "libero state-bank collect" in readme
-    assert "libero stages snapshot" in readme
-    assert "libero probes run" in readme
-    assert "libero longitudinal plan" in readme
-    assert "当前不要运行或调优 PPO/SAC" in readme
+    assert "[SERVER_RUNBOOK.md](SERVER_RUNBOOK.md)" in readme
+    for command in ("discover", "intervene", "report"):
+        assert f"libero features {command}" in readme
+    runbook = Path("SERVER_RUNBOOK.md").read_text(encoding="utf-8")
+    for command in ("state-bank collect", "stages snapshot", "probes run", "longitudinal plan"):
+        assert f"libero {command}" in runbook
+    assert "不要运行新 SFT、closed-loop intervention、PPO 或 SAC" in runbook

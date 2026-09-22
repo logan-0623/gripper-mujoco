@@ -1,314 +1,414 @@
 # Interaction-Centric VLA Representation Study
 
-本项目研究一个比“Graph 输入是否优于 Flat 输入”更基本的问题：
+研究冻结的 Vision-Language-Action（VLA）策略内部，物理交互信息如何被表示、预测，以及是否参与控制。
 
-> **机器人策略内部形成了什么物理交互表示，这些信息只是可以被读出，还是实际参与了动作生成，并最终帮助闭环控制？**
+> **当前问题：在一个有基本任务能力的冻结 VLA 中，可解释特征能否组成跨任务的预测性交互状态？这种状态与策略实际使用的信息有多大重合？**
 
-研究对象是语言条件机器人操作策略。主要实验使用 **LIBERO + SmolVLA**；ACT 与显式 Interaction Graph 保留为受控机制实验。Graph 在当前项目中不是必须输入策略的网络模块，而是一套用于描述物理交互的统一测量语言。
+当前主线是 **LIBERO + 官方 SmolVLA + Action Atlas**：复用既有物理标签与任务划分，保存逐 token 激活和策略动作计划，先比较 Hidden/PCA 与动作、时间对照，再考虑 SAE/RET 和机制干预。不要求 RET 胜过 SAE，也不以成功率提升作为唯一有价值的结果。
 
-```text
-RGB + wrist RGB + robot state + language
-                    │
-                    ▼
-                  VLA latent
-                    │
-       ┌────────────┼────────────┐
-       ▼            ▼            ▼
-   Accessible   Functionally   Closed-loop
-   可被解码       Used          Useful
-                  影响动作        影响任务结果
-```
+**状态更新：2026-09-09。代码交付后由用户运行验证；当前没有启动全量 token 提取或真实 Hidden/PCA 比较。SmolVLA 参数冻结，不启动新 SFT、RL、world model 或多模型比较。**
 
-这三个层次必须分开测量。probe 能读出某个因素，不表示策略一定使用它；改变 latent 后动作发生变化，也不表示该变化有利于任务成功。
+## 导航
 
-## 1. 这里的 representation 是什么
+- [当前完成到哪里](#当前完成到哪里)
+- [研究问题与测量边界](#研究问题与测量边界)
+- [代码分工与项目结构](#代码分工与项目结构)
+- [环境与准备条件](#环境与准备条件)
+- [运行当前实验](#运行当前实验)
+- [数据协议与公平比较](#数据协议与公平比较)
+- [查看结果与判断完成](#查看结果与判断完成)
+- [历史实验与已有发现](#历史实验与已有发现)
+- [已知限制与常见问题](#已知限制与常见问题)
+- [后续阶段与复现边界](#后续阶段与复现边界)
 
-机器人学习中的 “representation” 并不是单一概念。它可以指策略的输入、网络内部 latent，也可以指动作的输出形式。
+详细协议、运行记录和参数解释见 [research/predictive-states.md](research/predictive-states.md)。上游源码与依赖接入记录见 [research/README.md](research/README.md)；其中早期状态按其记录日期理解，不覆盖本页的当前状态。
 
-| 层次 | 常见表示 | 代表路线 | 它解决的问题 |
-|---|---|---|---|
-| 原始观测 | RGB、多视角/腕部 RGB、语言、关节或末端状态 | [OpenVLA](https://arxiv.org/abs/2406.09246)、[SmolVLA](https://arxiv.org/abs/2506.01844) | 从通用视觉语言输入直接学习动作 |
-| 3D/空间 | point cloud、depth、相对位姿、3D token | [FP3](https://arxiv.org/abs/2503.08950) | 显式保留机器人操作所需的三维几何 |
-| 对象中心 | object slot、目标/容器特征、对象级 token | [Object-Centric Representations](https://arxiv.org/abs/2505.11563) | 将任务相关实体与背景、纹理和干扰物分离 |
-| Affordance | 接触点、关键姿态、轨迹草图、可供性计划 | [RT-Affordance](https://arxiv.org/abs/2411.02704) | 用轻量中间目标连接感知、规划与执行 |
-| 图与关系 | entity、relation、scene graph、状态转移 | [Compose by Focus](https://arxiv.org/abs/2509.16053) | 表达“谁与谁处于什么关系，下一步应改变什么关系” |
-| 连续动作块 | 一次预测未来一段动作 | [ACT](https://arxiv.org/abs/2304.13705) | 减少逐步预测误差并表达多步运动 |
-| 连续生成 | diffusion / flow-matching action expert | [π0](https://arxiv.org/abs/2410.24164)、[SmolVLA](https://huggingface.co/blog/smolvla) | 从噪声直接生成连续动作轨迹 |
-| 离散动作 token | 每维离散化或频域压缩 token | [FAST](https://arxiv.org/abs/2501.09747) | 让语言模型式自回归训练适配高频连续动作 |
+## 当前完成到哪里
 
-当前主流 VLA 通常让多模态 Transformer **隐式学习**交互结构，而不是显式输出 scene graph。近期工作也已经广泛使用 probe、激活干预和 sparse autoencoder 研究这些内部表示，例如 [Not All Features Are Created Equal](https://arxiv.org/abs/2603.19233)、[Sparse Autoencoders for VLA Models](https://arxiv.org/abs/2603.19183)、[Event-Grounded SAE](https://arxiv.org/abs/2605.17204) 和 [VLA-Trace](https://arxiv.org/abs/2605.30117)。因此，本项目的目标不是声称“首次分析 VLA latent”，而是用同一套物理交互变量，严格区分它们的可访问性、动作相关性与闭环作用。
+必须区分“代码实现”“小样例验证”“真实数据结果”和“闭环证据”。
 
-## 2. Interaction Graph 在本项目中的角色
+| 工作 | 已有证据 | 尚不能说明什么 |
+| --- | --- | --- |
+| 唯一本地环境 | `.venv-lerobot`；模型导入、基础物理、视频读写有历史通过记录 | 不等于 Linux/CUDA 或完整 LIBERO 仿真已验证 |
+| 官方模型与数据 | SmolVLA 权重约 1.22 GB；固定 revision 的 LeRobot LIBERO 数据约 1.94 GB 已下载 | 数据下载不等于实验完成 |
+| Shared StateBank | 20 个任务、100 个 episode、13,603 个状态；既有回放与标注审计归档 | 是测量基础，不是模型能力证明 |
+| 真实观察输入与零改动重放 | CPU 上 4 帧真实输入通过；激活 `[4,480]`；零改动重放动作差为 0 | 不是仿真轨迹重放或任务成功率 |
+| Token/action 噪声 pilot | 中间版本在 MPS 上完成 4 个训练任务、64 状态、3 个噪声 seed 的测量 | 后续源码有补充，不能称最终版本已通过验证 |
+| 完整 token/action 缓存 | 实现了分片保存、绑定校验与续跑入口 | **全量 13,603 状态提取尚未运行** |
+| Hidden/PCA 与控制读出 | 实现了比较入口及测试代码 | **真实全量比较尚未运行** |
+| 官方 SAE/RET | 已有合成缓存训练与集成检查 | 不是机器人真实数据比较或原论文 benchmark 复现 |
+| 特征干预、闭环、RL | 保留旧协议和条件性入口 | 当前新路线未执行；RL 仍冻结 |
 
-早期项目把 Graph 作为策略输入：
+最近一次完整回归记录是 **1,035 passed、1 skipped**，对应 token 缓存最终改动**之前**的代码。随后新增逻辑曾有 3 项测试通过；最终补充后的源码只做了语法与差异检查，需按下方命令重新验证。真实 LIBERO 原始 HDF5 集成仍未通过本机测试覆盖。
 
-```text
-视觉/状态 → Interaction Graph → ACT → continuous action
-```
+已有轻量科学证据在 [docs/results/](docs/results/)；本机生成结果在 `outputs/`，后者被 Git 忽略。不要将“仓库中存在历史报告”理解成“当前版本已经重新执行这些实验”。
 
-这能够检验结构化归纳偏置是否有用，却无法判断 VLA 自己学到了什么。现在 Graph 被改成 privileged measurement vocabulary：
+## 研究问题与测量边界
 
-```text
-LIBERO simulator state ──► 物理交互标签
-VLA hidden activation  ──► probe / intervention / rollout
-                              │
-                              └── 比较标签、动作与任务结果
-```
+### 四个问题分别回答
 
-统一 ontology 包含六类因素：
+| 测量 | 输入与证据 | 合理的解释范围 |
+| --- | --- | --- |
+| Encoding：能读出什么？ | 当前 hidden/feature → 当前物理标签 | 指定读出器能够访问这些信息 |
+| Future prediction：能预测什么？ | 截止当前的表示历史 → 未来物理标签 | 在该数据分布和信息条件下具有预测性 |
+| Action sensitivity：是否影响策略输出？ | 匹配条件下的内部干预 → 动作变化 | 被干预计算对动作有影响；语义特异性还需控制 |
+| Closed-loop dependence / utility：是否影响交互与任务？ | 配对初始状态、噪声与环境中的干预 rollout | 是否改变接触、夹持、释放、掉落及成功率 |
 
-| 因素 | 含义 | 当前定义 |
-|---|---|---|
-| `Entity` | 当前任务涉及谁 | target、receptacle/support 与相关 distractor；结果必须与 task-ID/instruction shortcut 比较 |
-| `Geometry` | 实体之间在哪里 | gripper→target、target→goal 的相对平移、rotation-6D 与距离，不使用绝对世界坐标作为主标签 |
-| `Contact` | 是否发生物理接触 | 来自 MuJoCo/robosuite contact，而不是从 RGB 猜测 |
-| `StableGrasp` | 是否形成稳定抓取 | 双指接触、有限相对位姿漂移，并且目标与末端共同运动或已经离开支撑面；contact 本身不够 |
-| `Phase` | 当前处于哪个操作阶段 | 由接触、稳定抓取、支撑关系和目标谓词触发，例如 approach、contact、lift、transport、place、release |
-| `NextRelation` | 下一步应建立或解除什么关系 | 例如 near→contact、contact→stable_grasp、stable_grasp→off_support、near_goal→inside/on；不是“下一帧 Phase” |
+**能读出 ≠ 能预测变化 ≠ 策略使用了该语义 ≠ 对任务成功有益。** 读出失败也不能证明信息不存在；它可能超出当前读出器的能力。接触和稳定抓取只是有限的物理因素，不能据此声称发现完整 world model。
 
-`Recovery` 没有从普通成功 demonstration 中伪造出来。它只允许在未来显式构造 perturbation/recovery 轨迹时加入。
+当前最需要区分的是：预测信号来自物理交互状态、任务进度，还是当前动作计划。因此，时间、robot state、策略动作计划和未来真实演示动作是不同用途的对照，不能混成一个排行榜。
 
-## 3. 核心测量框架
+### Interaction Graph 的角色
 
-### Accessible：信息能否被读出
-
-冻结 VLA，以 latent 为输入训练 cross-fit linear probe。只有 probe 在 held-out task/episode groups 上超过最强的 majority、task ID、instruction 或 normalized-time shortcut，并且 clustered confidence interval 通过门限，才记为 `accessible=true`。
-
-这测量的是：latent 是否包含一个简单读出器可以访问的信息？
-
-### Functionally used：策略是否沿该信息方向生成动作
-
-对 held-out state 使用只由训练 fold 学到的因素方向进行 latent intervention，并与相同 rank、token 位置、L2 norm 和近似激活尺度的随机方向比较：
-
-$$
-U_f = \Delta a_{factor} - \Delta a_{matched\ random}.
-$$
-
-主要动作指标是 first executed action，分别报告 translation、rotation 和 gripper；完整 action chunk 只作次要分析。
-
-### Closed-loop useful：该信息是否影响任务结果
-
-需要从相同 LIBERO initial state、环境 seed 和 policy noise 运行 paired rollouts，并比较 success、grasp loss、drop、premature release、transport failure 与 placement failure。当前项目还没有完成这一层，因此不能把离线 action displacement 写成 control utility。
-
-## 4. 实验基础设施
-
-### Shared LIBERO State Bank
-
-所有 checkpoint 共用同一批状态和同一份 privileged labels，禁止为不同训练阶段独立抽样或重新标注。
-
-当前正式 State Bank 包含：
-
-- 20 个 LIBERO Spatial/Object tasks；
-- 100 个 episodes；
-- 13,603 个 states；
-- global RGB、wrist RGB、language、robot state 与 action；
-- simulator replay reference、相对几何、contact、stable grasp、phase 与 next relation；
-- task-group 和 episode-group splits，所有帧始终跟随所属 episode；
-- deterministic replay audit 与 12 条人工检查 timeline。
-
-Replay 只接受误差满足门限的 episode。成功构建的 100 个 episode 接受率为 100%；候选 episode 的总体接受率为 83.3%，因此这是一套经过筛选的可重放状态库，不是任意 LIBERO demonstration 的无损镜像。
-
-### SmolVLA 路径与固定 taps
-
-SmolVLA 接收多视角 RGB、语言和 robot state。VLM 产生上下文表示，flow-matching action expert 在多次 denoising 中生成长度为 50 的连续动作块。
-
-| Tap | 精确位置 | 代表什么 |
-|---|---|---|
-| `vision_output` | `model.vlm_with_expert.embed_image` 输出 | 每个相机视角的视觉 token |
-| `multimodal_fusion` | 第一次 prefix/prefill 的 normalized hidden state | 图像、语言与状态融合后的上下文 |
-| `action_expert_input` | 最终 denoising call 的 `model.action_time_mlp_out`，raw shape `[50, 720]` | 送入 action expert 计算路径的动作条件表示 |
-| `pre_action` | 最终 denoising call 中 `model.action_out_proj` 的输入 | 最靠近连续动作输出的表示 |
-
-正式 pooling 在看结果前固定。`action_expert_input` 和 `pre_action` 对 50 个 action positions 求均值；视觉与 prefix 表示只对有效 token 求均值。
-
-### 训练阶段
-
-Protocol-v3 比较 8 个同 runtime checkpoint：
+早期 ACT 实验将 Graph 作为策略输入；当前 VLA 主线将其作为 **privileged measurement vocabulary（特权测量语言）**。模拟器信息用于生成标签，不作为当前 SmolVLA 的额外输入。
 
 ```text
-Pretrained
-D25@16k
-D50@16k ── D50@32k
-D100@16k ── D100@33k ── D100@50k ── D100@66k
+模拟器记录 ──→ StateBank 物理标签与固定任务划分 ───────────┐
+                                                       │ 对齐评估
+双相机 RGB + robot state + language                     │
+                ↓                                      │
+           冻结 SmolVLA                                 │
+                ├─→ 每帧 token 激活 ─→ Hidden/PCA ───────┤
+                └─→ 当前预测 action chunk ─→ 动作对照 ────┘
+
+后续独立阶段：SAE/RET → 匹配特征干预 → 配对闭环
 ```
 
-`D25 ⊂ D50 ⊂ D100`，三个 SFT run 都从同一个 base checkpoint 独立开始。当前 recipe 是 expert-only SFT，vision encoder 被冻结。因此结果描述的是**冻结上游视觉表示时，下游动作路径如何重组**，不能直接推广到任意 end-to-end VLA fine-tuning。
+既有标签体系包括 Entity、Geometry、Contact、StableGrasp、Phase、NextRelation。当前预测实验只读出 **Contact 与 StableGrasp**：前者来自物理接触，后者结合双侧手指接触、过去短窗口内的相对位姿稳定及共同运动/离开支撑等条件，不以“夹爪闭合”直接代替稳定抓取。缺失标签保持缺失，不填零。普通 demonstration 不被伪造为 recovery 数据。
 
-## 5. 已完成的实验
+## 代码分工与项目结构
 
-| 实验 | 状态 | 回答的问题 |
-|---|---|---|
-| ACT Graph-v2，3 policy seeds、每条件 60 rollouts | `formal_evidence` | 显式 interaction structure 是否可能改善小型连续控制策略？ |
-| ReflectVLM Graph pretraining | `pilot_complete` | 更接近 teacher 的语义 Graph 是否自然转化为更高控制成功率？ |
-| Recovery RL v2 calibration | `failed_gate` | 当前 recovery distribution 是否适合比较 SFT→RL plasticity？ |
-| LIBERO State Bank | `formal_evidence` | 能否在所有 checkpoint 上使用完全相同、可重放的物理标签状态？ |
-| SmolVLA Protocol-v3 cross-fit probes | `formal_evidence` | 哪些 interaction factors 在哪些 tap、哪些 SFT 阶段可被读出？ |
-| StableGrasp longitudinal linear intervention | `failed_gate` | StableGrasp 的线性 probe 方向是否比 matched random 更影响动作？ |
-| Official SmolVLA positive control | `failed_gate` | 上述失败是否只是因为自训练 checkpoint 根本不会做任务？ |
-| Protocol-v5 label-blind sparse features | `pilot_complete` | 不强迫 latent 对齐人工标签时，能否找到稳定且真正影响动作的内部特征？ |
+优先复用官方实现。本仓库的新增代码负责数据绑定、可恢复缓存、共同读出协议与完整性检查，不重写 SmolVLA、SAE 或 RET 的核心算法。
 
-状态含义：`formal_evidence` 表示协议、报告和完整性检查均已归档；`pilot_complete` 表示实验已完成并能指导下一步，但证据范围不足以支撑主结论；`failed_gate` 是被保留的负结果，不等于代码失败。
+| 组件 | 用途 | 版本与差异 |
+| --- | --- | --- |
+| [LeRobot](https://github.com/huggingface/lerobot) | SmolVLA、数据读取、视频解码入口及模型前后处理 | 当前合并环境锁定 `lerobot==0.6.1` |
+| [Action Atlas](https://github.com/CWRU-AISM/action-atlas) | SmolVLA 层访问、capture/injection hooks、官方 TopK SAE | `b8b0db331df18fc30a3fd92c45ec721d35d3ee52`；Apache-2.0 |
+| [RET](https://github.com/ustaomeroglu/RET) | 预测性表示 encoder、predictor、EMA、training loop | `1b0d9b2ee0281d50f875a30a4d066cbb9df883b1`；MIT；[cached 模式补丁](research/ret-cached-robot.patch) |
+| 本项目 StateBank | 物理标签、原始来源、episode/task 分组和回放参考 | 冻结既有 13,603 状态与划分 |
+| 本项目诊断入口 | token/action 分片缓存、噪声检查、Hidden/PCA 与控制读出 | 当前需要用户验证最终版本 |
 
-## 6. 观察到的现象
+Action Atlas 的 LeRobot submodule 与已安装的 LeRobot 0.6.1 并非同一版本；不要直接初始化全部 submodule 后继续声称是相同环境。RET 的机器人时间序列输入属于适配，不是原论文语言序列 benchmark 的原样复现。Event-SAE 尚未接入，不能把普通 TopK SAE 称为 Event-SAE baseline。
 
-### 6.1 ACT：Graph 有一定帮助，但 Graph accuracy 不是 control utility
+```text
+interaction_vla/
+  representation_study/libero/
+    state_bank.py / alignment.py / annotation.py / splits.py
+    smolvla_smoke.py     # 官方离线冻结加载、真实输入与零改动检查
+    token_cache.py       # pilot / extract / evaluate 命令入口
+    token_readouts.py    # Hidden/PCA 与策略动作、本体状态对照
+    predictive_states.py # 时序审计、共同读出、官方 SAE/RET 适配
+    latents.py           # 既有缓存、观察绑定、逐状态噪声工具
+  ...                   # 保留 ACT、Graph、旧探针与干预实现
+research/
+  predictive-states.md  # 当前协议、逐步命令、实测记录
+  README.md             # 上游接入与环境记录
+  action-atlas/         # 外部固定版本 checkout，不进入父仓库
+  ret/                  # 外部固定版本 checkout，不进入父仓库
+scripts/
+  python.sh             # 唯一环境与进程内 FFmpeg 路径
+  check_environment.py  # 导入、基础物理、合成视频检查
+tests/                  # 工程与协议测试
+docs/results/           # 轻量历史证据包
+outputs/                # 本机数据、模型、缓存与结果，不进入 Git
+ccfa.yaml               # 历史科学注册表与执行限制
+SERVER_RUNBOOK.md       # 历史 Linux/CUDA 主线手册，不是当前一键启动脚本
+```
 
-| ACT 输入条件 | 60-rollout success |
-|---|---:|
-| Flat | 30.0% |
-| Teacher Graph | 35.0% |
-| Predicted Graph，random-init estimator | 40.0% |
-| Predicted Graph，Reflect-pretrained estimator | 41.7% |
+## 环境与准备条件
 
-这个实验支持一个有限结论：结构化交互信息可以成为有用的 inductive bias。但 Teacher Graph 没有成为性能上界，Reflect estimator 虽然更接近 teacher，也没有稳定超过 random-init estimator。这说明：
+### 已有工作环境：直接复用
 
-$$
-\text{Graph correctness} \neq \text{policy usability}.
-$$
-
-它不证明 predicted Graph 天生优于 ground truth。更合理的候选解释是分布尺度、连续平滑性、时序跳变和 ACT 的输入兼容性不同。
-
-### 6.2 SmolVLA：Contact、StableGrasp 与 Phase 在早期 SFT 后进入动作路径
-
-下面是 `action_expert_input`、episode-group cross-fit 的 **probe utility**。正值且 confidence interval 通过门限才算可访问；不同因素使用不同原始指标，因此这里展示相对各自最强 shortcut 的 utility，而不是把 AUPRC、F1 和 MAE 直接比较。
-
-| Checkpoint | Geometry | Contact | StableGrasp | Phase |
-|---|---:|---:|---:|---:|
-| Pretrained | −0.0333 | −0.0575 | −0.0753 | −0.0018 |
-| D25@16k | −0.0292 | +0.0392 | +0.0806 | +0.1768 |
-| D50@16k | −0.0319 | +0.0342 | +0.0868 | +0.1712 |
-| D100@16k | −0.0324 | +0.0320 | +0.0825 | +0.1520 |
-| D100@66k | −0.0317 | +0.0347 | +0.0843 | +0.1582 |
-
-原始指标也呈现同一趋势。例如 StableGrasp AUPRC 从 pretrained 的 0.781 上升到 D25@16k 的 0.937，D100@66k 为 0.941；Phase Macro-F1 从 0.331 上升到约 0.49–0.51。Geometry 没有超过预注册 shortcut。
-
-因此现有证据支持：
-
-- frozen upstream 条件下，Contact、StableGrasp 和 Phase 的线性可访问性在早期 SFT 快速出现；
-- 更大数据覆盖和更长优化没有继续显著提高这些因素的可访问性，后期主要表现为 plateau 或小幅非单调变化；
-- raw action representation 在后期仍持续漂移，所以 representation drift 与 semantic accessibility 不是同一个量；
-- Entity 被 task/instruction shortcut 严重混淆，NextRelation 在 held-out task folds 中存在 class-support 问题，这两项不能形成主结果。
-
-### 6.3 线性可访问不等于沿线性方向控制
-
-在四个 longitudinal checkpoints 上，StableGrasp 的 fold-held-out rank-one intervention 均没有超过 same-rank matched-random action effect。关键 paired change 为：
-
-| 对比 | $\Delta U$ | 95% episode-cluster CI |
-|---|---:|---:|
-| Pretrained → D25@16k | −0.000257 | [−0.000353, −0.000168] |
-| D25@16k → D100@16k | +0.000079 | [+0.000016, +0.000141] |
-| D100@16k → D100@66k | −0.000047 | [−0.000102, +0.000006] |
-
-为了排除“自训练模型不会做任务”的混淆，又使用官方 `lerobot/smolvla_libero` checkpoint 做 positive-control screen。该模型在 `libero_spatial` task 0 上成功 9/10 次，但结果仍然是：
-
-- Contact AUPRC 0.963，超过最强 shortcut 的 utility 为 +0.044；
-- StableGrasp AUPRC 0.962，utility 为 +0.105；
-- Phase Macro-F1 0.463，utility 为 +0.130；
-- StableGrasp 与 Contact targeted erasure 都比 matched random **更弱**，对应 CI 分别为 [−0.000173, −0.000072] 和 [−0.000205, −0.000097]。
-
-这否定的是“pooled linear-probe direction 就是策略实际使用的控制方向”，不是“策略完全没有使用抓取或接触信息”。
-
-### 6.4 无监督 SAE：模型存在稳定、跨任务且强动作相关的非线性特征
-
-Protocol-v5 不使用 Contact、StableGrasp 或 Phase 标签选特征。它在官方 9/10-success checkpoint 的 720D `action_expert_input` 上训练 3 个 Top-K sparse autoencoders：dictionary width 1440、每个 state 激活 32 个特征、5000 updates。候选特征只按跨 seed decoder/activation 一致性、task/episode coverage 与 entropy 冻结，然后才查看语义标签和动作。
-
-最新 server run 的主要结果是：
-
-- 3 个 SAE 的 held-out explained variance 为 0.9974–0.9979；
-- 1440 个 dictionary atoms 中只有 187–217 个在 validation 中存活，约 81.7% inactive，说明 dictionary collapse 明显；
-- seed-0 特征被归为 92 个 broad、149 个 task-concentrated、10 个 episode-concentrated、12 个 intermediate 和 1177 个 inactive；
-- 8 个冻结候选的相邻帧变化/episode 内随机打乱变化比值为 0.051–0.132，而 broad features 的中位数为 0.525；由于该指标没有参与候选选择，这是候选具有较强时序连续性的探索性证据；
-- 冻结得到 8 个跨 seed、跨 task/episode 候选，其中 4 个在 BH correction 后比 matched random 更影响 first action。
-
-| SAE feature | Target − random action effect | 95% episode-cluster CI | 主要动作分量 |
-|---:|---:|---:|---|
-| 517 | +0.0801 | [+0.0612, +0.1028] | gripper magnitude |
-| 694 | +0.2293 | [+0.1854, +0.2760] | gripper magnitude，另有 translation |
-| 977 | +0.0898 | [+0.0716, +0.1088] | gripper magnitude |
-| 981 | +0.3600 | [+0.3214, +0.3948] | gripper magnitude 与 translation |
-
-所有四个特征的 episode-cluster mean 都为正，activation norm ratio 为 0.968–0.989，没有依靠 gross OOD shift 获得效应。它们没有造成 gripper command sign flip，主要改变连续 gripper 输出强度，因此更像 motor gating/intensity feature，而不是简单的“开/关夹爪神经元”。
-
-候选冻结后进行的语义关联显示，feature 981 与 Phase 最相关（$\eta^2=0.502$），feature 694 对 Contact/StableGrasp 的关联相对更高，但这些关联都不等于清晰的一对一语义概念。另一个 feature 561 对 Contact/StableGrasp 关联更强，却没有通过动作因果门限。这个现象初步表明：
-
-$$
-\text{semantic association ranking} \neq \text{causal action ranking}.
-$$
-
-Protocol-v5 目前是通过 kill gate 的 pilot。服务器原始报告与逐状态动作效应已归档至 [SAE 结果目录](docs/results/libero_smolvla_sparse_features/README.md)，包含文件清单和 SHA-256，未上传字典权重。本次仅核对文件完整性，没有独立复验，结果仍未提升为 paper-level formal evidence。
-
-## 7. 当前能够成立的结论
-
-现有结果形成了一条逐步收紧的证据链：
-
-1. **显式结构有时能帮助控制。** ACT pilot 中 predicted Graph 相对 Flat 提高了平均成功率，但提升不由 Graph prediction accuracy 单独解释。
-2. **SFT 选择性改变 action-proximal representation。** Contact、StableGrasp 和 Phase 在早期 expert-only SFT 后变得可线性读出，而 Geometry 没有出现同样变化。
-3. **可访问性不等于线性因果坐标。** 即使在成功的官方 SmolVLA 中，Contact/StableGrasp probe 方向也没有比 matched random 更强地影响动作。
-4. **策略内部仍存在真正动作相关的结构。** label-blind SAE 找到跨 seed、task 和 episode 可重复的特征，其中 4 个对动作的影响显著超过 matched random。
-5. **人工 ontology 与 policy-native features 只部分对齐。** 当前最有价值的研究问题不再是“Graph 对不对”，而是“人可解释的物理变量如何对应模型实际采用的控制坐标”。
-
-最稳妥的项目结论是：
-
-> **物理交互信息可以在 VLA latent 中变得可访问，但策略实际使用的控制表示未必沿人工定义因素的线性方向组织。成功策略表现出跨任务、时序平滑且动作相关的稀疏特征，这些特征与 Contact、StableGrasp 和 Phase 只有部分对应。**
-
-## 8. 目前不能得出的结论
-
-- 不能说 Graph 普遍优于 Flat；ACT 结果只是一套受控任务中的机制证据。
-- 不能把 official checkpoint 的 9/10 写成 LIBERO benchmark success；它只是 `libero_spatial` task 0 的成功策略门检。
-- 不能说线性 probe 方向失败就证明策略不使用 Contact 或 StableGrasp。
-- 不能说 SAE feature 已经对 closed-loop success 有益；目前只测了离线 action sensitivity。
-- 不能把一个 seed-0 reference dictionary 中发现的特征直接当作稳定神经机制；还需要跨 SAE seed 的独立 intervention replication。
-- 不能声称完整发现了 SmolVLA 的 feature inventory；当前 SAE 有明显 dead-feature/dictionary-collapse 问题。
-- 不能声称结果适用于端到端 VLA fine-tuning、RL plasticity 或其他 VLA 架构。
-
-## 9. 下一步
-
-当前不训练新 SFT、不启动 RL，也不扩展 ontology。最小的判别性实验是：
-
-1. 在另外两个 SAE seeds 上独立复现 feature 694 和 981 的 action effect；
-2. 为每个 feature 使用多个正交 matched-random directions，并加入同频率/同范数的非候选 SAE atom control；
-3. 只有离线效应通过上述复现，才从相同 LIBERO initial states 做 paired original / feature ablation / matched-control rollouts；
-4. 闭环门限通过后，再单独设计这些 policy-native features 的 longitudinal SFT trajectory。
-
-这一步将决定论文是继续研究“interaction semantics 如何映射到 policy-native causal features”，还是停止该机制路线并 pivot。
-
-## 10. 代码与复现入口
-
-服务器从零配置、数据盘、离线 Hugging Face cache、LIBERO assets 和训练/续跑命令见 [SERVER_RUNBOOK.md](SERVER_RUNBOOK.md)。科学状态与 claim gate 见 [ccfa.yaml](ccfa.yaml)。已归档的轻量证据包包括：
-
-- [LIBERO State Bank](docs/results/libero_state_bank_formal/README.md)
-- [SmolVLA Protocol-v3](docs/results/libero_smolvla_protocol_v3/README.md)
-- [Official SmolVLA positive control](docs/results/libero_smolvla_positive_control/README.md)
-
-Protocol-v5 的执行入口：
+本机只使用项目内 **`.venv-lerobot`**，不需要另外建立 SAE、RET 或测试环境。以下命令均假定当前目录为项目根目录。
 
 ```bash
-export MUJOCO_GL=egl
-export HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache
-export HF_LEROBOT_HOME="$HF_HOME/lerobot"
+# 检查环境入口与包依赖，不训练模型。
+bash scripts/python.sh scripts/check_environment.py
+uv pip check --python .venv-lerobot/bin/python
+```
+
+现有锁定环境包含 Python 3.12.14、PyTorch 2.10.0、LeRobot 0.6.1、Transformers 5.5.4、NumPy 2.2.6、MuJoCo 3.3.4 和 TorchCodec 0.10.0；完整包版本以 [requirements-action-atlas-macos.lock.txt](requirements-action-atlas-macos.lock.txt) 为准。
+
+`scripts/python.sh` 为当前进程选择 Homebrew `ffmpeg@8`，不修改系统默认 FFmpeg 或 shell 配置。现有 TorchCodec 组合不能直接使用本机 FFmpeg 9；需要读取视频时使用这个入口。
+
+### 从零恢复环境：仅在没有可用环境时执行
+
+先按照 [上游接入说明](research/README.md) 获取固定版本的 `research/action-atlas/`；合并 lock 包含该目录的 editable 安装项，目录缺失时不能完成安装。
+
+```bash
+brew install uv ffmpeg@8
+# 仅首次创建；已有可用 .venv-lerobot 时跳过。
+uv venv --python 3.12.14 .venv-lerobot
+uv pip sync --python .venv-lerobot/bin/python requirements-action-atlas-macos.lock.txt
+```
+
+`uv pip sync` 会删除该环境中未列入 lock 的包。不要日常重复 sync，更不要安装 Action Atlas 后单独 sync 旧 `requirements-lerobot-macos.lock.txt`，否则会移除新增依赖。macOS lock 不用于 Linux/CUDA，虚拟环境也不能直接跨机器复制。
+
+### 模型、数据与 StateBank 不是一回事
+
+| 本机路径 | 内容 | 固定来源 |
+| --- | --- | --- |
+| `outputs/pretrained/smolvla_libero/` | 完整策略、配置、归一化权重，约 1.22 GB | [HuggingFaceVLA/smolvla_libero](https://huggingface.co/HuggingFaceVLA/smolvla_libero)，revision `6721902bc4d61e50a3bfdb11dfb4cb626f05d102` |
+| `outputs/pretrained/SmolVLM2-500M-Instruct/` | 11 个 tokenizer/配置文件，不重复下载 backbone 权重 | checkpoint 指定的 `HuggingFaceTB/SmolVLM2-500M-Instruct`，revision `7b375e1b73b11138ff12fe22c8f2822d8fe03467` |
+| `outputs/datasets/libero/` | LeRobot 格式观察、动作、元数据和视频，约 1.94 GB | [lerobot/libero](https://huggingface.co/datasets/lerobot/libero)，revision `a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4` |
+| `outputs/representation_study/libero_smolvla/state_bank/` | 本项目标签、状态身份、划分与审计绑定 | 既有正式 StateBank；不是 Hub 数据集自带目录 |
+
+**仅 `git clone` 或下载 LIBERO 不会获得完整 StateBank。** 新机器需要可信来源的 StateBank 原始文件，或按其原始回放/标注协议重建；`docs/results/` 里的轻量 manifest 不能代替 `records.jsonl` 与 split 文件。原始 LIBERO HDF5、仿真 assets 也不等于 LeRobot 视频数据：当前离线读出不重新运行模拟器，但真实回放与闭环需要另外准备。
+
+如需恢复缺失的公开资产，以下命令需要联网；已有文件不要为了日常运行反复下载。在设置离线变量之前执行，或使用一个未设置这些变量的终端。
+
+<details>
+<summary>恢复固定版本的公开模型、配置和观察数据</summary>
+
+```bash
+.venv-lerobot/bin/hf download HuggingFaceVLA/smolvla_libero \
+  --revision 6721902bc4d61e50a3bfdb11dfb4cb626f05d102 \
+  --local-dir outputs/pretrained/smolvla_libero
+
+.venv-lerobot/bin/hf download HuggingFaceTB/SmolVLM2-500M-Instruct \
+  --revision 7b375e1b73b11138ff12fe22c8f2822d8fe03467 \
+  added_tokens.json chat_template.json config.json generation_config.json \
+  preprocessor_config.json processor_config.json special_tokens_map.json \
+  tokenizer.json tokenizer_config.json vocab.json merges.txt \
+  --local-dir outputs/pretrained/SmolVLM2-500M-Instruct
+
+.venv-lerobot/bin/hf download lerobot/libero --repo-type dataset \
+  --revision a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4 \
+  --local-dir outputs/datasets/libero
+```
+
+策略主权重已记录的官方 SHA-256 为 `71d9563c8295284acba8fc2d5c19de000d6fe9ba58a406832af7ef3d221ed52f`。当前本机验证记录在 `outputs/pretrained/smolvla_libero-verification.json`；这个记录文件本身不会随 Git clone 或 Hub 下载自动出现。
+
+</details>
+
+## 运行当前实验
+
+### 第一步：验证最终代码，再做小样例
+
+以下命令由用户手动执行，不会因阅读 README 自动启动。每一步成功后再进入下一步，不要一次粘贴整段长流程后忽略中途失败。
+
+```bash
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
-export HF_DATASETS_OFFLINE=1
+export HF_DATASETS_CACHE="$PWD/outputs/datasets/.hf-cache"
 
-CONFIG=configs/representation_study/libero_smolvla_linux_cuda.yaml
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero features discover --config "$CONFIG"
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero features intervene --config "$CONFIG" --max-states 512 --batch-size 32
-
-.venv-lerobot/bin/python -m interaction_vla.representation_study \
-  libero features report --config "$CONFIG" --max-states 512
+bash scripts/python.sh -m pytest \
+  tests/interaction_vla/representation_study/libero/test_token_cache.py \
+  tests/interaction_vla/representation_study/libero/test_latents.py \
+  -q -W error::RuntimeWarning
 ```
 
-测试：
+然后运行真实输入 pilot：
 
 ```bash
-HF_HOME=/tmp/gripper-mujoco-pytest-hf-cache \
-PYTHONPYCACHEPREFIX=/tmp/gripper-mujoco-lerobot-pycache \
-  .venv-lerobot/bin/python -m pytest -q \
-  tests/interaction_vla/representation_study/libero
+bash scripts/python.sh -m interaction_vla.representation_study.libero.token_cache pilot \
+  --device mps --batch-size 4 \
+  --output outputs/predictive_states/token_noise_check
 ```
 
-模型权重、optimizer state、原始数据、latent arrays、per-state action cache 和 rollout videos 不进入 Git。仓库只保存代码、配置、split/manifest、统计报告与少量审计可视化。
+Pilot 固定选择 4 个训练任务，每个任务的首个 episode 中均匀取 16 个状态，合计 64 状态；分别使用噪声 seed 0/1/2。噪声由 checkpoint 内容、state ID 和 noise seed 确定，在 CPU 上生成后传入策略；所有运行使用同样的观察，不根据结果挑选 seed。
+
+每帧保存最后一次去噪调用的 `[50,480]` token 激活，以及当前观察产生的 `[50,7]` 策略动作块。每次运行还检查首批的重复 token 与官方 `select_action` 一致性。**token 位置是动作块位置，不是 50 个已经观测到的未来状态。**
+
+### 第二步：完整 StateBank 提取
+
+```bash
+bash scripts/python.sh -m interaction_vla.representation_study.libero.token_cache extract \
+  --device mps --batch-size 4 \
+  --output outputs/predictive_states/smolvla_tokens_mps
+```
+
+目标是完整覆盖 **13,603 个 state ID**，使用固定 noise seed 0。仅 float32 token 数据约 1.31 GB，另外保存动作、身份与分片元数据。原始逐 token 缓存可供后续分析，不需要重跑模型才能重新选择池化方式。
+
+旧版 batch=4 MPS pilot 的中位耗时约 0.19–0.21 秒/帧；线性外推全量约 44–49 分钟，**只是预算参考，不是全量实测**，也不含后续读出计算。最终版和具体机器的耗时以新 pilot 为准，不默认使用未经测量的 batch=16。
+
+### 第三步：Hidden/PCA 与动作、时间对照
+
+```bash
+bash scripts/python.sh -W error::RuntimeWarning \
+  -m interaction_vla.representation_study.libero.token_cache evaluate \
+  --cache outputs/predictive_states/smolvla_tokens_mps \
+  --output outputs/predictive_states/smolvla_hidden_pca
+```
+
+这个步骤在 CPU 上训练小型读出器和 PCA，**不更新 SmolVLA，也不训练 SAE/RET**。输入必须是完整 token/action cache；4 帧 smoke 输出或 64 状态 pilot 都不能代替完整缓存。
+
+当前提供 8 个表示分支：`Hidden/PCA × token均值/首token × 当前/4帧历史`。控制包括时间、robot state 当前/历史、策略首动作、当前预测 action chunk，以及表示加 action chunk；另行报告真实演示未来动作条件。
+
+如需审计时间窗口、查看官方 SAE/RET 的既有入口，见 [完整协议](research/predictive-states.md)。这些是后续或独立用途，不需要为了当前两步任务全部运行。
+
+### 第四步：检查 Z+A 是否比 A 提供更好的预测
+
+复用第三步已保存的预测，不重新提取或训练。`--run-dir` 指向完整评估目录；下面使用截距计算修复后运行的 `smolvla_hidden_pca_fixed`，若你的目录名不同请替换。输出目录必须尚不存在。
+
+```bash
+bash scripts/python.sh -W error::RuntimeWarning \
+  -m interaction_vla.representation_study.libero.action_increment \
+  --run-dir outputs/predictive_states/smolvla_hidden_pca_fixed \
+  --output outputs/predictive_states/smolvla_action_increment
+```
+
+- **A**：当前观察下策略预测的 50 步动作计划；不是演示中实际执行的未来动作。
+- **Z**：已有的全部 8 个 Hidden/PCA 表示，不按测试结果挑选最佳分支。
+- **判据**：`gain_a_minus_za = Brier(A) − Brier(Z+A)`，正值表示该读出协议下加入 Z 后预测误差更低。主指标先逐任务求均值，再等权平均；另报窗口加权结果。
+- **输出**：`summary.csv` 给出目标 × horizon × 表示 × 全部/变化/未变化窗口；`report.json` 还包含逐任务、逐 episode 的配对差值、输入维度、alpha 和来源哈希。state ID、任务、episode、标签与 StateBank 对齐，保存的预测须能重算原报告 Brier。
+- **解释范围**：`+0` 是当前标签解码，`+1/5/10` 才是未来预测；“变化”仅指当前与未来端点标签不同。只有两个测试任务，当前仅描述配对增益，不给出逐帧独立性假设下的显著性结论。Z+A 维度更高，尚缺同维度无关特征等容量对照；正增益不证明因果使用，无增益也不证明 Z 没有额外信息。
+
+### 第五步：同维度随机控制
+
+在 Z+A 之后运行容量对照。它为每个 Z 分支生成同宽度的确定性随机特征，比较 A、Z+A 与 R+A；`R+A` 的增益代表仅增加输入维度和 Ridge 估计自由度可能带来的改善，`Z+A` 超过 `R+A` 才是更有意义的表征增量信号。
+
+```bash
+bash scripts/python.sh -W error::RuntimeWarning \
+  -m interaction_vla.representation_study.libero.capacity_control \
+  --cache outputs/predictive_states/smolvla_tokens_mps \
+  --output outputs/predictive_states/smolvla_capacity_control
+```
+
+结果保存到 `report.json`；`gain_over_A` 定义为 `Brier(A) - Brier(condition)`，正值更好。该控制仍是有限 Ridge 读出器下的容量诊断，不是语义负对照、互信息估计或因果检验。
+
+## 数据协议与公平比较
+
+| 项目 | 当前定义 |
+| --- | --- |
+| StateBank | Spatial/Object 共 20 任务、100 episode、13,603 状态；经过回放兼容性筛选 |
+| 时间单位 | 10 Hz；历史 4 帧；预测当前与未来 1/5/10 帧，即 0/0.1/0.5/1 秒 |
+| 完整窗口 | 12,303；train 8,477 / validation 2,621 / test 1,205 |
+| 划分 | 沿用既有 task-group split；不随机拆帧，不跨 episode 拼接，不插值补帧 |
+| 标签 | Contact、StableGrasp；缺失保持缺失；各目标报告实际可评估数量 |
+| PCA | 32 维；只在训练状态拟合归一化与 PCA；随后应用到 validation/test |
+| 读出 | float32，StandardScaler + Ridge/LSQR；alpha 为 0.1/1/10/100，仅按 validation Brier 选择 |
+| 指标 | 任务宏平均 Brier 为主；补充整体 Brier、AUPRC、标签变化子集及任务聚类差值区间 |
+| 比较性质 | 当前是探索性诊断，尚未全面匹配表示维度、模型容量与训练预算 |
+
+三类容易混淆的信息条件：
+
+- **当前策略动作计划**：在当前观察下生成的预测 action chunk，当前时刻可获得，但不保证后续闭环真的执行整个 chunk。
+- **未来实际演示动作**：从数据中读取未来动作，属于额外信息条件；不能称为反事实或自主预测。
+- **保持当前真实标签**：使用特权当前状态的 persistence 对照，不是视觉策略免费拥有的信息。
+
+当前时间对照只使用已观察到的 elapsed time，不使用完整 episode 时长归一化。动作距离位于 checkpoint 后处理后的策略坐标中，尚未经过环境裁剪、控制器缩放或实际执行；不能直接解释为米或弧度。
+
+Ridge 的原始预测先检查有限值，再截断到 [0,1] 用于评分；这些分数不是已经校准的概率。读出程序报告的标签变化子集只表示当前与未来端点标签不同，不统计两端之间发生的全部事件。
+
+测试集只有 **2 个留出任务**，且无表征对照结果已经查看。大量重叠窗口不等于大量独立任务，增加训练 seed 也不会增加任务样本量。当前“跨任务”指表示学习/读出器的任务留出；官方策略在原始训练中是否接触过相应任务或演示，尚未由本流程确认。
+
+## 查看结果与判断完成
+
+| 阶段 | 主要文件 | 完成条件 |
+| --- | --- | --- |
+| 噪声 pilot | `token_noise_check/noise_report.json`；各 `noise_*/manifest.json` | 三个 seed 完整；首批重复检查通过；报告真实噪声敏感性，不设任意低比值门槛 |
+| 全量提取 | `smolvla_tokens_mps/binding.json`、`manifest.json`、`shards/` | `complete=true`、`full_state_bank=true`、`states=13603`；分片身份、形状、有限值与哈希匹配 |
+| 进度 | 提取目录中的 `progress.json` | 运行中约每 32 帧更新；不是完整 manifest 的替代物 |
+| 离线比较 | `smolvla_hidden_pca/report.json`、`sequence_audit.json` | 结果报告生成；逐项检查有效样本数、方法和信息条件 |
+| 结果复核 | `test_predictions.npz`、`readouts.joblib`、`preprocessing.joblib` | 可核对逐状态预测和拟合器；仅加载自己可信来源的 joblib 文件 |
+
+上表路径均相对 `outputs/predictive_states/`。查看运行进度可以在另一个终端执行：
+
+```bash
+cat outputs/predictive_states/smolvla_tokens_mps/progress.json
+```
+
+### 中断与续跑
+
+- 提取可用**完全相同的命令**续跑：先验证已有分片，再跳过已完成部分。
+- 同一输出目录只允许一个写入进程。不要并行执行两份相同命令。
+- 修改源码、设备、batch size、checkpoint、数据或噪声条件时，使用新的输出目录；不手改 binding/manifest 强行拼接缓存。
+- 完整缓存重复运行会校验并返回已有结果，不代表重新提取了一遍。
+- 离线比较目前不支持中途续跑，也拒绝覆盖已有输出目录；失败后保留现场，排查后使用新目录重新执行。
+- 不删除旧结果来让新命令“顺利通过”。`token_noise_pilot_mps/` 是中间版本历史 pilot，不是最终源码的可续跑目录。
+
+### 已经存在的当前路线结果
+
+真实标签/时间/动作对照保存在 `outputs/predictive_states/real_controls_seed42/`，**未使用 VLA 激活**。未来 10 帧的 Brier 如下，越低越好：
+
+| 对照 | Contact | StableGrasp |
+| --- | ---: | ---: |
+| 训练集阳性率 | 0.2473 | 0.2488 |
+| 已观察到的时间 | 0.1805 | 0.1882 |
+| 保持当前真实标签 | 0.1618 | 0.1724 |
+| 未来实际演示动作序列 | 0.0343 | 0.0599 |
+
+Contact 有效测试窗口 1,205，StableGrasp 1,195，均来自 2 个任务。最后一行拥有未来真实动作，不能将其优势归功于 VLA 表征。真正需要回答的是：当前可获得的表示能否提供超过时间、本体状态和策略动作计划的信息。
+
+## 历史实验与已有发现
+
+以下来自旧协议与已归档证据，**不是当前 Action Atlas token 路线的复现结果**。保存它们是为了解释研究问题如何形成，而不是让新流程自动继承旧结论。
+
+| 历史实验 | 已有观察 | 边界与证据 |
+| --- | --- | --- |
+| ACT Graph-v2 | 3 个 policy seed、每条件共 60 rollouts；Flat 30.0%、Teacher Graph 35.0%、random-init predicted Graph 40.0%、Reflect-pretrained predicted Graph 41.7% | 受控任务结果，不能推广为 Graph 普遍优于 Flat；[注册表](ccfa.yaml) |
+| ReflectVLM Graph pretraining | 更接近 teacher 的 Graph 没有自然转化为稳定更高的控制表现 | Graph 预测质量与策略可用性不等价；[注册表](ccfa.yaml) |
+| StateBank | 20 任务、100 episode 的回放、标签和分组审计归档 | 候选采纳 100/120，存在任务相关筛选偏差；[证据](docs/results/libero_state_bank_formal/README.md) |
+| Protocol-v3 | expert-only SFT 下研究 8 个 checkpoint、4 taps、6 类因素；288 个可估计单元完成，96 个不可估计 | 不可估计单元不填零；上游视觉冻结；[报告](docs/results/libero_smolvla_protocol_v3/README.md) |
+| 线性因素干预 | StableGrasp 定向干预没有在四个 checkpoint 上超过匹配随机干预 | 失败的是特定干预门槛，不是证明模型从不使用抓取信息；[证据](docs/results/libero_smolvla_protocol_v3/README.md) |
+| 官方策略 positive control | 单个 Spatial task 上成功 9/10；Contact/StableGrasp 可读出，但 rank-one 定向干预仍弱于匹配随机 | 单任务门检，不是 LIBERO 整体成功率；[证据](docs/results/libero_smolvla_positive_control/README.md) |
+| Protocol-v5 SAE | 8 个冻结候选中，4 个在所用参考字典上超过匹配随机动作效应门槛 | 主要涉及 gripper 连续输出；尚缺其他字典的独立干预复验和闭环验证；[归档](docs/results/libero_smolvla_sparse_features/README.md) |
+| Recovery RL calibration | 未通过原预定分布门槛 | 保留负结果，不因此启动新的 RL；[注册表](ccfa.yaml) |
+
+### 不能混用的 checkpoint 和 tap
+
+| 条件 | 旧 positive control / SAE 路线 | 当前 token/action 路线 |
+| --- | --- | --- |
+| Checkpoint 来源 | `lerobot/smolvla_libero` | `HuggingFaceVLA/smolvla_libero` |
+| Revision | `31d453f7edd78c839a8bbc39744a292686daf0de` | `6721902bc4d61e50a3bfdb11dfb4cb626f05d102` |
+| 主 tap | `action_time_mlp_out`，历史名 `action_expert_input` | Action Atlas `expert/31/mlp/output` |
+| 保存/分析单位 | 旧 720D pooled 表示 | `[50,480]` tokens，并派生均值/首 token |
+| 已有能力记录 | 特定旧配置的单任务 9/10 | 当前配置尚无闭环成功率验证 |
+
+不假定两者等价，也不把不同字典的 feature ID 当作同一个神经机制。
+
+<details>
+<summary>旧 SAE pilot 的具体发现与解释限制</summary>
+
+Protocol-v5 在旧 720D pooled 激活上训练 3 个 TopK 字典：width 1440、k=32、5000 updates。归档报告中，test 集 explained variance 为 0.9974–0.9979，但只有 187–217 个 atom 在 validation 中存活；高重建质量并没有解决大量 inactive features 的问题。
+
+候选先按跨 seed decoder/activation 一致性与任务/episode 覆盖选择，再检查语义和动作。参考字典中 517、694、977、981 四个候选超过匹配随机动作效应门槛；主要改变连续 gripper 幅度，没有据此证明夹爪符号翻转或夹持成功率改善。
+
+这些结果提示“语义关联排序”可能不同于“动作敏感性排序”。但跨字典匹配到类似特征，不等于已经在每个字典上独立复现干预效应；激活范数接近原值，也不能证明干预没有离开训练分布。原始轻量报告和逐状态效应在 [归档目录](docs/results/libero_smolvla_sparse_features/README.md)，字典权重未随归档上传。
+
+</details>
+
+### 历史执行入口仅供定位
+
+旧入口为 `libero features discover`、`libero features intervene`、`libero features report`，属于原 `interaction_vla.representation_study` CLI。参数与服务器配置见 [SERVER_RUNBOOK.md](SERVER_RUNBOOK.md)。
+
+**该手册包含历史启动、提交和训练命令，不是本 README 当前任务的自动执行清单。** `ccfa.yaml` 仍保留旧科学问题、注册状态及关闭的执行门槛；本轮文档不修改它，不把 `execution_allowed=false` 当作可忽略提示。重启旧干预、闭环、SFT 或 RL 需要单独确认。
+
+## 已知限制与常见问题
+
+| 问题 | 应如何处理 |
+| --- | --- |
+| 本机能做实验吗？ | 能做已验证过的离线推理与数据处理；最终 token/readout 代码仍需用户验证。不能由此断言 LIBERO 闭环或 CUDA 已通过 |
+| 找不到 StateBank | 先恢复原始记录与 split；下载 Hub 数据不能自动生成项目物理标签 |
+| 离线加载报缺文件 | 核对 checkpoint、11 个 tokenizer/配置文件及数据；恢复资产时在联网终端执行固定 revision 下载 |
+| FFmpeg / TorchCodec 导入失败 | 检查 `ffmpeg@8` 并使用 `bash scripts/python.sh`；不要随意替换系统动态库 |
+| PyAV/OpenCV 重复 Objective-C 类提示 | 已记录为未解决风险；不要为了安静而删除第三方 wheel 的动态库 |
+| `torch_shm_manager: Operation not permitted` | 历史官方 SAE 测试曾被沙箱共享内存权限拦截；这是运行权限问题，不应通过改算法掩盖 |
+| `Resume binding differs` | 检查源码、batch、设备、数据与权重是否改变；采用新目录，不绕过绑定 |
+| NaN / Inf 或 RuntimeWarning | 保存完整报错、命令和输出目录后停止该步骤；不要自动替换为零或全局屏蔽告警 |
+| `mps` 不可用 | 先区分权限限制与硬件支持；可另用 CPU 和独立输出目录测量，不混合设备缓存 |
+
+已有两类独立数值风险：NumPy dense matmul 在本机出现过输出有限但浮点告警异常的现象，读出/PCA 投影使用现成 SciPy 路径；既有 MuJoCo 接触力测试曾出现一次 NaN，隔离和完整重跑未稳定复现，根因仍未确定。前者的处理不能算作后者已修复。
+
+基础诊断记录见 [工程检查报告](docs/research/engineering-audit.md)；其中旧环境版本、缺失权重和安装建议按记录日期理解，日常操作以本页的唯一环境和当前入口为准。
+
+需要完整工程回归时，手动执行：
+
+```bash
+bash scripts/python.sh -m pytest tests research/action-atlas/tests -q -rs
+```
+
+这会包含小型合成训练与物理测试，不是只检查语法，也不是完整论文实验。不要把测试计数当作科学结果。
+
+## 后续阶段与复现边界
+
+1. **当前交付**：用户验证 token-preserving 缓存与噪声 pilot，完成全 StateBank 提取，运行 Hidden/PCA 与动作、时间对照。
+2. **预测性表示**：在同一绑定缓存上比较官方 SAE/RET，检查历史顺序、维度/预算和 seed；不以某个方法必须获胜为前提。
+3. **机制验证**：只在训练/验证数据上选择稳定候选，加入同 token、同去噪步、同范数/秩的随机及非候选特征控制。
+4. **闭环验证**：先核实当前策略能力，再从配对初始状态测接触、夹持、释放、掉落及成功率，不只看动作大小。
+5. **扩展轴**：world model、第二个 VLA 或 Init→SFT→RL，等待当前发现与资源条件支持后另行设计。
+
+源码、模型、数据和实验记录各自版本化：保存 checkpoint revision/hash、上游 commit/patch、StateBank 身份、取层与 token/去噪规则、运行时、噪声及读出参数。相同方法名称不代表相同配置，代码完成不代表实验完成。
+
+`outputs/`、虚拟环境和上游独立 checkout 被父仓库忽略；Git clone 不会恢复这些内容。准备发布时先用 `git status --short` 核查新增源码是否被版本控制记录，不自动提交、推送或上传私有研究材料。仓库使用 [MIT License](LICENSE)；Action Atlas、RET、模型、数据及其依赖分别保留自身许可证与归属，项目许可证不替代它们。

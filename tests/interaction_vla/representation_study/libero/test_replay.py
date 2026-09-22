@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -153,3 +153,35 @@ def test_replay_accepts_official_equal_state_action_lengths() -> None:
     assert result.passed
     assert len(result.l2_errors) == 1
     assert np.isnan(result.frames[-1].post_step_l2_error)
+
+
+@pytest.mark.parametrize("state_count,action_count", [(0, 0), (1, 0), (1, 1)])
+def test_replay_rejects_episodes_without_verifiable_transitions(
+    state_count: int, action_count: int,
+) -> None:
+    with pytest.raises(ValueError, match="non-empty|verifiable state transition"):
+        replace(
+            _episode(),
+            states=np.zeros((state_count, 2)),
+            actions=np.zeros((action_count, 2)),
+        )
+
+
+@pytest.mark.parametrize("name", ["action_atol", "state_l2_p95_tolerance", "state_max_abs_tolerance"])
+@pytest.mark.parametrize("value", [0.0, -1.0, float("nan"), float("inf")])
+def test_replay_rejects_invalid_tolerances(name: str, value: float) -> None:
+    options = {"action_atol": 1e-8, name: value}
+    with pytest.raises(ValueError, match="finite and positive"):
+        replay_episode(_episode(), FakeSimulator(), **options)
+
+
+def test_replay_rejects_nonfinite_restored_state_before_stepping() -> None:
+    class NonfiniteSimulator(FakeSimulator):
+        def set_state_from_flattened(self, state: np.ndarray) -> None:
+            self.state = np.full_like(state, np.nan)
+
+        def step(self, action: np.ndarray) -> None:
+            pytest.fail("invalid restored state must be rejected before stepping")
+
+    with pytest.raises(ValueError, match="restored simulator state must be finite"):
+        replay_episode(_episode(), NonfiniteSimulator(), action_atol=1e-8)

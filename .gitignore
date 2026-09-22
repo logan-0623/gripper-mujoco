@@ -36,6 +36,8 @@ dist/
 MUJOCO_LOG.TXT
 
 # Local datasets, external checkouts, and experiment assets
+/research/action-atlas/
+/research/ret/
 /lerobot/
 /demo_data/
 /demo_data_language/

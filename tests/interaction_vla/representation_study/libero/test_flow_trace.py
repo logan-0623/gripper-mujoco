@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from interaction_vla.representation_study.libero.flow_trace import (
     FlowEdit,
+    _edited_tensor,
     bind_policy_images,
     paired_inference_noise,
     query_action_flow_at_points,
@@ -11,6 +12,17 @@ from interaction_vla.representation_study.libero.flow_trace import (
     select_records,
     trace_action_flow,
 )
+
+
+def test_suppression_and_matched_suppression_remove_target_coefficient():
+    tensor = torch.tensor([[[3.0, 4.0]]])
+    center = torch.zeros(2)
+    target = torch.tensor([1.0, 0.0])
+    direct = FlowEdit("expert_late", (3,), target, 1.0, "suppress", center, target)
+    np.testing.assert_allclose(_edited_tensor(tensor, direct), [[[0.0, 4.0]]])
+    control = FlowEdit("expert_late", (3,), torch.tensor([0.0, 1.0]), 1.0,
+                       "matched_suppress", center, target)
+    np.testing.assert_allclose(_edited_tensor(tensor, control), [[[3.0, 1.0]]])
 
 
 def test_select_records_filters_suite_and_tasks_before_balancing():

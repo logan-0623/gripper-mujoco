@@ -1,0 +1,4 @@
+# One shared macOS environment. Clone the pinned upstream before installing.
+# See research/README.md; do not replace the existing LeRobot/Torch versions.
+-r requirements-lerobot-macos.txt
+-e research/action-atlas

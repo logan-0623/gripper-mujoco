@@ -1,4 +1,5 @@
 import numpy as np
+from types import SimpleNamespace
 
 from interaction_vla.representation_study.libero.annotation import (
     AnnotationThresholds,
@@ -62,3 +63,12 @@ def test_drop_then_regrasp_success_preserves_drop_and_records_recovery() -> None
     assert result["normal_release"] is True
     assert result["geometric_lift"] is True
     assert result["supported_lift"] is True
+
+
+def test_controlled_lowering_before_release_is_not_a_drop():
+    frames = [frame(0, 0.), frame(1, .1, contact=True),
+              frame(2, .01, contact=True), frame(3, .01)]
+    labels = [SimpleNamespace(contact=SimpleNamespace(gripper_target=c), stable_grasp=s)
+              for c, s in [(False, False), (True, True), (True, True), (False, False)]]
+    tracker = EpisodeEventTracker(0, 0, 20, AnnotationThresholds(), .02, frames)
+    assert not _summarize(tracker, labels, success=False)["unintended_drop"]

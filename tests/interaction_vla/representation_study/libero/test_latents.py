@@ -7,9 +7,37 @@ import torch
 from interaction_vla.representation_study.libero import latents as latents_module
 from interaction_vla.representation_study.libero.latents import (
     LatentCacheWriter,
+    collate_state_bank_observations,
     deterministic_inference_noise,
     load_latent_cache,
 )
+
+
+def test_observation_collation_resolves_filtered_episode_indices():
+    from .helpers import make_record
+    record = make_record(task_id=0, episode=9, frame=2)
+    sample = {"index": torch.tensor(902),
+              "observation.images.image": torch.ones(3, 4, 4),
+              "observation.images.image2": torch.zeros(3, 4, 4)}
+
+    class FilteredDataset:
+        absolute_to_relative_idx = {902: 0}
+
+        def __getitem__(self, index):
+            assert index == 0
+            return sample
+
+    dataset = FilteredDataset()
+    result = collate_state_bank_observations([record], dataset)
+    full = collate_state_bank_observations([record], {902: sample})
+    assert torch.equal(result["observation.images.image"], full["observation.images.image"])
+    assert result["task"] == [record.language]
+    sample["index"] = 901
+    with pytest.raises(ValueError, match="index mismatch"):
+        collate_state_bank_observations([record], dataset)
+    dataset.absolute_to_relative_idx = {}
+    with pytest.raises(ValueError, match="absent"):
+        collate_state_bank_observations([record], dataset)
 
 
 def test_latent_cache_resumes_and_finalizes_exact_coverage(tmp_path: Path) -> None:

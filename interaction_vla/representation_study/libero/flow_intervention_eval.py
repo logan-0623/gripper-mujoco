@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from .flow_trace import FlowEdit, action_atlas_provenance, file_hash, install_flow_edit
+from .flow_trace import action_atlas_provenance, file_hash, install_flow_edit, load_flow_edit
 
 
 def main() -> None:
@@ -16,6 +16,9 @@ def main() -> None:
     parser.add_argument("--candidate-id", required=True)
     parser.add_argument("--dose", type=float, required=True)
     parser.add_argument("--edit-stage", type=int, action="append", required=True)
+    parser.add_argument("--edit-mode", choices=("additive", "suppress", "matched_suppress"),
+                        default="additive")
+    parser.add_argument("--match-candidate-id")
     parser.add_argument("--allow-control", action="store_true")
     args, forwarded = parser.parse_known_args()
     if forwarded[:1] == ["--"]:
@@ -36,8 +39,10 @@ def main() -> None:
     import torch
     from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
-    edit = FlowEdit(row["tap"], tuple(sorted(set(args.edit_stage))),
-                    torch.tensor(row["direction"], dtype=torch.float32), args.dose)
+    edit, _ = load_flow_edit(
+        args.candidates, args.candidate_id, args.dose, args.edit_stage,
+        mode=args.edit_mode, match_candidate_id=args.match_candidate_id,
+    )
     action_atlas_provenance()
     from experiments.model_adapters import SmolVLAAdapter
 
