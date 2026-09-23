@@ -87,20 +87,26 @@ def _capture_hook(values: list[torch.Tensor], *, tap: str, edit: FlowEdit | None
     return hook
 
 
-def install_flow_edit(policy, layer, edit: FlowEdit):
+def install_flow_edit(policy, layer, edit: FlowEdit, *, begin_chunk=None, on_edit=None):
     """Install the same stage edit used by trace/query on a live policy."""
     if max(edit.stages) >= int(policy.config.num_steps):
         raise ValueError("flow edit stage exceeds the policy solver length")
     counter = 0
+    active = True
 
     def hook(_module, _inputs, output):
-        nonlocal counter
+        nonlocal counter, active
         stage = counter % int(policy.config.num_steps)
+        if stage == 0 and begin_chunk is not None:
+            active = bool(begin_chunk())
         counter += 1
-        if stage not in edit.stages:
+        if not active or stage not in edit.stages:
             return output
         tensor = _tensor_output(output)
-        return _replace_tensor_output(output, _edited_tensor(tensor, edit))
+        changed = _edited_tensor(tensor, edit)
+        if on_edit is not None:
+            on_edit(stage, tensor, changed)
+        return _replace_tensor_output(output, changed)
 
     return layer.register_forward_hook(hook)
 
@@ -414,11 +420,15 @@ def load_flow_edit(path: Path, candidate_id: str, dose: float,
     if row is None:
         raise ValueError(f"candidate not found: {candidate_id}")
     direction = torch.tensor(row["direction"], dtype=torch.float32)
+    if not torch.isfinite(direction).all() or not torch.isclose(direction.norm(), torch.tensor(1.), atol=1e-4):
+        raise ValueError("candidate must be finite and unit norm")
     center = coefficient_direction = None
     if mode != "additive":
         basis = path.with_name("shared_basis.npz")
         if not basis.is_file():
             raise FileNotFoundError(f"suppression basis is missing: {basis}")
+        if payload.get("shared_basis_sha256") is not None and file_hash(basis) != payload["shared_basis_sha256"]:
+            raise ValueError("suppression basis hash mismatch")
         with np.load(basis, allow_pickle=False) as values:
             center = torch.tensor(values["mean"], dtype=torch.float32)
         coefficient_id = match_candidate_id or candidate_id
@@ -427,6 +437,8 @@ def load_flow_edit(path: Path, candidate_id: str, dose: float,
             raise ValueError("matched suppression candidate is missing or uses another tap")
         coefficient_direction = torch.tensor(
             coefficient_row["direction"], dtype=torch.float32)
+        if center.shape != direction.shape or coefficient_direction.shape != direction.shape or not torch.isfinite(center).all() or not torch.isfinite(coefficient_direction).all() or not torch.isclose(coefficient_direction.norm(),torch.tensor(1.),atol=1e-4):
+            raise ValueError("invalid suppression center/coefficient direction")
     edit = FlowEdit(str(row["tap"]), tuple(sorted(set(int(x) for x in stages))),
                     direction, dose, mode, center, coefficient_direction)
     return edit, file_hash(path)

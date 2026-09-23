@@ -37,6 +37,14 @@ def test_transfer_keeps_source_scaler_and_readout():
     assert cr.probe_matrix({"early": (x, x)}, np.ones(12), np.ones(12), rows, valid, 1)["status"] == "not_estimable"
 
 
+def test_moment_alignment_uses_train_only():
+    x=np.arange(12,dtype=float)[:,None]
+    aligned=cr.moment_align({"early":(x,x+100),"late":(x*3+7,(x+100)*3+7)})
+    np.testing.assert_allclose(aligned["early"][0],aligned["late"][0],atol=1e-12)
+    np.testing.assert_allclose(aligned["early"][1],aligned["late"][1])
+    assert aligned["late"][1].mean()>90
+
+
 def test_full_report_and_contract_failures(tmp_path, monkeypatch):
     records = [record(i, p) for p in ("train", "validation") for i in range(8)]
     split = NS(assignments={r.state_id: r.state_id.split("-")[0] for r in records})

@@ -110,7 +110,20 @@ def probe_matrix(features, train_y, validation_y, train_records, validation_reco
     return {"status": "complete", "rows": rows}
 
 
-def run(bank, checkpoints, output, *, alpha=10.0):
+def moment_align(features):
+    """Map each checkpoint to first-checkpoint moments using training rows only."""
+    anchor = next(iter(features.values()))[0]
+    mean, scale = anchor.mean(axis=0), anchor.std(axis=0)
+    scale = np.where(scale < 1e-8, 1., scale)
+    result = {}
+    for name, (train, valid) in features.items():
+        center, spread = train.mean(axis=0), train.std(axis=0)
+        spread = np.where(spread < 1e-8, 1., spread)
+        result[name] = tuple((x-center)/spread*scale+mean for x in (train,valid))
+    return result
+
+
+def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=False):
     if output.exists():
         raise FileExistsError(f"refusing to overwrite: {output}")
     if len(checkpoints) < 2 or len({c[0] for c in checkpoints}) != len(checkpoints):
@@ -203,7 +216,8 @@ def run(bank, checkpoints, output, *, alpha=10.0):
                                                            features[names[right]][part_index], weights(selected[part]))})
             for target in labels["train"]:
                 readouts.append({"tap": tap, "flow_stage": stage, "target": target,
-                                 **probe_matrix(features, labels["train"][target], labels["validation"][target],
+                                 **probe_matrix(moment_align(features) if transfer_moment_alignment else features,
+                                                labels["train"][target], labels["validation"][target],
                                                 selected["train"], selected["validation"], alpha)})
             print(f"Complete {tap} flow stage {stage}", flush=True)
     report = {"schema": "smolvla_checkpoint_readouts_v1", "exploration_only": True,
@@ -211,6 +225,8 @@ def run(bank, checkpoints, output, *, alpha=10.0):
               "inputs": provenance, "comparison_contract": common_contract,
               "pooling": "mean over noise repeats and action tokens; flow stages separate",
               "alpha": alpha, "alpha_selection": "fixed; no validation tuning",
+              "transfer_moment_alignment": transfer_moment_alignment,
+              "alignment_note": "per-checkpoint train-only mean/std to first checkpoint; no rotation correction; CKA remains raw",
               "weighting": "task equal / episode equal / state equal",
               "probe_metric": "unclipped MSE (including binary targets), not calibrated probability",
               "limitations": ["single lineage must be verified separately", "no causal-use claim",
@@ -229,9 +245,11 @@ def main():
     parser.add_argument("--checkpoint", nargs=3, action="append", required=True,
                         metavar=("NAME", "TRAIN_TRACE", "VALIDATION_TRACE"))
     parser.add_argument("--alpha", type=float, default=10.0)
+    parser.add_argument("--transfer-moment-alignment", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    run(args.bank, args.checkpoint, args.output, alpha=args.alpha)
+    run(args.bank, args.checkpoint, args.output, alpha=args.alpha,
+        transfer_moment_alignment=args.transfer_moment_alignment)
 
 
 if __name__ == "__main__":

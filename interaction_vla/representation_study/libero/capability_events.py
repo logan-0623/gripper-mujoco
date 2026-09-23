@@ -119,6 +119,7 @@ def install_libero_event_recorder(
     initial_state_count: int | None,
     thresholds: AnnotationThresholds,
     drop_height_m: float,
+    phase_controller=None,
 ) -> None:
     from lerobot.envs.libero import LiberoEnv
 
@@ -150,11 +151,14 @@ def install_libero_event_recorder(
         if item is None or item[2]:
             return
         adapter, tracker, observed_success = item
-        rows.append(_summarize(
+        summary = _summarize(
             tracker,
             annotate_relocation_episode(tracker.frames, adapter.semantics, thresholds),
             success=observed_success if success is None else success,
-        ))
+        )
+        if phase_controller is not None:
+            summary["phase_edit"] = phase_controller.summary()
+        rows.append(summary)
         monitors[id(env)] = (adapter, tracker, True)
         save()
 
@@ -191,6 +195,10 @@ def install_libero_event_recorder(
             frames=[],
         )
         tracker.add(adapter._privileged_frame())
+        if phase_controller is not None:
+            if any(not item[2] for key, item in monitors.items() if key != id(env)):
+                raise ValueError("phase editing requires one synchronous environment")
+            phase_controller.reset(tracker.frames[-1])
         monitors[id(env)] = (adapter, tracker, False)
         return result
 
@@ -200,6 +208,8 @@ def install_libero_event_recorder(
         adapter, tracker, finished = monitors[id(env)]
         adapter._observation = adapter.domain._get_observations()
         tracker.add(adapter._privileged_frame())
+        if phase_controller is not None:
+            phase_controller.update(tracker.frames[-1])
         success = bool(result[4].get("is_success", False))
         monitors[id(env)] = (adapter, tracker, finished or success)
         if result[2] or result[3]:
@@ -214,7 +224,7 @@ def install_libero_event_recorder(
     LiberoEnv.reset, LiberoEnv.step, LiberoEnv.close = reset, step, close
 
 
-def main() -> None:
+def main(*, phase_controller=None) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--events-output", type=Path, required=True)
     parser.add_argument("--suite", default="libero_spatial")
@@ -237,6 +247,7 @@ def main() -> None:
             lift_clearance_m=args.lift_clearance_m,
         ),
         drop_height_m=args.drop_height_m,
+        phase_controller=phase_controller,
     )
     import lerobot.scripts.lerobot_eval as lerobot_eval
 

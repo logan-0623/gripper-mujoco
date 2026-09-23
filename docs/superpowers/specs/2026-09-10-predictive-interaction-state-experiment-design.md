@@ -170,8 +170,8 @@ U_k 比较候选相对本模型 baseline 的行为效应及其相对控制的差
 | ① Checkpoint-drift CKA | 同输入下逐 flow stage 比较所有 checkpoint 对，包含相邻点和早期锚点；定位变化，也保留稳定区域 | 新增 `checkpoint_readouts`；只分析已有 expert middle/late 的 repeat/token 均值，不代表整个网络或 token-level 结构 |
 | ② Cross-checkpoint linear probing | 矩阵对角为各阶段独立拟合，非对角为源 checkpoint 的 scaler 与读出整体冻结迁移；区分可读性与坐标可迁移性 | 同一新入口；几何、contact、stable grasp、演示夹爪动作小面板；独立时间/robot 对照，不等于条件增益检验 |
 | ③ Candidate-subspace ablation | 从 drift、读出、稳定表示但功能变化中选候选；匹配随机/低变化方向与实际扰动，比较跨 checkpoint 功能效应 | 已有 `flow_trace` 支持单方向 suppression；高秩联合子空间删除尚未实现，不把逐方向效应相加称联合效应 |
-| ④ Phase-specific closed-loop intervention | 依据当前/历史观测触发环境阶段，比较同阶段基线、候选和控制 | 已有 flow-stage hook 不等于环境 phase hook；环境触发、曝光计数与未触发分母仍待实现，不能以现有入口冒充已完成 |
-| ⑤ Input-side matched masking | 同 view、面积、填充、时间范围匹配目标/夹爪/背景，至少一种替代填充；固定局部 flow 输入 | 已有 `source_contrast` 是 donor swap，不是区域 masking；区域来源与匹配 mask 执行器待实现，不能声称纯中介归因 |
+| ④ Phase-specific closed-loop intervention | 依据当前/历史观测触发环境阶段，比较同阶段基线、候选和控制 | `phase_edit` / `flow_intervention_eval` 已实现当前/历史接触触发、chunk 配额、实际 stage 编辑审计及未触发记录；使用 privileged simulator 接触，不声称可部署感知，真实 pilot 结果另记 |
+| ⑤ Input-side matched masking | 同 view、面积、填充、时间范围匹配区域，至少一种替代填充；固定局部 flow 输入 | `candidate_controls` 已实现显式区域标注的等面积 mask、mean/blur 填充；语义区域来源待用户选择，不自动标为目标/夹爪，不把 donor swap 称 masking |
 
 **本次可运行的离线入口：**每个 checkpoint 提供同 StateBank、同观测、同噪声的 train/validation **episode split** 完整 `flow_trace` 缓存。不能传入旧 480-D token cache。已有单一 partition 缓存不能通过改名变成另一分区；缺少配套缓存时先列出缺项，不自动提取或启动训练。缓存 hash 绑定并不验证同训练谱系，运行前还须沿用 `acquisition lineage` 审计。
 
@@ -192,9 +192,22 @@ bash scripts/python.sh -W error::RuntimeWarning \
 
 自然积分与固定参考点必须分开运行。自然积分结果包含 x_sigma 轨迹变化，不能解释为同局部输入下的计算变化；固定点运行要求所有 checkpoint 的 x_sigma/sigma 一致。当前仅有描述性分数，没有 bootstrap CI、多重检验或条件 nuisance-adjusted readout；不据此宣布显著、新信息诞生或因果使用。CKA 均值池化可能掩盖 token 重排，发现后再定向追加 token-preserving 分析。
 
-第一轮先交付这些离线图谱与现有行为表，再确定 ③⑤ 的有限候选、mask 区域来源及 ④ 的可因果触发情境。未实现部分明确留待后续，不因本次规划更新自动授权 GPU 提取、闭环或新训练。
+第一轮先交付这些离线图谱与现有行为表，再确定 ③⑤ 的有限候选、mask 区域来源及 ④ 的可因果触发情境。后续执行授权来自用户“补全代码然后启动试验”，范围为下节限定的探索，不包含模型训练或正式确认。
 
 资源边界：读取阶段复用 `load_trace`，一次加载一个完整缓存，拼接时峰值内存可能超过该缓存未压缩大小的两倍；这不是流式读取器。先用小缓存 smoke 并核对 RAM，再分析大缓存。CKA 使用 state×state Gram 矩阵，当前适合数百 states 的探索，不直接面向全 StateBank 大规模扫描。本次仅完成合成与相关单元回归：30 项通过，CLI `--help` 通过；真实缓存运行、服务器资源测量及新科学结果均未完成。
+
+### 0.9 发现后的有限消融与输入对照（2026-09-23 执行协议）
+
+§0.8 末尾的“未完成”是当时实现状态。后续 `spatial_checkpoint_exploration_20260923` 已完成；此次沿用其 train/validation episode split，不改写已有结果。当前方向是检查“早期可读、迁移失效”的替代解释，而非宣布新信息诞生或功能招募。
+
+- **读出诊断：**五个 checkpoint 逐维均值/标准差映射至首 checkpoint，参数只拟合各自 train；冻结读出迁移到 validation。原始 CKA 不变。该操作只检查位置/尺度漂移，不消除旋转，也不是功能干预。写入独立结果目录，不替换原始迁移矩阵。
+- **候选：**用本轮 5k/25k train 缓存生成共享 rank-16 PCA/SVD 候选，在 middle/late 各固定 `formation_0`；15k 不参与方向选择。共享 raw-space 方向只是可追踪操作，不保证语义恒定。每个 checkpoint 的抑制中心单独取本模型 train 激活均值。
+- **离线消融：**5k/15k/25k；各取 validation 前 32 个配对 states，3 noise repeats；全 10 个 flow stages、dose=0.5；no-op 加两个 tap 各 target、low-change、两个 random，共 9 arms。随机/low-change 使用目标分量系数、单位控制方向，固定点可匹配名义编辑范数；自然积分中后续路径不同，不能声称全程实际扰动严格相等。
+- **指标：**分别记录固定 x_sigma/sigma 的局部 velocity/候选投影变化，以及自然积分最终 action plan 的变化；部署前 10 个动作与完整 plan 的 full/translation/rotation/gripper 分开，另存夹爪有符号均值。no-op 与原缓存重放须通过数值检查。每 state、noise 的数组保留，并报告 task-macro 与逐任务结果，不以 4 个 validation episodes 作充分泛化证据。
+- **输入 masking：**JSON 必须绑定 reference binding hash、annotation_source 和每 state 的 camera/regions；regions 是原始绑定相机图像上的整数 `[y0,x0,y1,x1]`。同一 state 各 arm 面积相等；所有 state 区域名覆盖相同；每区 mean 与 blur 两种填充。图像区域的语义真实性依赖人工或模拟器标注，接口检查不代替标注验证。未提供合法标注时不启动 mask，不自行发明语义框。
+- **接触阶段闭环 pilot：**离线工程检查通过后仅 6 rollouts：5k/25k × baseline/target/random0，Spatial task 0、实际 initial state 10、每格 1 episode。使用已看过的 development 状态，不消费或冒称独立确认。仅首次符合当前接触条件的 action-plan generation 编辑一次，baseline 同样记录虚拟触发；固定 10-step 执行前缀可能持续到接触结束后，因此报告为“接触时发起的一次计划干预”，不是每个接触帧精确控制。保留未触发 episode；不把按干预后触发分组比较当因果估计。
+
+运行入口：`bash scripts/run_candidate_controls.sh NEW_ABSOLUTE_OUTPUT_DIR [MASK_SPEC_DIRECTORY]`。可选目录包含 `005000.json`、`015000.json`、`025000.json`。流水线为 train-only 校准 → 候选冻结 → 4-state/1-repeat 消融 smoke → 3-checkpoint 离线 → 6-rollout pilot；任何工程错误停止，负/零科学效应不触发停止或追加预算。模型与 RL 保持冻结，不删除、覆盖旧产物。正式阶段特异性结论仍需要参照情境、更多配对 episodes 和独立确认；此次 pilot 不具备这些证据。
 
 ## 1. 前期预测路线的科学问题（历史记录）
 
