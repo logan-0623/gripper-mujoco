@@ -155,9 +155,11 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
     dataset = LeRobotDataset("lerobot/libero", root=dataset_root, revision=binding["dataset_revision"],
                              episodes=sorted({r.lerobot_episode_index for r in selected}), video_backend="torchcodec")
     policy, pre, post = load_frozen_policy(checkpoint, contract, metadata, "cuda")
-    prefix = int(policy.config.n_action_steps)
-    if prefix != 10:
-        raise ValueError("this exploration contract requires 10 deployed actions")
+    # Deployment eval explicitly overrides n_action_steps=10; checkpoint stores 50.
+    # predict_action_chunk still generates the full plan, irrespective of execution prefix.
+    prefix = 10
+    if int(policy.config.chunk_size) < prefix:
+        raise ValueError("generated plan shorter than the declared deployment prefix")
     adapter = SmolVLAAdapter(); adapter.policy = policy
     layers = adapter.get_layer_groups()["expert"]
     middle, late = layers[len(layers)//2], layers[-1]
@@ -231,6 +233,8 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
               "mask_annotation_source":spec["annotation_source"] if spec else None,
               "states":len(selected),"episodes":len({episode(r) for r in selected}),"noise_repeats":repeats,
               "dose":dose,"deployed_prefix":prefix,"stages":list(range(binding["num_steps"])),
+              "checkpoint_n_action_steps":int(policy.config.n_action_steps),
+              "deployed_prefix_source":"paired rollout command --policy.n_action_steps=10; not checkpoint default",
               "center":"own-checkpoint training mean; shared frozen raw-space candidate directions",
               "controls":"target coefficient redirected into unit random/low-change directions; same nominal dose",
               "effects_sha256":file_hash(output/"effects.npz"),"summary":summary,
