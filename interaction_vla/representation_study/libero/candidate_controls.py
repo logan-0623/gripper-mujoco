@@ -117,11 +117,9 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
         raise ValueError("training partition mismatch")
     if {episode(by_id[i]) for i in train_ids} & {episode(r) for r in selected}:
         raise ValueError("episode leakage")
-    # Trace tensors are [state, flow_stage, token, hidden].  The suppression
-    # center must remain one value per hidden feature; averaging token as well
-    # as hidden (axis 3) collapses it to a scalar and makes load_flow_edit
-    # reject the candidate direction.
-    centers = {tap: train[tap].mean(axis=(0, 1, 2)) for tap in ("expert_middle", "expert_late")}
+    # Trace tensors are [state, repeat, flow_stage, token, hidden].  Reduce
+    # every axis except hidden so suppression stays in the 720-D feature space.
+    centers = {tap: train[tap].mean(axis=(0, 1, 2, 3)) for tap in ("expert_middle", "expert_late")}
     if any(center.ndim != 1 or center.shape[0] != 720 or not np.isfinite(center).all()
            for center in centers.values()):
         raise ValueError("training center must be finite [hidden_dim] vector")

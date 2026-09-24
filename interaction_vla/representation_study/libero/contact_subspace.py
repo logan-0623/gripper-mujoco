@@ -75,9 +75,10 @@ def run(bank, train_trace, output, *, alpha=10.0, rank=1, random_count=2):
     output.mkdir(parents=True)
     for tap in ("expert_middle","expert_late"):
         tap_rows=[x for x in candidates if x["tap"]==tap]
-        # Trace tensors are [state, flow_stage, token, hidden].  Suppression
-        # centers live in hidden space, so reduce state/stage/token only.
-        basis=io.BytesIO(); np.savez(basis,mean=arrays[tap].mean(axis=(0,1,2)),state_ids=ids)
+        # Trace tensors are [state, repeat, flow_stage, token, hidden].
+        # Suppression centers live in hidden space, so reduce every preceding
+        # axis and retain the final 720-D feature vector.
+        basis=io.BytesIO(); np.savez(basis,mean=arrays[tap].mean(axis=(0,1,2,3)),state_ids=ids)
         write_bytes_atomic(output/f"{tap}/shared_basis.npz",basis.getvalue())
         payload={"schema":"smolvla_contact_subspace_v1","kind":"frozen_contact_candidates","tap":tap,
                  "selection_uses":"train Contact labels only","label":"contact.gripper_target",
