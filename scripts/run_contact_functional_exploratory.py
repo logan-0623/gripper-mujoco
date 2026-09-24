@@ -89,7 +89,9 @@ def main() -> None:
     p.add_argument("--initial-state-count", type=int, default=50)
     p.add_argument("--dose", type=float, default=0.5)
     args = p.parse_args()
-    run(**vars(args))
+    values = vars(args)
+    values["tasks"] = values.pop("task")
+    run(**values)
 
 
 if __name__ == "__main__":
