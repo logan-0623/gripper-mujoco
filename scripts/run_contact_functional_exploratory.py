@@ -59,9 +59,10 @@ def run(checkpoint: Path, candidates: Path, output: Path, *, tasks: list[int],
                     "--candidate-id", condition, "--dose", str(dose),
                     "--edit-mode", "suppress" if condition == "contact_0" else "matched_suppress",
                     "--environment-phase", "contact", "--max-edited-chunks", "1",
+                    "--allow-control",
                 ]
                 if condition == "matched_random_0":
-                    options += ["--allow-control", "--match-candidate-id", "contact_0"]
+                    options += ["--match-candidate-id", "contact_0"]
                 for stage in range(10):
                     options += ["--edit-stage", str(stage)]
                 command = command[:separator] + options + command[separator:]
