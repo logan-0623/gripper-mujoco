@@ -76,7 +76,8 @@ def action_metrics(delta, prefix):
 
 
 def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, reference_trace,
-        candidates, output, *, max_states=32, repeats=3, dose=.5, mask_spec=None, batch_size=4):
+        candidates, output, *, max_states=32, repeats=3, dose=.5, mask_spec=None, batch_size=4,
+        target_id="formation_0", control_ids=("low_change_0", "matched_random_0", "matched_random_1")):
     if output.exists():
         raise FileExistsError(output)
     if not 0 < dose <= 1 or max_states < 4 or repeats < 1 or batch_size < 1:
@@ -127,10 +128,11 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
         with np.load(basis_path, allow_pickle=False) as basis:
             if set(basis["state_ids"].tolist()) != set(train_ids.tolist()):
                 raise ValueError("candidate discovery samples differ from training cache")
-        for candidate in ("formation_0", "low_change_0", "matched_random_0", "matched_random_1"):
+        candidate_ids = (target_id, *control_ids)
+        for candidate in candidate_ids:
             edit, _ = load_flow_edit(candidate_path, candidate, dose, tuple(range(binding["num_steps"])),
-                                     mode="suppress" if candidate == "formation_0" else "matched_suppress",
-                                     match_candidate_id="formation_0")
+                                     mode="suppress" if candidate == target_id else "matched_suppress",
+                                     match_candidate_id=target_id)
             for direction in (edit.direction, edit.coefficient_direction):
                 if not torch.isfinite(direction).all() or not torch.isclose(direction.norm(), torch.tensor(1.), atol=1e-4):
                     raise ValueError("candidate/control must have unit norm")
@@ -177,19 +179,22 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
             np.testing.assert_allclose(baseline_action, reference["action_postprocessed"][start:stop,repeat], atol=2e-5, rtol=1e-5)
             cases = [("no_op", None, None), *[(k, v, None) for k,v in edits.items()],
                      *[(f"mask:{region}:{fill}", None, (region,fill)) for region,fill in mask_cases]]
+            fixed_noop = query_action_flow_at_points(policy, processed, noise,
+                                                     baseline["x_sigma"], baseline["sigma"], middle, late)
             for name, edit, mask in cases:
                 observed = pre(mask_batch(raw, ids[start:stop].tolist(), spec, *mask)) if mask else processed
                 natural = trace_action_flow(policy, observed, noise, middle, late, edit)
                 action = postprocess_actions(post, natural["action_normalized"], "cuda")
                 fixed = query_action_flow_at_points(policy, observed, noise, baseline["x_sigma"], baseline["sigma"], middle, late, edit)
                 metrics = action_metrics(action-baseline_action, prefix)
-                metrics["fixed_velocity_rms_by_stage"] = np.sqrt(np.mean(np.square(fixed["velocity"]-baseline["velocity"],dtype=float), axis=(2,3)))
+                fixed_velocity_delta = fixed["velocity"] - (fixed_noop["velocity"] if edit is not None else baseline["velocity"])
+                metrics["fixed_velocity_rms_by_stage"] = np.sqrt(np.mean(np.square(fixed_velocity_delta,dtype=float), axis=(2,3)))
                 if edit:
                     tap = edit.tap
-                    metrics["fixed_hidden_delta_rms_by_stage"] = np.sqrt(np.mean(np.square(fixed[tap]-baseline[tap],dtype=float),axis=(2,3)))
+                    metrics["fixed_hidden_delta_rms_by_stage"] = np.sqrt(np.mean(np.square(fixed[tap]-fixed_noop[tap],dtype=float),axis=(2,3)))
                 for tap in ("expert_middle", "expert_late"):
-                    target = next(e for e in edits.values() if e.tap == tap)
-                    delta = fixed[tap] - baseline[tap]
+                    target = next(e for e in edits.values() if e.tap == tap and e is not edit)
+                    delta = fixed[tap] - (fixed_noop[tap] if edit is not None else baseline[tap])
                     metrics[f"{tap}_projection_delta_by_stage"] = np.einsum("nstd,d->ns",delta,target.coefficient_direction.numpy()) / delta.shape[2]
                 for metric,value in metrics.items():
                     if not np.isfinite(value).all():
@@ -236,10 +241,11 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
               "checkpoint_n_action_steps":int(policy.config.n_action_steps),
               "deployed_prefix_source":"paired rollout command --policy.n_action_steps=10; not checkpoint default",
               "center":"own-checkpoint training mean; shared frozen raw-space candidate directions",
+              "target_id":target_id,"control_ids":list(control_ids),
               "controls":"target coefficient redirected into unit random/low-change directions; same nominal dose",
               "effects_sha256":file_hash(output/"effects.npz"),"summary":summary,
               "limits":["four validation episodes; descriptive only","raw shared directions do not guarantee semantic alignment",
-                        "fixed queries measure local effects; natural integration measures action-plan effects",
+                        "fixed queries now report candidate-minus-no-op local effects; natural integration measures action-plan effects",
                         "no new closed-loop success measurement", "fixed no-op vs natural numerical floor reported, not subtracted"]}
     write_json_atomic(output/"report.json",report)
     return report
@@ -250,12 +256,14 @@ def main():
     for name in ("bank","dataset-root","checkpoint","contract","metadata","train-trace","reference-trace","output"):
         p.add_argument(f"--{name}",type=Path,required=True)
     p.add_argument("--candidates",type=Path,action="append",required=True)
+    p.add_argument("--target-id",default="formation_0")
+    p.add_argument("--control-id",action="append",default=None)
     p.add_argument("--mask-spec",type=Path)
     p.add_argument("--max-states",type=int,default=32)
     p.add_argument("--repeats",type=int,default=3)
     p.add_argument("--dose",type=float,default=.5)
     p.add_argument("--batch-size",type=int,default=4)
-    a=p.parse_args(); result=run(**vars(a))
+    a=p.parse_args(); values=vars(a); values["control_ids"]=tuple(values.pop("control_id") or ("low_change_0","matched_random_0","matched_random_1")); result=run(**values)
     print(f"ALL_DONE states={result['states']}",flush=True)
 
 

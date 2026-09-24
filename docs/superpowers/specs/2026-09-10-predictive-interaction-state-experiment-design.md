@@ -203,11 +203,14 @@ bash scripts/python.sh -W error::RuntimeWarning \
 - **读出诊断：**五个 checkpoint 逐维均值/标准差映射至首 checkpoint，参数只拟合各自 train；冻结读出迁移到 validation。原始 CKA 不变。该操作只检查位置/尺度漂移，不消除旋转，也不是功能干预。写入独立结果目录，不替换原始迁移矩阵。
 - **候选：**用本轮 5k/25k train 缓存生成共享 rank-16 PCA/SVD 候选，在 middle/late 各固定 `formation_0`；15k 不参与方向选择。共享 raw-space 方向只是可追踪操作，不保证语义恒定。每个 checkpoint 的抑制中心单独取本模型 train 激活均值。
 - **离线消融：**5k/15k/25k；各取 validation 前 32 个配对 states，3 noise repeats；全 10 个 flow stages、dose=0.5；no-op 加两个 tap 各 target、low-change、两个 random，共 9 arms。随机/low-change 使用目标分量系数、单位控制方向，固定点可匹配名义编辑范数；自然积分中后续路径不同，不能声称全程实际扰动严格相等。
+- **fixed-point 修正：**局部 velocity、hidden 和 projection 指标均以同一 `x_sigma/sigma` 下的 candidate 减去 no-op 为主量；candidate 与自然轨迹的差异只作为辅助诊断。这样不把 fixed-query 与 natural integration 的路径差误报为干预效应。
+- **Contact 子空间：**新增 `contact_subspace`，只在每个 checkpoint 的 train episode trace 上拟合 Contact readout direction；validation 只测 action/velocity effect。每个 tap 保留 Contact target、low-change 和两个 matched-random controls；方向是线性读出操作，不称为 Contact neuron 或真实内部状态。
 - **指标：**分别记录固定 x_sigma/sigma 的局部 velocity/候选投影变化，以及自然积分最终 action plan 的变化；部署前 10 个动作与完整 plan 的 full/translation/rotation/gripper 分开，另存夹爪有符号均值。no-op 与原缓存重放须通过数值检查。每 state、noise 的数组保留，并报告 task-macro 与逐任务结果，不以 4 个 validation episodes 作充分泛化证据。
 - **输入 masking：**JSON 必须绑定 reference binding hash、annotation_source 和每 state 的 camera/regions；regions 是原始绑定相机图像上的整数 `[y0,x0,y1,x1]`。同一 state 各 arm 面积相等；所有 state 区域名覆盖相同；每区 mean 与 blur 两种填充。图像区域的语义真实性依赖人工或模拟器标注，接口检查不代替标注验证。未提供合法标注时不启动 mask，不自行发明语义框。
+- **联合证据：**`joint_evidence` 只汇总已有真实产物，计算 `ΔA_Contact−ΔA_random` 和 mask-induced projection 差；没有 interaction/background 闭环事件时，`ΔSR_interaction−ΔSR_background` 保持 TBD，不用 action RMS 代替 success rate。
 - **接触阶段闭环 pilot：**离线工程检查通过后仅 6 rollouts：5k/25k × baseline/target/random0，Spatial task 0、实际 initial state 10、每格 1 episode。使用已看过的 development 状态，不消费或冒称独立确认。仅首次符合当前接触条件的 action-plan generation 编辑一次，baseline 同样记录虚拟触发；固定 10-step 执行前缀可能持续到接触结束后，因此报告为“接触时发起的一次计划干预”，不是每个接触帧精确控制。保留未触发 episode；不把按干预后触发分组比较当因果估计。
 
-运行入口：`bash scripts/run_candidate_controls.sh NEW_ABSOLUTE_OUTPUT_DIR [MASK_SPEC_DIRECTORY]`。可选目录包含 `005000.json`、`015000.json`、`025000.json`。流水线为 train-only 校准 → 候选冻结 → 4-state/1-repeat 消融 smoke → 3-checkpoint 离线 → 6-rollout pilot；任何工程错误停止，负/零科学效应不触发停止或追加预算。模型与 RL 保持冻结，不删除、覆盖旧产物。正式阶段特异性结论仍需要参照情境、更多配对 episodes 和独立确认；此次 pilot 不具备这些证据。
+运行入口：`bash scripts/run_contact_evidence.sh NEW_ABSOLUTE_OUTPUT_DIR`。它执行 train-only Contact 子空间 → 4-control 配对 smoke → 5k/15k/25k、32 states×3 repeats 的 validation effects → `joint_evidence.json`。mask 仍需显式 annotation spec；未提供时只记录 TBD。任何工程错误停止，负/零科学效应不触发停止或追加预算。模型与 RL 保持冻结，不删除、覆盖旧产物。正式阶段特异性结论仍需要参照情境、更多配对 episodes、interaction/background 成功率事件、task-stratified bootstrap 和未查看样本；此次 pilot 不具备这些证据。
 
 ## 1. 前期预测路线的科学问题（历史记录）
 
