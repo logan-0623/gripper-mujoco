@@ -9,7 +9,10 @@ out="${1:?Usage: run_contact_evidence.sh NEW_ABSOLUTE_OUTPUT_DIR}"
 export HF_HOME=/root/autodl-tmp/gripper-mujoco-hf-cache HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4
 base=/root/autodl-tmp/smolvla-official-reproduction-v2
-cache="$base/acquisition/spatial_checkpoint_exploration_20260923"
+# Use a cache regenerated with the current flow_trace implementation.  The
+# old cache remains preserved, but stale source hashes must never be mixed into
+# candidate/no-op effects.
+cache="${FLOW_CACHE:-$base/acquisition/spatial_checkpoint_exploration_20260923}"
 bank="$root/outputs/representation_study/libero_smolvla/state_bank"
 dataset="$HF_HOME/lerobot/hub/datasets--lerobot--libero/snapshots/a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4"
 metadata="$HF_HOME/hub/models--HuggingFaceTB--SmolVLM2-500M-Video-Instruct/snapshots/7b375e1b73b11138ff12fe22c8f2822d8fe03467"
