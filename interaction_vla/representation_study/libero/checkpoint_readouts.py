@@ -123,7 +123,24 @@ def moment_align(features):
     return result
 
 
-def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=False):
+def conditional_probe_matrix(features, controls, train_y, validation_y,
+                             train_records, validation_records, alpha, control_rows):
+    """Measure C+Z against the same fitted observed-state baseline C."""
+    augmented = {name: tuple(np.column_stack((controls[i], pair[i])) for i in (0, 1))
+                 for name, pair in features.items()}
+    result = probe_matrix(augmented, train_y, validation_y,
+                          train_records, validation_records, alpha)
+    if result["status"] != "complete":
+        return result
+    baseline = {str(row["task"]): row["mse"] for row in control_rows}
+    for row in result["rows"]:
+        row["observed_state_mse"] = baseline[str(row["task"])]
+        row["incremental_mse_gain"] = row["observed_state_mse"] - row["mse"]
+    return result
+
+
+def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=False,
+        conditional_controls=False):
     if output.exists():
         raise FileExistsError(f"refusing to overwrite: {output}")
     if len(checkpoints) < 2 or len({c[0] for c in checkpoints}) != len(checkpoints):
@@ -198,15 +215,19 @@ def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=Fals
     }
     if any(not np.isfinite(x).all() for pair in controls.values() for x in pair):
         raise ValueError("non-finite nuisance controls")
+    if conditional_controls:
+        controls["observed_state"] = tuple(np.column_stack((controls["frame_index"][i],
+                                                            controls["robot_state"][i])) for i in (0, 1))
     control_rows = [{"control": name, "target": target,
                      **probe_matrix({name: pair}, labels["train"][target], labels["validation"][target],
                                     selected["train"], selected["validation"], alpha)}
                     for name, pair in controls.items() for target in labels["train"]]
     names = list(pooled)
-    cka_rows, readouts = [], []
+    cka_rows, readouts, conditional_rows = [], [], []
     for tap in TAPS:
         for stage in range(pooled[names[0]]["train"][tap].shape[1]):
             features = {n: tuple(pooled[n][p][tap][:, stage] for p in ("train", "validation")) for n in names}
+            evaluated = moment_align(features) if transfer_moment_alignment else features
             for left in range(len(names)):
                 for right in range(left, len(names)):
                     for part_index, part in enumerate(("train", "validation")):
@@ -216,9 +237,18 @@ def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=Fals
                                                            features[names[right]][part_index], weights(selected[part]))})
             for target in labels["train"]:
                 readouts.append({"tap": tap, "flow_stage": stage, "target": target,
-                                 **probe_matrix(moment_align(features) if transfer_moment_alignment else features,
+                                 **probe_matrix(evaluated,
                                                 labels["train"][target], labels["validation"][target],
                                                 selected["train"], selected["validation"], alpha)})
+                if conditional_controls and target in ("contact", "stable_grasp"):
+                    baseline = next(row["rows"] for row in control_rows
+                                    if row["control"] == "observed_state" and row["target"] == target)
+                    conditional_rows.append({"tap": tap, "flow_stage": stage, "target": target,
+                                             **conditional_probe_matrix(evaluated, controls["observed_state"],
+                                                                        labels["train"][target],
+                                                                        labels["validation"][target],
+                                                                        selected["train"], selected["validation"],
+                                                                        alpha, baseline)})
             print(f"Complete {tap} flow stage {stage}", flush=True)
     report = {"schema": "smolvla_checkpoint_readouts_v1", "exploration_only": True,
               "source_sha256": file_hash(Path(__file__)),
@@ -233,8 +263,10 @@ def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=Fals
                               "validation is development, not independent confirmation",
                               "natural-flow comparisons include evolving x_sigma",
                               "pooled expert taps only; no VLM or token-level attribution",
-                              "no confidence intervals or conditional nuisance-adjusted probes"],
-              "controls": control_rows, "cka": cka_rows, "readouts": readouts}
+                              "no confidence intervals; conditional readouts lack matched-capacity controls"],
+              "controls": control_rows, "cka": cka_rows, "readouts": readouts,
+              "conditional_readouts": conditional_rows,
+              "conditional_controls": "observed frame index + robot state; no task one-hot" if conditional_controls else None}
     write_json_atomic(output / "report.json", report)
     return report
 
@@ -246,10 +278,12 @@ def main():
                         metavar=("NAME", "TRAIN_TRACE", "VALIDATION_TRACE"))
     parser.add_argument("--alpha", type=float, default=10.0)
     parser.add_argument("--transfer-moment-alignment", action="store_true")
+    parser.add_argument("--conditional-controls", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     run(args.bank, args.checkpoint, args.output, alpha=args.alpha,
-        transfer_moment_alignment=args.transfer_moment_alignment)
+        transfer_moment_alignment=args.transfer_moment_alignment,
+        conditional_controls=args.conditional_controls)
 
 
 if __name__ == "__main__":

@@ -45,6 +45,19 @@ def test_moment_alignment_uses_train_only():
     assert aligned["late"][1].mean()>90
 
 
+def test_conditional_probe_reports_increment_over_observed_state():
+    x = np.arange(12, dtype=float)[:, None]
+    rows = [record(i, "train") for i in range(12)]
+    valid = [record(i, "validation") for i in range(12)]
+    controls = (x, x)
+    baseline = cr.probe_matrix({"observed_state": controls}, x[:, 0], x[:, 0], rows, valid, .01)
+    result = cr.conditional_probe_matrix({"early": (x, x)}, controls, x[:, 0], x[:, 0],
+                                         rows, valid, .01, baseline["rows"])
+    macro = next(row for row in result["rows"] if row["task"] == "macro")
+    assert macro["incremental_mse_gain"] == pytest.approx(macro["observed_state_mse"] - macro["mse"])
+    assert macro["observed_state_mse"] == pytest.approx(baseline["rows"][0]["mse"])
+
+
 def test_full_report_and_contract_failures(tmp_path, monkeypatch):
     records = [record(i, p) for p in ("train", "validation") for i in range(8)]
     split = NS(assignments={r.state_id: r.state_id.split("-")[0] for r in records})
@@ -68,10 +81,11 @@ def test_full_report_and_contract_failures(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cr, "load_trace", trace)
     checkpoints = [(n, f"{n}_train", f"{n}_validation") for n in ("early", "late")]
-    result = cr.run(tmp_path, checkpoints, tmp_path / "output")
+    result = cr.run(tmp_path, checkpoints, tmp_path / "output", conditional_controls=True)
     assert len(result["cka"]) == 24
     assert len(result["readouts"]) == 20
     assert result["controls"]
+    assert len(result["conditional_readouts"]) == 8
     assert (tmp_path / "output/report.json").is_file()
     with pytest.raises(FileExistsError):
         cr.run(tmp_path, checkpoints, tmp_path / "output")

@@ -89,6 +89,17 @@ def test_summary_binds_readouts_effects_and_behavior(tmp_path):
                          aligned_readouts=aligned)
     assert aligned_result["rows"][0]["readability"]["contact"]["moment_aligned_from_25k_mse_gain_by_stage"] == [.1] * 10
 
+    conditional = tmp_path / "conditional.json"
+    conditional_data = json.loads(readouts.read_text())
+    conditional_data["conditional_controls"] = "observed frame index + robot state; no task one-hot"
+    conditional_data["conditional_readouts"] = [{**block, "rows": [
+        {**row, "incremental_mse_gain": .02} for row in block["rows"]]}
+        for block in blocks if block["target"] in ("contact", "stable_grasp")]
+    conditional.write_text(json.dumps(conditional_data))
+    conditional_result = run(lineage, timeline, readouts, effects, tmp_path / "conditional_summary.json",
+                             conditional_readouts=conditional)
+    assert conditional_result["rows"][0]["readability"]["contact"]["incremental_over_observed_state_by_stage"] == [.02] * 10
+
     broken = json.loads(effects[names[0]].read_text())
     broken["reference_binding_sha256"] = "other-trace"
     effects[names[0]].write_text(json.dumps(broken))

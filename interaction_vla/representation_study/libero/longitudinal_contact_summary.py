@@ -20,7 +20,7 @@ def _read(path: Path) -> dict:
 
 
 def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path], output: Path,
-        *, aligned_readouts: Path | None = None) -> dict:
+        *, aligned_readouts: Path | None = None, conditional_readouts: Path | None = None) -> dict:
     if output.exists():
         raise FileExistsError(output)
     lineage_data, timeline_data, readout_data = map(_read, (lineage, timeline, readouts))
@@ -44,6 +44,13 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
                          or aligned_data.get("alpha") != readout_data.get("alpha")
                          or aligned_data.get("transfer_moment_alignment") is not True):
         raise ValueError("moment-aligned readouts use a different comparison contract")
+    conditional_data = _read(conditional_readouts) if conditional_readouts else None
+    if conditional_data and (conditional_data.get("inputs") != readout_data["inputs"]
+                             or conditional_data.get("comparison_contract") != readout_data["comparison_contract"]
+                             or conditional_data.get("alpha") != readout_data.get("alpha")
+                             or conditional_data.get("conditional_controls")
+                             != "observed frame index + robot state; no task one-hot"):
+        raise ValueError("conditional readouts use a different comparison contract")
 
     behavior = {(f'{row["step"]:06d}', int(row["task"])): row for row in timeline_data["rows"]}
     tasks = sorted({task for _, task in behavior})
@@ -83,6 +90,16 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
                     if row["task"] == "macro":
                         aligned_lookup[block["target"], block["flow_stage"],
                                        row["source"], row["destination"]] = row
+    conditional_lookup = {}
+    if conditional_data:
+        for block in conditional_data["conditional_readouts"]:
+            if block["tap"] == "expert_late" and block["target"] in ("contact", "stable_grasp"):
+                if block["status"] != "complete":
+                    raise ValueError("required conditional readout is not estimable")
+                for row in block["rows"]:
+                    if row["task"] == "macro":
+                        conditional_lookup[block["target"], block["flow_stage"],
+                                           row["source"], row["destination"]] = row
 
     reference_ids = None
     contract = None
@@ -188,6 +205,10 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
                     float(aligned_lookup[target, stage, names[0], name]["mse_gain"]) for stage in stages]
                 readable[target]["moment_aligned_from_25k_mse_gain_by_stage"] = [
                     float(aligned_lookup[target, stage, names[-1], name]["mse_gain"]) for stage in stages]
+            if conditional_data and target in ("contact", "stable_grasp"):
+                readable[target]["incremental_over_observed_state_by_stage"] = [
+                    float(conditional_lookup[target, stage, name, name]["incremental_mse_gain"])
+                    for stage in stages]
         rows.append({"step": checkpoint["step"], "checkpoint_sha256": checkpoint["checkpoint_sha256"],
                      "readability": readable, "offline_action_response": action,
                      "behavior_by_task": {str(task): {key: behavior[name, task][key] / behavior[name, task]["episodes"]
@@ -198,6 +219,7 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
               "analysis_role": "exploratory", "lineage_sha256": file_hash(lineage),
               "timeline_sha256": file_hash(timeline), "readouts_sha256": file_hash(readouts),
               "moment_aligned_readouts_sha256": file_hash(aligned_readouts) if aligned_readouts else None,
+              "conditional_readouts_sha256": file_hash(conditional_readouts) if conditional_readouts else None,
               "offline_contract": contract, "offline_state_ids": reference_ids,
               "readability_metric": "validation training-mean MSE minus Ridge MSE; positive is better, no CI",
               "offline_metric": "postprocessed first ten planned actions vs no-op; RMS target minus mean of two matched random controls",
@@ -219,13 +241,15 @@ def main() -> None:
     parser.add_argument("--effect", nargs=2, action="append", required=True,
                         metavar=("STEP", "REPORT"))
     parser.add_argument("--aligned-readouts", type=Path)
+    parser.add_argument("--conditional-readouts", type=Path)
     args = parser.parse_args()
     effects = dict(args.effect)
     if len(effects) != len(args.effect):
         raise ValueError("duplicate effect checkpoint")
     result = run(args.lineage, args.timeline, args.readouts,
                  {step: Path(path) for step, path in effects.items()}, args.output,
-                 aligned_readouts=args.aligned_readouts)
+                 aligned_readouts=args.aligned_readouts,
+                 conditional_readouts=args.conditional_readouts)
     print(f"ALL_DONE_LONGITUDINAL rows={len(result['rows'])}", flush=True)
 
 
