@@ -49,7 +49,9 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
                              or conditional_data.get("comparison_contract") != readout_data["comparison_contract"]
                              or conditional_data.get("alpha") != readout_data.get("alpha")
                              or conditional_data.get("conditional_controls")
-                             != "observed frame index + robot state; no task one-hot"):
+                             != "observed frame index + robot state; no task one-hot"
+                             or conditional_data.get("conditional_capacity_control")
+                             != "same-width feature rows shuffled independently within train and validation; seed 20260927"):
         raise ValueError("conditional readouts use a different comparison contract")
 
     behavior = {(f'{row["step"]:06d}', int(row["task"])): row for row in timeline_data["rows"]}
@@ -208,6 +210,9 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
             if conditional_data and target in ("contact", "stable_grasp"):
                 readable[target]["incremental_over_observed_state_by_stage"] = [
                     float(conditional_lookup[target, stage, name, name]["incremental_mse_gain"])
+                    for stage in stages]
+                readable[target]["incremental_over_shuffled_feature_by_stage"] = [
+                    float(conditional_lookup[target, stage, name, name]["incremental_over_shuffled_mse_gain"])
                     for stage in stages]
         rows.append({"step": checkpoint["step"], "checkpoint_sha256": checkpoint["checkpoint_sha256"],
                      "readability": readable, "offline_action_response": action,

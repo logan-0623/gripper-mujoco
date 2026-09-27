@@ -56,6 +56,8 @@ def test_conditional_probe_reports_increment_over_observed_state():
     macro = next(row for row in result["rows"] if row["task"] == "macro")
     assert macro["incremental_mse_gain"] == pytest.approx(macro["observed_state_mse"] - macro["mse"])
     assert macro["observed_state_mse"] == pytest.approx(baseline["rows"][0]["mse"])
+    assert macro["incremental_over_shuffled_mse_gain"] == pytest.approx(
+        macro["shuffled_feature_mse"] - macro["mse"])
 
 
 def test_full_report_and_contract_failures(tmp_path, monkeypatch):

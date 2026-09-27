@@ -125,17 +125,29 @@ def moment_align(features):
 
 def conditional_probe_matrix(features, controls, train_y, validation_y,
                              train_records, validation_records, alpha, control_rows):
-    """Measure C+Z against the same fitted observed-state baseline C."""
+    """Measure C+Z against observed state and a row-shuffled, same-width Z."""
     augmented = {name: tuple(np.column_stack((controls[i], pair[i])) for i in (0, 1))
                  for name, pair in features.items()}
     result = probe_matrix(augmented, train_y, validation_y,
                           train_records, validation_records, alpha)
     if result["status"] != "complete":
         return result
+    rng = np.random.default_rng(20260927)
+    permutations = tuple(rng.permutation(len(controls[i])) for i in (0, 1))
+    shuffled = {name: tuple(np.column_stack((controls[i], pair[i][permutations[i]]))
+                            for i in (0, 1)) for name, pair in features.items()}
+    null = probe_matrix(shuffled, train_y, validation_y,
+                        train_records, validation_records, alpha)
+    if null["status"] != "complete":
+        raise ValueError("shuffled-capacity control is not estimable")
     baseline = {str(row["task"]): row["mse"] for row in control_rows}
+    shuffled_mse = {(row["source"], row["destination"], str(row["task"])): row["mse"]
+                    for row in null["rows"]}
     for row in result["rows"]:
         row["observed_state_mse"] = baseline[str(row["task"])]
         row["incremental_mse_gain"] = row["observed_state_mse"] - row["mse"]
+        row["shuffled_feature_mse"] = shuffled_mse[row["source"], row["destination"], str(row["task"])]
+        row["incremental_over_shuffled_mse_gain"] = row["shuffled_feature_mse"] - row["mse"]
     return result
 
 
@@ -267,6 +279,8 @@ def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=Fals
               "controls": control_rows, "cka": cka_rows, "readouts": readouts,
               "conditional_readouts": conditional_rows,
               "conditional_controls": "observed frame index + robot state; no task one-hot" if conditional_controls else None}
+    if conditional_controls:
+        report["conditional_capacity_control"] = "same-width feature rows shuffled independently within train and validation; seed 20260927"
     write_json_atomic(output / "report.json", report)
     return report
 
