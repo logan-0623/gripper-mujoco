@@ -1252,6 +1252,9 @@ def summarize_closed_loop(root: Path, output: Path, *, bootstrap_samples: int = 
         raise ValueError("closed-loop summary requires explicit initial_state_count")
     if bootstrap_samples <= 0:
         raise ValueError("bootstrap_samples must be positive")
+    deployed_prefix = plan.get("deployed_prefix")
+    if deployed_prefix is not None and (type(deployed_prefix) is not int or deployed_prefix < 1):
+        raise ValueError("deployed_prefix must be a positive integer")
 
     baseline: dict[tuple[int, int], dict[str, object]] = {}
     task_cells: dict[int, set[int]] = {}
@@ -1262,10 +1265,19 @@ def summarize_closed_loop(root: Path, output: Path, *, bootstrap_samples: int = 
         baseline.update({(int(task), state_id): row for state_id, row in rows.items()})
 
     rng, summaries = np.random.default_rng(2057736129), []
+    prefix_effects: dict[str, dict[tuple[int, int], dict[str, float]]] = {}
     for condition in plan["conditions"][1:]:
         differences, task_ids = [], []
         action_groups = {"full": [], "translation": [], "rotation": [], "gripper": []}
         action_task_ids = {key: [] for key in action_groups}
+        prefix_groups = {key: [] for key in action_groups}
+        prefix_task_ids = {key: [] for key in action_groups}
+        signed_gripper_deltas, sign_disagreements, hidden_edit_rms = [], [], []
+        exposure_task_ids = []
+        prefix_effects[condition] = {}
+        triggered_by_task = {int(task): 0 for task in plan["tasks"]}
+        truncated_prefix_pairs = 0
+        max_pre_trigger_action_abs = 0.0
         event_delta = {key: [] for key in EVENT_KEYS}
         condition_cells: dict[int, set[int]] = {}
         for task in plan["tasks"]:
@@ -1287,6 +1299,8 @@ def summarize_closed_loop(root: Path, output: Path, *, bootstrap_samples: int = 
                 second = np.asarray(row.get("executed_actions", []), dtype=float)
                 if first.ndim != 2 or second.ndim != 2 or first.shape[1:] != second.shape[1:]:
                     raise ValueError(f"paired action shape differs: {path}")
+                if first.shape[1] != 7 or not np.isfinite(first).all() or not np.isfinite(second).all():
+                    raise ValueError(f"paired actions must be finite 7-D vectors: {path}")
                 length = min(len(first), len(second))
                 if length:
                     delta = second[:length] - first[:length]
@@ -1296,6 +1310,74 @@ def summarize_closed_loop(root: Path, output: Path, *, bootstrap_samples: int = 
                     action_groups["gripper"].append(float(np.sqrt(np.mean(delta[:, 6:7] ** 2))))
                     for metric in action_groups:
                         action_task_ids[metric].append(int(task))
+                if deployed_prefix is not None:
+                    for observed in (original, row):
+                        trace = observed.get("frame_trace")
+                        if not isinstance(trace, list) or len(trace) != len(observed["executed_actions"]) + 1:
+                            raise ValueError(f"frame trace does not cover executed actions: {path}")
+                    base_phase, edit_phase = original.get("phase_edit"), row.get("phase_edit")
+                    if not isinstance(base_phase, dict) or not isinstance(edit_phase, dict):
+                        raise ValueError(f"triggered-prefix analysis requires baseline and edit phase traces: {path}")
+                    for phase, candidate_id in ((base_phase, "contact_0"), (edit_phase, condition)):
+                        binding = phase.get("binding", {})
+                        if (phase.get("phase") != "contact" or phase.get("max_chunks") != 1
+                                or binding.get("candidate_sha256") != plan.get("candidate_sha256")
+                                or binding.get("candidate_id") != candidate_id
+                                or binding.get("dose") != plan.get("dose")
+                                or binding.get("flow_stages") != plan["stages"]):
+                            raise ValueError(f"phase edit does not match rollout contract: {path}")
+                    base_steps, edit_steps = base_phase.get("trigger_steps"), edit_phase.get("trigger_steps")
+                    if base_steps != edit_steps or not isinstance(edit_steps, list) or len(edit_steps) > 1:
+                        raise ValueError(f"paired phase trigger differs: {path}")
+                    if not base_phase.get("observe_only") or int(base_phase.get("edited_stage_calls", -1)) != 0:
+                        raise ValueError(f"baseline is not a zero-edit phase observer: {path}")
+                    expected_seed = (plan["policy_noise_seed_base"] +
+                                     int(task) * plan["initial_state_count"] + state_id)
+                    if (original.get("policy_noise_seed") != expected_seed or
+                            row.get("policy_noise_seed") != expected_seed):
+                        raise ValueError(f"paired policy noise seeds differ: {path}")
+                    if edit_phase.get("observe_only"):
+                        raise ValueError(f"candidate edit was observe-only: {path}")
+                    expected_calls = len(plan["stages"]) if edit_steps else 0
+                    if int(edit_phase.get("edited_stage_calls", -1)) != expected_calls:
+                        raise ValueError(f"edit exposure differs from plan: {path}")
+                    if not edit_steps:
+                        if len(first) != len(second) or not np.allclose(first, second, atol=2e-5, rtol=0):
+                            raise ValueError(f"untriggered paired actions diverge: {path}")
+                    if edit_steps:
+                        start = int(edit_steps[0])
+                        if start < 0 or start >= length:
+                            raise ValueError(f"trigger has no executed action: {path}")
+                        if start:
+                            pre_change = float(np.max(np.abs(first[:start] - second[:start])))
+                            max_pre_trigger_action_abs = max(max_pre_trigger_action_abs, pre_change)
+                            if pre_change > 2e-5:
+                                raise ValueError(f"paired actions diverge before intervention: {path}")
+                        stop = min(start + deployed_prefix, length)
+                        truncated_prefix_pairs += stop - start < deployed_prefix
+                        window = second[start:stop] - first[start:stop]
+                        values = {
+                            "full": float(np.sqrt(np.mean(window ** 2))),
+                            "translation": float(np.sqrt(np.mean(window[:, :3] ** 2))),
+                            "rotation": float(np.sqrt(np.mean(window[:, 3:6] ** 2))),
+                            "gripper": float(np.sqrt(np.mean(window[:, 6:7] ** 2))),
+                        }
+                        prefix_effects[condition][(int(task), state_id)] = values
+                        triggered_by_task[int(task)] += 1
+                        signed_gripper_deltas.append(float(np.mean(window[:, 6])))
+                        sign_disagreements.append(float(np.mean(
+                            np.sign(first[start:stop, 6]) != np.sign(second[start:stop, 6]))))
+                        edits = edit_phase.get("edits", [])
+                        if len(edits) != expected_calls:
+                            raise ValueError(f"edit magnitude trace differs from plan: {path}")
+                        magnitudes = np.asarray([edit["hidden_delta_rms"] for edit in edits], dtype=float)
+                        if not np.isfinite(magnitudes).all():
+                            raise ValueError(f"non-finite hidden edit magnitude: {path}")
+                        hidden_edit_rms.append(float(magnitudes.mean()))
+                        exposure_task_ids.append(int(task))
+                        for metric, value in values.items():
+                            prefix_groups[metric].append(value)
+                            prefix_task_ids[metric].append(int(task))
         differences = np.asarray(differences, dtype=float)
         task_ids = np.asarray(task_ids, dtype=int)
         if len(differences) != sum(len(cells) for cells in task_cells.values()):
@@ -1325,7 +1407,7 @@ def summarize_closed_loop(root: Path, output: Path, *, bootstrap_samples: int = 
                     for key, value in event_delta.items()
                 },
             }
-        summaries.append({
+        summary = {
             "condition": condition,
             "pairs": len(differences),
             "paired_initial_state_ids": {str(task): sorted(values) for task, values in condition_cells.items()},
@@ -1338,7 +1420,30 @@ def summarize_closed_loop(root: Path, output: Path, *, bootstrap_samples: int = 
             },
             "action_pairs": {key: len(value) for key, value in action_groups.items()},
             "per_task": per_task,
-        })
+        }
+        if deployed_prefix is not None:
+            summary.update({
+                "triggered_pairs": sum(triggered_by_task.values()),
+                "untriggered_pairs": len(differences) - sum(triggered_by_task.values()),
+                "triggered_pairs_by_task": {str(key): value for key, value in triggered_by_task.items()},
+                "truncated_prefix_pairs": truncated_prefix_pairs,
+                "max_pre_trigger_action_abs": max_pre_trigger_action_abs,
+                "mean_triggered_prefix_action_rms": {
+                    key: task_macro(value, prefix_task_ids[key])
+                    for key, value in prefix_groups.items() if value
+                },
+                "triggered_prefix_action_pairs": {key: len(value) for key, value in prefix_groups.items()},
+                "mean_triggered_prefix_gripper_signed_delta": (
+                    task_macro(signed_gripper_deltas, exposure_task_ids)
+                    if signed_gripper_deltas else None),
+                "mean_triggered_prefix_gripper_sign_disagreement": (
+                    task_macro(sign_disagreements, exposure_task_ids)
+                    if sign_disagreements else None),
+                "mean_hidden_edit_rms": (
+                    task_macro(hidden_edit_rms, exposure_task_ids)
+                    if hidden_edit_rms else None),
+            })
+        summaries.append(summary)
     report = {
         "schema": SCHEMA, "kind": "paired_closed_loop_report", "complete": True,
         "initial_state_count": int(plan["initial_state_count"]),
@@ -1346,9 +1451,27 @@ def summarize_closed_loop(root: Path, output: Path, *, bootstrap_samples: int = 
         "plan_sha256": file_hash(root / "plan.json"),
         "bootstrap_samples": bootstrap_samples,
         "bootstrap_unit": "task-stratified paired initial condition",
-        "primary_action_metric": "actually executed actions",
+        "primary_action_metric": (
+            f"first_{deployed_prefix}_actually_executed_actions_after_trigger"
+            if deployed_prefix is not None else "whole_trajectory_actually_executed_actions"
+        ),
+        "whole_trajectory_action_metric": "common-length time-aligned executed actions; includes feedback divergence",
         "conditions": summaries,
     }
+    if {"contact_0", "matched_random_0"}.issubset(prefix_effects):
+        target, control = prefix_effects["contact_0"], prefix_effects["matched_random_0"]
+        if set(target) != set(control):
+            raise ValueError("target and random control have different triggered cells")
+        cells = sorted(target)
+        ids = np.asarray([task for task, _ in cells], dtype=int)
+        contrast = {}
+        for metric in ("full", "translation", "rotation", "gripper"):
+            delta = np.asarray([target[cell][metric] - control[cell][metric] for cell in cells])
+            contrast[metric] = task_macro(delta, ids) if len(delta) else None
+        report["contact_minus_matched_random_triggered_prefix_rms"] = {
+            "pairs": len(cells), "task_macro": contrast,
+            "interpretation": "descriptive conditional-on-trigger action response; not a success effect",
+        }
     write_json_atomic(output, report)
     return report
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -20,15 +21,25 @@ def run(checkpoint: Path, candidates: Path, output: Path, *, tasks: list[int],
         initial_state_offset: int, episodes: int, initial_state_count: int, dose: float) -> dict:
     if output.exists():
         raise FileExistsError(output)
-    if not tasks or episodes < 1 or initial_state_count < episodes or dose == 0:
+    if (not tasks or len(set(tasks)) != len(tasks) or not 1 <= episodes <= 4
+            or initial_state_offset < 0 or initial_state_count < episodes
+            or not math.isfinite(dose) or not 0 < dose <= 1):
         raise ValueError("invalid paired rollout contract")
+    checkpoint_hash = _tree_sha256(checkpoint)
+    artifact = json.loads(candidates.read_text(encoding="utf-8"))
+    if artifact.get("center_checkpoint_sha256") != checkpoint_hash:
+        raise ValueError("use the checkpoint-bound candidates.json from effects/<step>/<tap>")
+    rows = {row["id"]: row for row in artifact["candidates"]}
+    if ("contact_0" not in rows or "matched_random_0" not in rows
+            or rows["contact_0"]["tap"] != rows["matched_random_0"]["tap"]):
+        raise ValueError("Contact and matched-random candidates must share a tap")
     output.mkdir(parents=True)
     conditions = ["baseline", "contact_0", "matched_random_0"]
     plan = {
         "schema": "libero_paired_closed_loop_intervention_v1",
         "kind": "paired_closed_loop",
         "checkpoint": str(checkpoint),
-        "checkpoint_sha256": _tree_sha256(checkpoint),
+        "checkpoint_sha256": checkpoint_hash,
         "candidate_sha256": file_hash(candidates),
         "conditions": conditions,
         "tasks": tasks,
@@ -37,6 +48,10 @@ def run(checkpoint: Path, candidates: Path, output: Path, *, tasks: list[int],
         "initial_state_offset": initial_state_offset,
         "initial_state_count": initial_state_count,
         "episodes_per_task": episodes,
+        "deployed_prefix": 10,
+        "policy_noise_seed_base": 2057736129,
+        "baseline_observe_only": True,
+        "record_frame_trace": True,
         "dry_run": False,
         "edit_mode": "suppress",
         "analysis_role": "exploratory_functional_use",
@@ -50,22 +65,25 @@ def run(checkpoint: Path, candidates: Path, output: Path, *, tasks: list[int],
             command = list(_evaluation_command(
                 checkpoint, task, destination, initial_state_offset,
                 episodes, initial_state_count))
-            if condition != "baseline":
-                index = command.index("interaction_vla.representation_study.libero.capability_events")
-                command[index] = "interaction_vla.representation_study.libero.flow_intervention_eval"
-                separator = command.index("--")
-                options = [
-                    "--exploratory", "--candidates", str(candidates),
-                    "--candidate-id", condition, "--dose", str(dose),
-                    "--edit-mode", "suppress" if condition == "contact_0" else "matched_suppress",
-                    "--environment-phase", "contact", "--max-edited-chunks", "1",
-                    "--allow-control",
-                ]
-                if condition == "matched_random_0":
-                    options += ["--match-candidate-id", "contact_0"]
-                for stage in range(10):
-                    options += ["--edit-stage", str(stage)]
-                command = command[:separator] + options + command[separator:]
+            index = command.index("interaction_vla.representation_study.libero.capability_events")
+            command[index] = "interaction_vla.representation_study.libero.flow_intervention_eval"
+            separator = command.index("--")
+            options = [
+                "--exploratory", "--candidates", str(candidates),
+                "--candidate-id", "contact_0" if condition == "baseline" else condition,
+                "--dose", str(dose),
+                "--edit-mode", "matched_suppress" if condition == "matched_random_0" else "suppress",
+                "--environment-phase", "contact", "--max-edited-chunks", "1",
+                "--allow-control", "--record-frame-trace",
+                "--policy-noise-seed-base", "2057736129",
+            ]
+            if condition == "baseline":
+                options.append("--observe-only")
+            if condition == "matched_random_0":
+                options += ["--match-candidate-id", "contact_0"]
+            for stage in range(10):
+                options += ["--edit-stage", str(stage)]
+            command = command[:separator] + options + command[separator:]
             print(f"ROLLOUT {completed + 1}/{total} {condition} task={task}", flush=True)
             destination.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(command, check=True)

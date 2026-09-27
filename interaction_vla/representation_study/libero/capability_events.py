@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
+import torch
 
 from ..state_bank.io import write_json_atomic
 from .annotation import AnnotationThresholds, PrivilegedFrame, annotate_relocation_episode
@@ -23,12 +24,14 @@ class EpisodeEventTracker:
     actions: list[list[float]] = field(default_factory=list)
     requested_initial_state_id: int = -1
     initial_state_count: int = 0
+    policy_noise_seed: int | None = None
 
     def add(self, frame: PrivilegedFrame) -> None:
         self.frames.append(replace(frame, frame_index=len(self.frames)))
 
 
-def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[str, object]:
+def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool,
+               record_frame_trace: bool = False) -> dict[str, object]:
     contact = [bool(label.contact.gripper_target) for label in labels]
     stable = [label.stable_grasp is True for label in labels]
     target_z = np.asarray([frame.target_pose[2, 3] for frame in tracker.frames])
@@ -79,11 +82,12 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
     for value in stable:
         run = run + 1 if value else 0
         longest = max(longest, run)
-    return {
+    result = {
         "task_id": tracker.task_id,
         "initial_state_id": tracker.initial_state_id,
         "requested_initial_state_id": tracker.requested_initial_state_id,
         "initial_state_count": tracker.initial_state_count,
+        "policy_noise_seed": tracker.policy_noise_seed,
         "steps": len(tracker.frames) - 1,
         "contact": any(contact),
         "contact_onset_step": first(contact),
@@ -109,6 +113,21 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool) -> dict[s
         "success": bool(success),
         "executed_actions": tracker.actions,
     }
+    if record_frame_trace:
+        result["frame_trace"] = [
+            {"step": frame.frame_index,
+             "gripper_target_contact": contact[index],
+             "finger_contact_groups": list(frame.finger_contact_groups),
+             "stable_grasp": labels[index].stable_grasp,
+             "goal_satisfied": bool(frame.goal_satisfied),
+             "target_goal_contact": bool(frame.target_goal_contact),
+             "source_supported": bool(frame.source_supported),
+             "target_z_m": float(frame.target_pose[2, 3]),
+             "gripper_aperture": float(frame.gripper_aperture),
+             "target_goal_distance_m": float(frame.target_goal_surface_distance)}
+            for index, frame in enumerate(tracker.frames)
+        ]
+    return result
 
 
 def install_libero_event_recorder(
@@ -120,6 +139,8 @@ def install_libero_event_recorder(
     thresholds: AnnotationThresholds,
     drop_height_m: float,
     phase_controller=None,
+    policy_noise_seed_base: int | None = None,
+    record_frame_trace: bool = False,
 ) -> None:
     from lerobot.envs.libero import LiberoEnv
 
@@ -127,6 +148,8 @@ def install_libero_event_recorder(
         raise ValueError("initial_state_offset must be non-negative and drop_height_m positive")
     if initial_state_count is not None and initial_state_count <= 0:
         raise ValueError("initial_state_count must be positive")
+    if policy_noise_seed_base is not None and policy_noise_seed_base < 0:
+        raise ValueError("policy_noise_seed_base must be non-negative")
     rows: list[dict[str, object]] = []
     monitors: dict[int, tuple[LiberoOffscreenSimulator, EpisodeEventTracker, bool]] = {}
     original_reset, original_step, original_close = LiberoEnv.reset, LiberoEnv.step, LiberoEnv.close
@@ -135,13 +158,16 @@ def install_libero_event_recorder(
         write_json_atomic(
             output,
             {
-                "schema": "libero_capability_events_v4",
+                "schema": ("libero_capability_events_v5" if record_frame_trace or
+                           policy_noise_seed_base is not None else "libero_capability_events_v4"),
                 "drop_definition": "post-contact-loss descent from last-contact height; excludes goal satisfaction; not an intent label",
                 "suite": suite,
                 "initial_state_offset": initial_state_offset,
                 "initial_state_count": initial_state_count,
                 "thresholds": thresholds.__dict__,
                 "drop_height_m": drop_height_m,
+                "record_frame_trace": record_frame_trace,
+                "policy_noise_seed_base": policy_noise_seed_base,
                 "episodes": rows,
             },
         )
@@ -155,6 +181,7 @@ def install_libero_event_recorder(
             tracker,
             annotate_relocation_episode(tracker.frames, adapter.semantics, thresholds),
             success=observed_success if success is None else success,
+            record_frame_trace=record_frame_trace,
         )
         if phase_controller is not None:
             summary["phase_edit"] = phase_controller.summary()
@@ -177,6 +204,10 @@ def install_libero_event_recorder(
             )
         initial_state_id = int(requested_initial_state_id % state_count)
         result = original_reset(env, seed=seed, **kwargs)
+        policy_noise_seed = None
+        if policy_noise_seed_base is not None:
+            policy_noise_seed = policy_noise_seed_base + int(env.task_id) * state_count + initial_state_id
+            torch.manual_seed(policy_noise_seed)
         adapter = LiberoOffscreenSimulator.from_live_env(
             env._env,
             suite=suite,
@@ -189,6 +220,7 @@ def install_libero_event_recorder(
             initial_state_id=initial_state_id,
             requested_initial_state_id=requested_initial_state_id,
             initial_state_count=state_count,
+            policy_noise_seed=policy_noise_seed,
             control_freq=int(env.control_freq),
             thresholds=thresholds,
             drop_height_m=drop_height_m,
@@ -234,6 +266,8 @@ def main(*, phase_controller=None) -> None:
     parser.add_argument("--lift-clearance-m", type=float, default=0.01)
     parser.add_argument("--drop-height-m", type=float, default=0.02)
     parser.add_argument("--rendered-episodes", type=int, default=0)
+    parser.add_argument("--policy-noise-seed-base", type=int)
+    parser.add_argument("--record-frame-trace", action="store_true")
     args, forwarded = parser.parse_known_args()
     if forwarded[:1] == ["--"]:
         forwarded = forwarded[1:]
@@ -248,6 +282,8 @@ def main(*, phase_controller=None) -> None:
         ),
         drop_height_m=args.drop_height_m,
         phase_controller=phase_controller,
+        policy_noise_seed_base=args.policy_noise_seed_base,
+        record_frame_trace=args.record_frame_trace,
     )
     import lerobot.scripts.lerobot_eval as lerobot_eval
 

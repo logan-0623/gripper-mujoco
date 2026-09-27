@@ -186,6 +186,65 @@ def test_closed_loop_plan_only_admits_gated_target_and_explicit_controls(tmp_pat
     assert any("flow_intervention_eval" in item for item in result["commands"][1])
 
 
+def test_closed_loop_triggered_prefix_is_separate_from_later_trajectory(tmp_path: Path):
+    root = tmp_path / "rollouts"; root.mkdir()
+    (root / "plan.json").write_text(json.dumps({
+        "tasks": [0], "conditions": ["baseline", "contact_0", "matched_random_0"],
+        "episodes_per_task": 2, "initial_state_offset": 20, "initial_state_count": 50,
+        "stages": list(range(10)), "deployed_prefix": 10, "dry_run": False,
+        "dose": .5, "candidate_sha256": "candidate", "policy_noise_seed_base": 100,
+    }))
+
+    def row(state, condition):
+        action = np.zeros((15, 7))
+        triggered = state == 20
+        if triggered and condition == "contact_0":
+            action[2:12] = .1; action[12:] = 5.0
+        if triggered and condition == "matched_random_0":
+            action[2:12] = .2
+        return {"task_id": 0, "initial_state_id": state,
+                "requested_initial_state_id": state, "initial_state_count": 50,
+                "policy_noise_seed": 100 + state,
+                "success": state == 20, "executed_actions": action.tolist(),
+                "frame_trace": [{"step": step} for step in range(16)],
+                "phase_edit": {"phase": "contact", "max_chunks": 1,
+                               "binding": {"candidate_sha256": "candidate",
+                                           "candidate_id": "contact_0" if condition == "baseline" else condition,
+                                           "dose": .5, "flow_stages": list(range(10))},
+                               "trigger_steps": [2] if triggered else [],
+                               "observe_only": condition == "baseline",
+                               "edited_stage_calls": 0 if condition == "baseline" or not triggered else 10,
+                               "edits": ([{"hidden_delta_rms": .01}] * 10
+                                         if triggered and condition != "baseline" else [])}}
+
+    for condition in ("baseline", "contact_0", "matched_random_0"):
+        path = root / condition / "task0"; path.mkdir(parents=True)
+        (path / "physical_events.json").write_text(json.dumps({
+            "episodes": [row(20, condition), row(21, condition)]}))
+    report = acquisition.summarize_closed_loop(root, tmp_path / "summary.json", bootstrap_samples=100)
+    target, control = report["conditions"]
+    assert target["triggered_pairs"] == 1
+    assert target["untriggered_pairs"] == 1
+    np.testing.assert_allclose(target["mean_triggered_prefix_action_rms"]["full"], .1)
+    np.testing.assert_allclose(control["mean_triggered_prefix_action_rms"]["full"], .2)
+    assert target["mean_executed_action_rms"]["full"] > .5
+    np.testing.assert_allclose(
+        report["contact_minus_matched_random_triggered_prefix_rms"]["task_macro"]["full"], -.1)
+
+    changed = root / "contact_0" / "task0" / "physical_events.json"
+    data = json.loads(changed.read_text())
+    data["episodes"][0]["phase_edit"]["trigger_steps"] = [3]
+    changed.write_text(json.dumps(data))
+    with np.testing.assert_raises_regex(ValueError, "paired phase trigger differs"):
+        acquisition.summarize_closed_loop(root, tmp_path / "invalid.json", bootstrap_samples=10)
+
+    data["episodes"][0]["phase_edit"]["trigger_steps"] = [2]
+    data["episodes"][1]["executed_actions"][0][0] = .1
+    changed.write_text(json.dumps(data))
+    with np.testing.assert_raises_regex(ValueError, "untriggered paired actions diverge"):
+        acquisition.summarize_closed_loop(root, tmp_path / "invalid.json", bootstrap_samples=10)
+
+
 def test_offline_gate_uses_executed_prefix_episode_clusters_and_matched_controls(
     tmp_path: Path, monkeypatch,
 ):

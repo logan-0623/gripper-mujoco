@@ -72,3 +72,16 @@ def test_controlled_lowering_before_release_is_not_a_drop():
               for c, s in [(False, False), (True, True), (True, True), (False, False)]]
     tracker = EpisodeEventTracker(0, 0, 20, AnnotationThresholds(), .02, frames)
     assert not _summarize(tracker, labels, success=False)["unintended_drop"]
+
+
+def test_frame_trace_keeps_terminal_contact_and_goal_evidence():
+    frames = [frame(0, 0.0, contact=True), frame(1, 0.01, goal=True)]
+    labels = [SimpleNamespace(contact=SimpleNamespace(gripper_target=bool(f.finger_contact_groups)),
+                              stable_grasp=False) for f in frames]
+    tracker = EpisodeEventTracker(0, 20, 20, AnnotationThresholds(), .02, frames,
+                                  policy_noise_seed=123)
+    result = _summarize(tracker, labels, success=True, record_frame_trace=True)
+    assert result["policy_noise_seed"] == 123
+    assert result["frame_trace"][0]["gripper_target_contact"] is True
+    assert result["frame_trace"][1]["goal_satisfied"] is True
+    assert result["frame_trace"][1]["target_z_m"] == 0.01
