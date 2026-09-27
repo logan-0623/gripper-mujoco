@@ -59,7 +59,7 @@
 
 能力大幅提高时，Contact 的简单可读性几乎不变；机器人状态单独读出的 gain 甚至达到 0.214。把已观察时间和 robot state 同时纳入后，原始高维 expert-late stage-9 在五个 checkpoint 均未增加 Contact 验证性能。训练集共享 PCA-32 也没有使 Contact 在该 stage 超过本体／时间或同宽乱序对照。StableGrasp PCA-32 在 20k、25k 的四个任务上有小幅条件增量，但 5k 也为正、10k 为负，不能称为单调形成或功能招募。10k 与 25k 的 Uₖ 均值还分别被单个异常状态强烈左右；task 1 状态 22–25 的三组闭环均为 4/4 成功，没有 Contact 特异性事件变化。
 
-服务器原始结果位于 `/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/`：`longitudinal_contact_minimal_20260926/summary_conditional.json` 绑定五点离线与行为结果；同目录的 `readouts_conditional_capacity/report.json`、`readouts_conditional_pca32/report.json`、`readouts/report.json` 和 `readouts_moment_aligned/report.json` 保存各类读出；`functional_contact_task1_states22_25/report.json` 保存闭环扩展。日志在 `/root/autodl-tmp/experiment-logs/`。这些原始产物不随 Git clone 下载；在本地只有源码和本 README 时，不能声称已复现服务器结果。
+服务器原始结果位于 `/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/`：`longitudinal_contact_minimal_20260926/summary_conditional_pca32.json` 绑定五点离线、PCA-32 条件读出与行为结果，原始高维条件版保留为 `summary_conditional.json`；同目录的 `readouts_conditional_capacity/report.json`、`readouts_conditional_pca32/report.json`、`readouts/report.json` 和 `readouts_moment_aligned/report.json` 保存各类读出；`functional_contact_task1_states22_25/report.json` 保存闭环扩展。日志在 `/root/autodl-tmp/experiment-logs/`。这些原始产物不随 Git clone 下载；在本地只有源码和本 README 时，不能声称已复现服务器结果。
 
 ## 研究问题与测量边界
 

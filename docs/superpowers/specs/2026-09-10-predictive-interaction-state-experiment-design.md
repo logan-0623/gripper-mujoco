@@ -214,7 +214,7 @@ bash scripts/python.sh -W error::RuntimeWarning \
 
 ### 0.10 五点纵向探索结果与下一判别实验（2026-09-27）
 
-**本节是 development 证据，不是 confirmation。** 服务器原始根目录为 `/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/`；新的五点汇总为 `longitudinal_contact_minimal_20260926/summary_conditional.json`，原始 readout、effect 数组及绑定 hash 均保留。汇总代码校验同一 lineage 的 checkpoint hash、StateBank 状态与噪声、训练/验证 trace、候选 train-only 来源、离线 effect 文件以及独立行为时间轴；失败即不输出表。没有更新 checkpoint 权重。
+**本节是 development 证据，不是 confirmation。** 服务器原始根目录为 `/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/`；五点 PCA-32 绑定汇总为 `longitudinal_contact_minimal_20260926/summary_conditional_pca32.json`，原始高维版本保留为同目录 `summary_conditional.json`。readout、effect 数组及绑定 hash 均保留。汇总代码校验同一 lineage 的 checkpoint hash、StateBank 状态与噪声、训练/验证 trace、候选 train-only 来源、离线 effect 文件以及独立行为时间轴；失败即不输出表。没有更新 checkpoint 权重。
 
 - **Sₖ：** `timeline_v2_states0_39_summary/report.json`，Spatial 0–3，每任务实际初始状态 0–39，五 checkpoint 各 160 条配对 rollout。与 §0.2 的旧时间轴产物不同，不拼接百分比。
 - **Rₖ：** 相同 train/validation StateBank 状态和噪声；每 partition 128 状态、4 个独立演示 episode。Ridge α=10 固定，源训练集拟合 scaler；“self”重新拟合与冻结读出迁移分开。Contact 主表取 `expert_late` 的 flow stage 9，完整 10-stage 和 middle 仍存原始报告。MSE gain 是训练均值风险减验证风险，不是概率或因果量。
