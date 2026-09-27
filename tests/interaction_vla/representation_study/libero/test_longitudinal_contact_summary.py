@@ -30,7 +30,12 @@ def test_summary_binds_readouts_effects_and_behavior(tmp_path):
                                        "checkpoint_tree_sha256": f"model-{name}"}
         path = tmp_path / name / "effects"
         path.mkdir()
-        np.savez(path / "effects.npz", state_ids=np.asarray([1, 2]))
+        arrays = {"state_ids": np.asarray([1, 2])}
+        for component in ("full", "translation", "rotation", "gripper"):
+            for arm, value in (("contact_0", .2), ("matched_random_0", .1),
+                               ("matched_random_1", .1)):
+                arrays[f"expert_late:{arm}/deployed_{component}_rms"] = np.full((2, 3), value)
+        np.savez(path / "effects.npz", **arrays)
         candidate_hashes = {}
         for tap in ("expert_middle", "expert_late"):
             candidate = tmp_path / name / tap / "candidates.json"
@@ -72,6 +77,8 @@ def test_summary_binds_readouts_effects_and_behavior(tmp_path):
     result = run(lineage, timeline, readouts, effects, tmp_path / "summary.json")
     assert len(result["rows"]) == 5
     assert result["rows"][0]["offline_action_response"]["full"]["target_minus_random_mean_rms"] == pytest.approx(.1)
+    assert result["rows"][0]["offline_action_response"]["full"]["paired_state_median_rms"] == pytest.approx(.1)
+    assert result["rows"][0]["offline_action_response"]["full"]["paired_state_positive_fraction"] == 1.0
     assert result["rows"][0]["readability"]["contact"]["self_mse_gain_by_stage"] == [.1] * 10
 
     aligned = tmp_path / "aligned.json"

@@ -123,6 +123,18 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
             raise ValueError(f"offline effects array hash differs: {name}")
         with np.load(array_path, allow_pickle=False) as arrays:
             ids = arrays["state_ids"].tolist()
+            paired_effects = {}
+            for component in COMPONENTS:
+                metric = f"deployed_{component}_rms"
+                target_values = arrays[f"expert_late:contact_0/{metric}"]
+                random_values = np.mean([arrays[f"expert_late:matched_random_{index}/{metric}"]
+                                         for index in range(2)], axis=0)
+                if (target_values.shape != (effect["states"], effect["noise_repeats"])
+                        or random_values.shape != target_values.shape
+                        or not np.isfinite(target_values).all()
+                        or not np.isfinite(random_values).all()):
+                    raise ValueError(f"invalid paired offline action arrays: {name}")
+                paired_effects[component] = (target_values - random_values).mean(axis=1)
         for partition in ("train", "validation"):
             path = Path(provenance[partition]["path"]) / "binding.json"
             if file_hash(path) != provenance[partition]["binding_sha256"]:
@@ -149,7 +161,16 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
             action[component] = {"target_rms": target, "matched_random_rms": random,
                                  "target_minus_random_mean_rms": target - float(np.mean(random)),
                                  "target_minus_random_mean_rms_by_task": by_task,
-                                 "low_change_rms": value("low_change_0")}
+                                 "low_change_rms": value("low_change_0"),
+                                 "paired_state_median_rms": float(np.median(paired_effects[component])),
+                                 "paired_state_positive_fraction": float(np.mean(paired_effects[component] > 0)),
+                                 "largest_absolute_paired_state": {
+                                     "state_id": ids[int(np.argmax(np.abs(paired_effects[component])))],
+                                     "difference_rms": float(paired_effects[component][
+                                         np.argmax(np.abs(paired_effects[component]))])}}
+            if not np.isclose(action[component]["target_minus_random_mean_rms"],
+                              paired_effects[component].mean(), atol=1e-9):
+                raise ValueError(f"offline aggregate and paired arrays differ: {name}")
         if float(summary["no_op/deployed_full_rms"]["task_macro"]) > 2e-5:
             raise ValueError(f"no-op replay is not self-consistent: {name}")
         readable = {}
