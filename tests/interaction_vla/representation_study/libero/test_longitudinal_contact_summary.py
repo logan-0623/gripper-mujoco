@@ -74,6 +74,14 @@ def test_summary_binds_readouts_effects_and_behavior(tmp_path):
     assert result["rows"][0]["offline_action_response"]["full"]["target_minus_random_mean_rms"] == pytest.approx(.1)
     assert result["rows"][0]["readability"]["contact"]["self_mse_gain_by_stage"] == [.1] * 10
 
+    aligned = tmp_path / "aligned.json"
+    aligned_data = json.loads(readouts.read_text())
+    aligned_data["transfer_moment_alignment"] = True
+    aligned.write_text(json.dumps(aligned_data))
+    aligned_result = run(lineage, timeline, readouts, effects, tmp_path / "aligned_summary.json",
+                         aligned_readouts=aligned)
+    assert aligned_result["rows"][0]["readability"]["contact"]["moment_aligned_from_25k_mse_gain_by_stage"] == [.1] * 10
+
     broken = json.loads(effects[names[0]].read_text())
     broken["reference_binding_sha256"] = "other-trace"
     effects[names[0]].write_text(json.dumps(broken))

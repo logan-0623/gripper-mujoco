@@ -19,7 +19,8 @@ def _read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path], output: Path) -> dict:
+def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path], output: Path,
+        *, aligned_readouts: Path | None = None) -> dict:
     if output.exists():
         raise FileExistsError(output)
     lineage_data, timeline_data, readout_data = map(_read, (lineage, timeline, readouts))
@@ -36,6 +37,13 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
             or set(readout_data["inputs"]) != set(names)
             or readout_data["comparison_contract"].get("query_mode") != "natural_integration"):
         raise ValueError("readouts do not cover natural traces for this lineage")
+    aligned_data = _read(aligned_readouts) if aligned_readouts else None
+    if aligned_data and (aligned_data.get("schema") != readout_data["schema"]
+                         or aligned_data.get("inputs") != readout_data["inputs"]
+                         or aligned_data.get("comparison_contract") != readout_data["comparison_contract"]
+                         or aligned_data.get("alpha") != readout_data.get("alpha")
+                         or aligned_data.get("transfer_moment_alignment") is not True):
+        raise ValueError("moment-aligned readouts use a different comparison contract")
 
     behavior = {(f'{row["step"]:06d}', int(row["task"])): row for row in timeline_data["rows"]}
     tasks = sorted({task for _, task in behavior})
@@ -65,6 +73,16 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
     stages = sorted({stage for _, stage, _, _ in lookup})
     if stages != list(range(10)):
         raise ValueError("readouts must cover all ten flow stages")
+    aligned_lookup = {}
+    if aligned_data:
+        for block in aligned_data["readouts"]:
+            if block["tap"] == "expert_late" and block["target"] in TARGETS:
+                if block["status"] != "complete":
+                    raise ValueError("required moment-aligned readout is not estimable")
+                for row in block["rows"]:
+                    if row["task"] == "macro":
+                        aligned_lookup[block["target"], block["flow_stage"],
+                                       row["source"], row["destination"]] = row
 
     reference_ids = None
     contract = None
@@ -144,6 +162,11 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
                     str(task): float(task_lookup[target, 9, name, name, task]["mse_gain"])
                     for task in tasks},
             }
+            if aligned_data:
+                readable[target]["moment_aligned_from_5k_mse_gain_by_stage"] = [
+                    float(aligned_lookup[target, stage, names[0], name]["mse_gain"]) for stage in stages]
+                readable[target]["moment_aligned_from_25k_mse_gain_by_stage"] = [
+                    float(aligned_lookup[target, stage, names[-1], name]["mse_gain"]) for stage in stages]
         rows.append({"step": checkpoint["step"], "checkpoint_sha256": checkpoint["checkpoint_sha256"],
                      "readability": readable, "offline_action_response": action,
                      "behavior_by_task": {str(task): {key: behavior[name, task][key] / behavior[name, task]["episodes"]
@@ -153,6 +176,7 @@ def run(lineage: Path, timeline: Path, readouts: Path, effects: dict[str, Path],
     result = {"schema": "smolvla_minimal_longitudinal_contact_v1", "complete": True,
               "analysis_role": "exploratory", "lineage_sha256": file_hash(lineage),
               "timeline_sha256": file_hash(timeline), "readouts_sha256": file_hash(readouts),
+              "moment_aligned_readouts_sha256": file_hash(aligned_readouts) if aligned_readouts else None,
               "offline_contract": contract, "offline_state_ids": reference_ids,
               "readability_metric": "validation training-mean MSE minus Ridge MSE; positive is better, no CI",
               "offline_metric": "postprocessed first ten planned actions vs no-op; RMS target minus mean of two matched random controls",
@@ -173,12 +197,14 @@ def main() -> None:
         parser.add_argument(f"--{name}", type=Path, required=True)
     parser.add_argument("--effect", nargs=2, action="append", required=True,
                         metavar=("STEP", "REPORT"))
+    parser.add_argument("--aligned-readouts", type=Path)
     args = parser.parse_args()
     effects = dict(args.effect)
     if len(effects) != len(args.effect):
         raise ValueError("duplicate effect checkpoint")
     result = run(args.lineage, args.timeline, args.readouts,
-                 {step: Path(path) for step, path in effects.items()}, args.output)
+                 {step: Path(path) for step, path in effects.items()}, args.output,
+                 aligned_readouts=args.aligned_readouts)
     print(f"ALL_DONE_LONGITUDINAL rows={len(result['rows'])}", flush=True)
 
 
