@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.sparse import csr_matrix
+from sklearn.decomposition import PCA
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
@@ -152,13 +153,15 @@ def conditional_probe_matrix(features, controls, train_y, validation_y,
 
 
 def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=False,
-        conditional_controls=False):
+        conditional_controls=False, conditional_pca_dim=None):
     if output.exists():
         raise FileExistsError(f"refusing to overwrite: {output}")
     if len(checkpoints) < 2 or len({c[0] for c in checkpoints}) != len(checkpoints):
         raise ValueError("supply at least two uniquely named checkpoints in training order")
     if not np.isfinite(alpha) or alpha <= 0:
         raise ValueError("alpha must be finite and positive")
+    if conditional_pca_dim is not None and (not conditional_controls or conditional_pca_dim < 1):
+        raise ValueError("conditional PCA requires positive dimension and conditional controls")
     records, manifest, _, split = load_state_bank(bank)
     if not manifest.get("audit_passed"):
         raise ValueError("StateBank audit has not passed")
@@ -240,6 +243,15 @@ def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=Fals
         for stage in range(pooled[names[0]]["train"][tap].shape[1]):
             features = {n: tuple(pooled[n][p][tap][:, stage] for p in ("train", "validation")) for n in names}
             evaluated = moment_align(features) if transfer_moment_alignment else features
+            conditional_features = evaluated
+            if conditional_pca_dim is not None:
+                joined = np.concatenate([evaluated[name][0] for name in names])
+                if conditional_pca_dim >= min(joined.shape):
+                    raise ValueError("conditional PCA dimension exceeds train-only matrix rank")
+                pca = PCA(n_components=conditional_pca_dim, svd_solver="randomized", random_state=0)
+                pca.fit(joined)
+                conditional_features = {name: tuple(pca.transform(x) for x in evaluated[name])
+                                        for name in names}
             for left in range(len(names)):
                 for right in range(left, len(names)):
                     for part_index, part in enumerate(("train", "validation")):
@@ -256,7 +268,7 @@ def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=Fals
                     baseline = next(row["rows"] for row in control_rows
                                     if row["control"] == "observed_state" and row["target"] == target)
                     conditional_rows.append({"tap": tap, "flow_stage": stage, "target": target,
-                                             **conditional_probe_matrix(evaluated, controls["observed_state"],
+                                             **conditional_probe_matrix(conditional_features, controls["observed_state"],
                                                                         labels["train"][target],
                                                                         labels["validation"][target],
                                                                         selected["train"], selected["validation"],
@@ -278,7 +290,9 @@ def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=Fals
                               "no confidence intervals; conditional readouts lack matched-capacity controls"],
               "controls": control_rows, "cka": cka_rows, "readouts": readouts,
               "conditional_readouts": conditional_rows,
-              "conditional_controls": "observed frame index + robot state; no task one-hot" if conditional_controls else None}
+              "conditional_controls": "observed frame index + robot state; no task one-hot" if conditional_controls else None,
+              "conditional_pca_dim": conditional_pca_dim,
+              "conditional_pca_fit": "shared PCA over all checkpoint train rows per tap/stage; validation excluded" if conditional_pca_dim else None}
     if conditional_controls:
         report["conditional_capacity_control"] = "same-width feature rows shuffled independently within train and validation; seed 20260927"
     write_json_atomic(output / "report.json", report)
@@ -293,11 +307,13 @@ def main():
     parser.add_argument("--alpha", type=float, default=10.0)
     parser.add_argument("--transfer-moment-alignment", action="store_true")
     parser.add_argument("--conditional-controls", action="store_true")
+    parser.add_argument("--conditional-pca-dim", type=int)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     run(args.bank, args.checkpoint, args.output, alpha=args.alpha,
         transfer_moment_alignment=args.transfer_moment_alignment,
-        conditional_controls=args.conditional_controls)
+        conditional_controls=args.conditional_controls,
+        conditional_pca_dim=args.conditional_pca_dim)
 
 
 if __name__ == "__main__":
