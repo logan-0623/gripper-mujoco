@@ -1,7 +1,7 @@
 # SmolVLA 交互能力获得中的内部计算变化与功能招募：实验设计
 
-> 初稿：2026-09-10；最新目标与执行协议修订：2026-09-22（纵向探索入口；设计与代码更新，非新增实测）
-> 状态：实验设计；不授权启动训练、闭环评测或 RL  
+> 初稿：2026-09-10；最新证据更新：2026-09-27（五点纵向离线比较与条件读出）
+> 状态：实验设计与探索结果；本次不启动新训练、RL 或正式独立确认
 > 当前有效协议：§0。顺序为行为时间轴与表示扫描并行 → 候选解释与功能对照 → 定向闭环 → 独立确认。探索阶段不要求先选定一种能力；训练形成是主轴，未来预测不是前置条件。
 > 主要依据：[数学基础](../../research/vla-mathematical-foundations.md)、[当前研究协议](../../../research/predictive-states.md)、[项目状态](../../../ccfa.yaml)、[Observing and Controlling Features in VLA Models](../../../paper/2603.05487v1.pdf)
 
@@ -9,7 +9,7 @@
 
 沿用 [Weekly Report](../../../Weekly%20Report.pdf) 的能力获得路线：先观察具体行为如何随训练变化，再解释其内部计算，不用单个成熟 checkpoint 的功能分析代替纵向研究。
 
-阅读顺序：先读 §0；§1–11 是前期预测路线，§12 是形成该设计的历史方案、实现合同和结果记录。发生冲突时以 §0 为准；历史的“当前”“下一步”“待运行”均指当时，不作为新的启动指令。历史实测值不改写。最新证据边界见[服务器审计](../../research/smolvla-acquisition-server-audit.md)，预测路线见 [G2b 分析](../../research/g2b-results-analysis.md)。本次更新实验设计及本地审计代码；不更新 `ccfa.yaml` 或执行权限，也未启动新运行。
+阅读顺序：先读 §0，尤其新结果 §0.10；§1–11 是前期预测路线，§12 是形成该设计的历史方案、实现合同和结果记录。发生冲突时以 §0 为准；历史的“当前”“下一步”“待运行”均指当时，不作为新的启动指令。历史实测值不改写。旧服务器审计见[服务器审计](../../research/smolvla-acquisition-server-audit.md)，预测路线见 [G2b 分析](../../research/g2b-results-analysis.md)。
 
 ## 0. 当前有效研究协议（2026-09-22）
 
@@ -44,7 +44,7 @@
 
 ### 0.2 已核验证据与立即边界
 
-以下五项为截至 2026-09-16 的历史审计快照，不代表最新服务器完整状态；本次文档修改未重新连接服务器。
+以下五项为截至 2026-09-16 的历史审计快照，不代表最新服务器完整状态；2026-09-27 的新运行与不同能力时间轴见 §0.10，不将两个版本的百分比混用。
 
 - 旧服务器已核验新自训练谱系 5k–25k 的 200 条行为记录；四任务成功率为 12.5%、62.5%、75%、82.5%、95%。这是一个 seed、40 个配对初始条件上的探索性能力时间轴，不是全部 LIBERO 的成绩。
 - 新谱系训练配置使用含 1,693 episodes 的数据，包含 Spatial 0–3；旧 smoke 的 task-3 未训练结论不适用于它。官方 checkpoint 是外部参照，不是该谱系终点。
@@ -211,6 +211,42 @@ bash scripts/python.sh -W error::RuntimeWarning \
 - **接触阶段闭环 pilot：**离线工程检查通过后仅 6 rollouts：5k/25k × baseline/target/random0，Spatial task 0、实际 initial state 10、每格 1 episode。使用已看过的 development 状态，不消费或冒称独立确认。仅首次符合当前接触条件的 action-plan generation 编辑一次，baseline 同样记录虚拟触发；固定 10-step 执行前缀可能持续到接触结束后，因此报告为“接触时发起的一次计划干预”，不是每个接触帧精确控制。保留未触发 episode；不把按干预后触发分组比较当因果估计。
 
 运行入口：`bash scripts/run_contact_evidence.sh NEW_ABSOLUTE_OUTPUT_DIR`。它执行 train-only Contact 子空间 → 4-control 配对 smoke → 5k/15k/25k、32 states×3 repeats 的 validation effects → `joint_evidence.json`。mask 仍需显式 annotation spec；未提供时只记录 TBD。任何工程错误停止，负/零科学效应不触发停止或追加预算。模型与 RL 保持冻结，不删除、覆盖旧产物。正式阶段特异性结论仍需要参照情境、更多配对 episodes、interaction/background 成功率事件、task-stratified bootstrap 和未查看样本；此次 pilot 不具备这些证据。
+
+### 0.10 五点纵向探索结果与下一判别实验（2026-09-27）
+
+**本节是 development 证据，不是 confirmation。** 服务器原始根目录为 `/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/`；新的五点汇总为 `longitudinal_contact_minimal_20260926/summary_conditional.json`，原始 readout、effect 数组及绑定 hash 均保留。汇总代码校验同一 lineage 的 checkpoint hash、StateBank 状态与噪声、训练/验证 trace、候选 train-only 来源、离线 effect 文件以及独立行为时间轴；失败即不输出表。没有更新 checkpoint 权重。
+
+- **Sₖ：** `timeline_v2_states0_39_summary/report.json`，Spatial 0–3，每任务实际初始状态 0–39，五 checkpoint 各 160 条配对 rollout。与 §0.2 的旧时间轴产物不同，不拼接百分比。
+- **Rₖ：** 相同 train/validation StateBank 状态和噪声；每 partition 128 状态、4 个独立演示 episode。Ridge α=10 固定，源训练集拟合 scaler；“self”重新拟合与冻结读出迁移分开。Contact 主表取 `expert_late` 的 flow stage 9，完整 10-stage 和 middle 仍存原始报告。MSE gain 是训练均值风险减验证风险，不是概率或因果量。
+- **Uₖ：** 相同 32 个 validation 状态、3 次配对噪声重复、4 个独立演示 episode；每 checkpoint 由自身 train trace 拟合 Contact 方向。剂量 0.5、10 个 flow stages、前 10 个部署动作；比较 contact_0 与两个 matched-random 的 RMS 差，low-change 单列。逐状态先平均噪声，再取中位数与正值数，以免 task-macro 均值被单点支配。候选方向各 checkpoint 重拟合，不能称同一固定神经方向。
+
+| Checkpoint | Contact self Rₖ：stage-9 MSE gain | Uₖ：配对状态 RMS 差中位数 | Uₖ 正差／32 | Sₖ：四任务等权成功率 |
+| --- | ---: | ---: | ---: | ---: |
+| 5k | 0.18705 | −0.0000457 | 7 | 12.50% |
+| 10k | 0.20097 | +0.0000702 | 27 | 59.38% |
+| 15k | 0.19753 | +0.0000365 | 22 | 83.75% |
+| 20k | 0.19841 | +0.0000098 | 18 | 82.50% |
+| 25k | 0.19989 | +0.0000130 | 23 | 86.25% |
+
+**已出现的替代解释。** Contact 在 5k 即可读，但单独 robot-state 的 Contact MSE gain 为 0.21366，高于表中的 expert readout；可读性不等于 expert 提供超出本体状态的信息。5k→25k 的 stage-9 validation CKA 为 0.7343，5k 冻结读出迁移到 25k 的原始 gain 为 −1.60807；仅训练集均值/方差对齐后为 +0.06191，仍低于 25k 自拟合的 +0.19989。这支持“表征坐标或分布发生变化”的诊断，不能仅凭 CKA／迁移差断言物理信息重新组织。Uₖ 均值在 10k 与 25k 分别被一个极端状态显著影响；25k 有 23/32 个状态的配对差为正，但均值为负。10k low-change 的动作 RMS 与 Contact 相近，故目前没有稳健的 Contact 特异性功能优势。
+
+**条件读出补测。** 固定输入和 split 后，比较 `C = 已观察 frame index + robot_state`、`C+expert activation` 和 `C+同宽乱序 activation`。乱序仅在 train、validation 内分别重排 feature 行，保留维数和边际分布；它是容量诊断，不是完整的情境匹配 null。原始高维 expert-late stage-9 的 Contact `MSE(C)−MSE(C+Z)` 为 5k→25k 的 −0.02254、−0.00899、−0.01385、−0.01168、−0.01065，四个任务分项同为负；因此固定 α=10 的这一路读出没有给出超出 C 的验证增益。但 20k/25k 的 `MSE(C+乱序Z)−MSE(C+真实Z)` 分别为 +0.03909/+0.04169，说明“低于 C”也不能简化为“Z 无信息”：同宽高维输入本身可能增加估计负担。
+
+**共享 PCA-32 补测已完成。** 在每个 tap/stage 将五 checkpoint 的训练表示合并拟合共同基底，验证集只用于评分；同一状态、噪声、α=10 和任务权重下比较 C、C+PCA32 与 C+同宽乱序 PCA32。`readouts_conditional_pca32/report.json` 保存 40 个完整条件读出 block。expert-late stage 9 的结果如下，正值表示左侧比较的真实 PCA32 更好：
+
+| Checkpoint | Contact：`MSE(C)−MSE(C+PCA32)` | Contact：`MSE(C+shuffle32)−MSE(C+PCA32)` | StableGrasp：`MSE(C)−MSE(C+PCA32)` | StableGrasp：`MSE(C+shuffle32)−MSE(C+PCA32)` |
+| --- | ---: | ---: | ---: | ---: |
+| 5k | −0.01061 | −0.00576 | +0.01569 | +0.03482 |
+| 10k | −0.00677 | −0.00351 | −0.00300 | +0.02373 |
+| 15k | −0.00916 | −0.00578 | +0.00248 | +0.02859 |
+| 20k | −0.00483 | −0.00212 | +0.00738 | +0.02833 |
+| 25k | −0.00417 | −0.00171 | +0.00504 | +0.02825 |
+
+Contact 在这个限定的低维协议中仍未超过 C 或乱序容量对照；不能把原始高维的正 decodability 当作独立 Contact 信息增长。StableGrasp 的 PCA32 在 20k/25k 四个任务均对 C 有小幅正增量，但 5k 也有更大的正值、10k 为负；它不支持单调“训练后才出现”，也尚未检验功能招募。仅 4 个 validation 演示 episode、固定 PCA rank/α 和一次乱序 seed 不支持总体显著性或排除所有非线性读出。
+
+**下一实验选择。** 不再围绕当前 Contact 线性方向扩大闭环数量。优先在 train/development 内核对 StableGrasp 增量的 episode 稳定性及几何／夹爪动作替代解释，再从训练变化和稳定表征两条通道冻结少量候选，做跨 checkpoint 的自然分量敲除与匹配控制。若 StableGrasp 候选对动作/物理事件没有可重复的特异性作用，保留“可读但未证实被使用”的结果；不通过换 rank、stage、剂量或测试任务追逐预期答案。任何新的闭环主张仍需要 §0.6 的独立身份、预算和行为合同。
+
+**闭环边界。** 25k task 1 固定扩展状态 22–25 的 baseline、Contact 和 matched-random 均为 4/4 success；四次 target 均触发，但 success 与 Contact／StableGrasp／lift／release 等事件差均为零。此前 state 20 的一次 Contact 失败未在这四个状态复现。这个开发集结果既不确认功能使用，也不否定其它情境中的作用；不把离线 Uₖ 趋势升级成闭环机制结论。当前 4 个 validation 演示 episode、一个训练谱系与候选选择历史不足以给出总体显著性或一般形成机制。正式确认仍按 §0.6 冻结情境、候选、最小有意义效应、样本身份和统计单位。
 
 ## 1. 前期预测路线的科学问题（历史记录）
 

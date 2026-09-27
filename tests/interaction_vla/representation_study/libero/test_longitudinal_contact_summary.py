@@ -102,6 +102,7 @@ def test_summary_binds_readouts_effects_and_behavior(tmp_path):
                              conditional_readouts=conditional)
     assert conditional_result["rows"][0]["readability"]["contact"]["incremental_over_observed_state_by_stage"] == [.02] * 10
     assert conditional_result["rows"][0]["readability"]["contact"]["incremental_over_shuffled_feature_by_stage"] == [.03] * 10
+    assert conditional_result["conditional_pca_dim"] is None
 
     broken = json.loads(effects[names[0]].read_text())
     broken["reference_binding_sha256"] = "other-trace"

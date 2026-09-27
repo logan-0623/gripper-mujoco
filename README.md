@@ -1,22 +1,23 @@
 # Interaction-Centric VLA Representation Study
 
-研究冻结的 Vision-Language-Action（VLA）策略内部，物理交互信息如何被表示、预测，以及是否参与控制。
+研究 Vision-Language-Action（VLA）策略学习交互行为时，内部信息如何变化并参与动作生成。分析时冻结各 checkpoint；训练历程中的模块并不因此被视为冻结。
 
-> **当前问题：在一个有基本任务能力的冻结 VLA 中，可解释特征能否组成跨任务的预测性交互状态？这种状态与策略实际使用的信息有多大重合？**
+> **当前问题：当同一 SmolVLA 训练谱系逐渐掌握交互行为时，相关信息是变得可访问、被重新组织，还是原本可读却后来才被动作生成系统使用？**
 
-当前主线是 **LIBERO + 官方 SmolVLA + Action Atlas**：复用既有物理标签与任务划分，保存逐 token 激活和策略动作计划，先比较 Hidden/PCA 与动作、时间对照，再考虑 SAE/RET 和机制干预。不要求 RET 胜过 SAE，也不以成功率提升作为唯一有价值的结果。
+当前主线是 **LIBERO Spatial 0–3 + 同一自训练 SmolVLA 谱系的 5k/10k/15k/20k/25k checkpoint**。官方 SmolVLA 是外部能力参照，不能拼入这条训练时间轴。使用共同 StateBank 观察和噪声比较可读性 Rₖ、离线动作作用 Uₖ，并与独立的配对仿真能力 Sₖ 对齐；随后才决定是否需要更强的机制候选和闭环确认。完整有效协议见[实验设计 §0](docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md)。
 
-**状态更新：2026-09-09。代码交付后由用户运行验证；当前没有启动全量 token 提取或真实 Hidden/PCA 比较。SmolVLA 参数冻结，不启动新 SFT、RL、world model 或多模型比较。**
+**状态更新：2026-09-27。** 五点纵向 Rₖ／Uₖ／Sₖ、条件读出、同宽乱序控制和共享 PCA-32 补测已在服务器完成。旧 480-D token／预测路线已产生本机结果，但不是当前纵向机制结论。本轮未启动新训练、RL 或正式独立确认。
 
 ## 导航
 
 - [当前完成到哪里](#当前完成到哪里)
+- [五点纵向实验](#五点纵向实验)
 - [研究问题与测量边界](#研究问题与测量边界)
 - [代码分工与项目结构](#代码分工与项目结构)
 - [环境与准备条件](#环境与准备条件)
-- [运行当前实验](#运行当前实验)
-- [数据协议与公平比较](#数据协议与公平比较)
-- [查看结果与判断完成](#查看结果与判断完成)
+- [历史 token 与预测实验入口](#历史-token-与预测实验入口)
+- [历史预测路线的数据协议与公平比较](#历史预测路线的数据协议与公平比较)
+- [历史 token 结果与完整性检查](#历史-token-结果与完整性检查)
 - [历史实验与已有发现](#历史实验与已有发现)
 - [已知限制与常见问题](#已知限制与常见问题)
 - [后续阶段与复现边界](#后续阶段与复现边界)
@@ -29,19 +30,36 @@
 
 | 工作 | 已有证据 | 尚不能说明什么 |
 | --- | --- | --- |
-| 唯一本地环境 | `.venv-lerobot`；模型导入、基础物理、视频读写有历史通过记录 | 不等于 Linux/CUDA 或完整 LIBERO 仿真已验证 |
-| 官方模型与数据 | SmolVLA 权重约 1.22 GB；固定 revision 的 LeRobot LIBERO 数据约 1.94 GB 已下载 | 数据下载不等于实验完成 |
+| 本地与服务器环境 | 本地 `.venv-lerobot`；服务器已执行真实 LIBERO 仿真与 CUDA 离线提取 | 两台机器的依赖、路径和复现检查仍须分别记录 |
+| 官方模型与数据 | 官方 SmolVLA 与固定 revision 的 LeRobot LIBERO 数据已准备；官方 checkpoint 是外部参照 | 不属于下述自训练 5k–25k 时间轴 |
 | Shared StateBank | 20 个任务、100 个 episode、13,603 个状态；既有回放与标注审计归档 | 是测量基础，不是模型能力证明 |
-| 真实观察输入与零改动重放 | CPU 上 4 帧真实输入通过；激活 `[4,480]`；零改动重放动作差为 0 | 不是仿真轨迹重放或任务成功率 |
-| Token/action 噪声 pilot | 中间版本在 MPS 上完成 4 个训练任务、64 状态、3 个噪声 seed 的测量 | 后续源码有补充，不能称最终版本已通过验证 |
-| 完整 token/action 缓存 | 实现了分片保存、绑定校验与续跑入口 | **全量 13,603 状态提取尚未运行** |
-| Hidden/PCA 与控制读出 | 实现了比较入口及测试代码 | **真实全量比较尚未运行** |
-| 官方 SAE/RET | 已有合成缓存训练与集成检查 | 不是机器人真实数据比较或原论文 benchmark 复现 |
-| 特征干预、闭环、RL | 保留旧协议和条件性入口 | 当前新路线未执行；RL 仍冻结 |
+| 旧 480-D token／预测路线 | 本机 `smolvla_tokens_mps/manifest.json` 记录完整 13,603 状态；Hidden/PCA、动作与事件读出结果已生成 | 使用另一 checkpoint／tap／问题设置，不能与纵向 720-D expert 分析混作同一结果 |
+| 同谱系能力 Sₖ | 5 个 checkpoint × Spatial 0–3 × 各任务 40 个配对初始状态，共 800 条 rollout | 一个训练 seed；逐任务差异与多次选择仍属探索 |
+| 纵向可读性 Rₖ | 五点共同 train/validation trace；各 128 状态、4 个独立演示 episode；原始、矩对齐与跨 checkpoint 读出完成 | 常规 readout 不控制本体状态；迁移失败不单独证明信息重组 |
+| 离线作用 Uₖ | 同一批 32 个 validation states × 3 噪声重复，Contact 候选与两个 matched-random、low-change 比较 | 动作改变不等于物理事件或闭环功能；仅 4 个独立演示 episode |
+| task 1 闭环扩展 | 状态 22–25：baseline、Contact、matched-random 各 4/4 成功 | 未复现单个旧状态的失败；不是 Contact 特异性作用确认 |
 
-最近一次完整回归记录是 **1,035 passed、1 skipped**，对应 token 缓存最终改动**之前**的代码。随后新增逻辑曾有 3 项测试通过；最终补充后的源码只做了语法与差异检查，需按下方命令重新验证。真实 LIBERO 原始 HDF5 集成仍未通过本机测试覆盖。
+最近一次仓库级完整回归记录是历史结果，不能代替当前提交的回归。本轮纵向条件读出相关测试已在本地与服务器各通过 6 项；真实数据运行及其限制见下节。
 
-已有轻量科学证据在 [docs/results/](docs/results/)；本机生成结果在 `outputs/`，后者被 Git 忽略。不要将“仓库中存在历史报告”理解成“当前版本已经重新执行这些实验”。
+已有轻量历史证据在 [docs/results/](docs/results/)；本机 `outputs/` 与服务器 `/root/autodl-tmp/` 中的原始结果不进入 Git。不要将仓库中的历史报告理解成当前版本已重跑全部实验。
+
+## 五点纵向实验
+
+这批探索使用同一自训练谱系的五个 checkpoint。Rₖ／Uₖ 在相同 StateBank 观察与噪声上比较；Sₖ 使用另一组配对 LIBERO 仿真初始状态，因此只按 checkpoint／task 对齐，**不是同一批状态上的三个量**。详细合同、逐任务解释与停止规则见[实验设计 §0.10](docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md)。
+
+| 训练步 | Contact 可读性 Rₖ¹ | Contact 候选相对随机控制的 Uₖ 中位数² | Uₖ 正差状态 | Spatial 0–3 平均成功率 Sₖ |
+| --- | ---: | ---: | ---: | ---: |
+| 5k | 0.187 | −0.000046 | 7/32 | 12.5% |
+| 10k | 0.201 | +0.000070 | 27/32 | 59.4% |
+| 15k | 0.198 | +0.000037 | 22/32 | 83.8% |
+| 20k | 0.198 | +0.000010 | 18/32 | 82.5% |
+| 25k | 0.200 | +0.000013 | 23/32 | 86.3% |
+
+¹ expert-late stage 9 的独立验证 MSE gain（训练均值预测误差减 Ridge 误差），越大越好。² 前 10 个部署动作的逐状态配对 RMS 差，中位数为正表示 Contact 候选比两个 matched-random 控制的平均影响更大；不是成功率增益。
+
+能力大幅提高时，Contact 的简单可读性几乎不变；机器人状态单独读出的 gain 甚至达到 0.214。把已观察时间和 robot state 同时纳入后，原始高维 expert-late stage-9 在五个 checkpoint 均未增加 Contact 验证性能。训练集共享 PCA-32 也没有使 Contact 在该 stage 超过本体／时间或同宽乱序对照。StableGrasp PCA-32 在 20k、25k 的四个任务上有小幅条件增量，但 5k 也为正、10k 为负，不能称为单调形成或功能招募。10k 与 25k 的 Uₖ 均值还分别被单个异常状态强烈左右；task 1 状态 22–25 的三组闭环均为 4/4 成功，没有 Contact 特异性事件变化。
+
+服务器原始结果位于 `/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/`：`longitudinal_contact_minimal_20260926/summary_conditional.json` 绑定五点离线与行为结果；同目录的 `readouts_conditional_capacity/report.json`、`readouts_conditional_pca32/report.json`、`readouts/report.json` 和 `readouts_moment_aligned/report.json` 保存各类读出；`functional_contact_task1_states22_25/report.json` 保存闭环扩展。日志在 `/root/autodl-tmp/experiment-logs/`。这些原始产物不随 Git clone 下载；在本地只有源码和本 README 时，不能声称已复现服务器结果。
 
 ## 研究问题与测量边界
 
@@ -56,11 +74,11 @@
 
 **能读出 ≠ 能预测变化 ≠ 策略使用了该语义 ≠ 对任务成功有益。** 读出失败也不能证明信息不存在；它可能超出当前读出器的能力。接触和稳定抓取只是有限的物理因素，不能据此声称发现完整 world model。
 
-当前最需要区分的是：预测信号来自物理交互状态、任务进度，还是当前动作计划。因此，时间、robot state、策略动作计划和未来真实演示动作是不同用途的对照，不能混成一个排行榜。
+当前纵向问题先区分 Rₖ（可读性）、Uₖ（离线动作作用）与 Sₖ（仿真能力）：即使三者同时变化，也不能跳过本体状态、训练位移、一般扰动敏感性与闭环行为这些替代解释。时间、robot state、策略动作计划和未来真实演示动作的信息权限不同，不能混成一个排行榜。
 
 ### Interaction Graph 的角色
 
-早期 ACT 实验将 Graph 作为策略输入；当前 VLA 主线将其作为 **privileged measurement vocabulary（特权测量语言）**。模拟器信息用于生成标签，不作为当前 SmolVLA 的额外输入。
+早期 ACT 实验将 Graph 作为策略输入；当前 VLA 主线将其作为 **privileged measurement vocabulary（特权测量语言）**。模拟器信息用于生成标签，不作为 SmolVLA 的额外输入。下图说明历史 token／预测分支；当前纵向分支另比较同谱系 checkpoint 的 expert trace、动作作用与仿真行为。
 
 ```text
 模拟器记录 ──→ StateBank 物理标签与固定任务划分 ───────────┐
@@ -74,7 +92,7 @@
 后续独立阶段：SAE/RET → 匹配特征干预 → 配对闭环
 ```
 
-既有标签体系包括 Entity、Geometry、Contact、StableGrasp、Phase、NextRelation。当前预测实验只读出 **Contact 与 StableGrasp**：前者来自物理接触，后者结合双侧手指接触、过去短窗口内的相对位姿稳定及共同运动/离开支撑等条件，不以“夹爪闭合”直接代替稳定抓取。缺失标签保持缺失，不填零。普通 demonstration 不被伪造为 recovery 数据。
+既有标签体系包括 Entity、Geometry、Contact、StableGrasp、Phase、NextRelation。历史预测分支重点读出 **Contact 与 StableGrasp**；当前纵向分支也暂用它们作外部测量，而不要求模型内部存在同名特征。前者来自物理接触，后者结合双侧手指接触、过去短窗口内的相对位姿稳定及共同运动/离开支撑等条件，不以“夹爪闭合”直接代替稳定抓取。缺失标签保持缺失，不填零。普通 demonstration 不被伪造为 recovery 数据。
 
 ## 代码分工与项目结构
 
@@ -86,7 +104,7 @@
 | [Action Atlas](https://github.com/CWRU-AISM/action-atlas) | SmolVLA 层访问、capture/injection hooks、官方 TopK SAE | `b8b0db331df18fc30a3fd92c45ec721d35d3ee52`；Apache-2.0 |
 | [RET](https://github.com/ustaomeroglu/RET) | 预测性表示 encoder、predictor、EMA、training loop | `1b0d9b2ee0281d50f875a30a4d066cbb9df883b1`；MIT；[cached 模式补丁](research/ret-cached-robot.patch) |
 | 本项目 StateBank | 物理标签、原始来源、episode/task 分组和回放参考 | 冻结既有 13,603 状态与划分 |
-| 本项目诊断入口 | token/action 分片缓存、噪声检查、Hidden/PCA 与控制读出 | 当前需要用户验证最终版本 |
+| 本项目诊断入口 | token/action 缓存、flow trace、纵向读出、匹配干预与产物绑定 | 已有本地和服务器运行；不同入口的验证范围见各结果合同 |
 
 Action Atlas 的 LeRobot submodule 与已安装的 LeRobot 0.6.1 并非同一版本；不要直接初始化全部 submodule 后继续声称是相同环境。RET 的机器人时间序列输入属于适配，不是原论文语言序列 benchmark 的原样复现。Event-SAE 尚未接入，不能把普通 TopK SAE 称为 Event-SAE baseline。
 
@@ -99,9 +117,12 @@ interaction_vla/
     token_readouts.py    # Hidden/PCA 与策略动作、本体状态对照
     predictive_states.py # 时序审计、共同读出、官方 SAE/RET 适配
     latents.py           # 既有缓存、观察绑定、逐状态噪声工具
+    flow_trace.py / checkpoint_readouts.py # 同谱系 expert trace、CKA、迁移与条件读出
+    contact_subspace.py / candidate_controls.py # 训练集候选与匹配离线干预
+    longitudinal_contact_summary.py # 绑定 Rₖ／Uₖ／Sₖ 与逐状态稳健性
   ...                   # 保留 ACT、Graph、旧探针与干预实现
 research/
-  predictive-states.md  # 当前协议、逐步命令、实测记录
+  predictive-states.md  # 历史预测路线协议、逐步命令与实测记录
   README.md             # 上游接入与环境记录
   action-atlas/         # 外部固定版本 checkout，不进入父仓库
   ret/                  # 外部固定版本 checkout，不进入父仓库
@@ -181,11 +202,13 @@ uv pip sync --python .venv-lerobot/bin/python requirements-action-atlas-macos.lo
 
 </details>
 
-## 运行当前实验
+## 历史 token 与预测实验入口
 
-### 第一步：验证最终代码，再做小样例
+以下命令保留为 480-D token／预测路线的复现入口。它们已运行过，不是当前五点纵向实验的待办清单，也不应重跑并覆盖既有产物。当前纵向数据使用 `flow_trace` 的 720-D expert tap；运行协议与结果另见上文和[实验设计 §0](docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md)。
 
-以下命令由用户手动执行，不会因阅读 README 自动启动。每一步成功后再进入下一步，不要一次粘贴整段长流程后忽略中途失败。
+### 第一步：验证代码，再做小样例
+
+需要复现这一历史分支时，命令由用户手动执行，不会因阅读 README 自动启动。每一步成功后再进入下一步，不要一次粘贴整段长流程后忽略中途失败。
 
 ```bash
 export HF_HUB_OFFLINE=1
@@ -267,7 +290,7 @@ bash scripts/python.sh -W error::RuntimeWarning \
 
 结果保存到 `report.json`；`gain_over_A` 定义为 `Brier(A) - Brier(condition)`，正值更好。该控制仍是有限 Ridge 读出器下的容量诊断，不是语义负对照、互信息估计或因果检验。
 
-## 数据协议与公平比较
+## 历史预测路线的数据协议与公平比较
 
 | 项目 | 当前定义 |
 | --- | --- |
@@ -291,9 +314,9 @@ bash scripts/python.sh -W error::RuntimeWarning \
 
 Ridge 的原始预测先检查有限值，再截断到 [0,1] 用于评分；这些分数不是已经校准的概率。读出程序报告的标签变化子集只表示当前与未来端点标签不同，不统计两端之间发生的全部事件。
 
-测试集只有 **2 个留出任务**，且无表征对照结果已经查看。大量重叠窗口不等于大量独立任务，增加训练 seed 也不会增加任务样本量。当前“跨任务”指表示学习/读出器的任务留出；官方策略在原始训练中是否接触过相应任务或演示，尚未由本流程确认。
+这套历史预测协议的测试集只有 **2 个留出任务**，且结果已经查看；不能重新称为未见确认集。大量重叠窗口不等于大量独立任务，增加训练 seed 也不会增加任务样本量。这里的“跨任务”指表示学习/读出器的任务留出；不等于策略预训练未见这些任务。
 
-## 查看结果与判断完成
+## 历史 token 结果与完整性检查
 
 | 阶段 | 主要文件 | 完成条件 |
 | --- | --- | --- |
@@ -318,7 +341,7 @@ cat outputs/predictive_states/smolvla_tokens_mps/progress.json
 - 离线比较目前不支持中途续跑，也拒绝覆盖已有输出目录；失败后保留现场，排查后使用新目录重新执行。
 - 不删除旧结果来让新命令“顺利通过”。`token_noise_pilot_mps/` 是中间版本历史 pilot，不是最终源码的可续跑目录。
 
-### 已经存在的当前路线结果
+### 已经存在的历史预测结果
 
 真实标签/时间/动作对照保存在 `outputs/predictive_states/real_controls_seed42/`，**未使用 VLA 激活**。未来 10 帧的 Brier 如下，越低越好：
 
@@ -333,7 +356,7 @@ Contact 有效测试窗口 1,205，StableGrasp 1,195，均来自 2 个任务。�
 
 ## 历史实验与已有发现
 
-以下来自旧协议与已归档证据，**不是当前 Action Atlas token 路线的复现结果**。保存它们是为了解释研究问题如何形成，而不是让新流程自动继承旧结论。
+以下来自旧协议与已归档证据，**不是本轮自训练谱系五点纵向实验的复现结果**。保存它们是为了解释研究问题如何形成，而不是让新流程自动继承旧结论。
 
 | 历史实验 | 已有观察 | 边界与证据 |
 | --- | --- | --- |
@@ -348,13 +371,13 @@ Contact 有效测试窗口 1,205，StableGrasp 1,195，均来自 2 个任务。�
 
 ### 不能混用的 checkpoint 和 tap
 
-| 条件 | 旧 positive control / SAE 路线 | 当前 token/action 路线 |
+| 条件 | 旧 positive control / SAE 路线 | 历史 token/action 路线 |
 | --- | --- | --- |
 | Checkpoint 来源 | `lerobot/smolvla_libero` | `HuggingFaceVLA/smolvla_libero` |
 | Revision | `31d453f7edd78c839a8bbc39744a292686daf0de` | `6721902bc4d61e50a3bfdb11dfb4cb626f05d102` |
 | 主 tap | `action_time_mlp_out`，历史名 `action_expert_input` | Action Atlas `expert/31/mlp/output` |
 | 保存/分析单位 | 旧 720D pooled 表示 | `[50,480]` tokens，并派生均值/首 token |
-| 已有能力记录 | 特定旧配置的单任务 9/10 | 当前配置尚无闭环成功率验证 |
+| 当时能力记录 | 特定旧配置的单任务 9/10 | 当时尚无闭环成功率验证；不代表现在的自训练五点谱系 |
 
 不假定两者等价，也不把不同字典的 feature ID 当作同一个神经机制。
 
@@ -379,7 +402,7 @@ Protocol-v5 在旧 720D pooled 激活上训练 3 个 TopK 字典：width 1440、
 
 | 问题 | 应如何处理 |
 | --- | --- |
-| 本机能做实验吗？ | 能做已验证过的离线推理与数据处理；最终 token/readout 代码仍需用户验证。不能由此断言 LIBERO 闭环或 CUDA 已通过 |
+| 本机能做实验吗？ | 已完成 token 提取及离线读出；服务器已运行 CUDA 和真实 LIBERO rollout。两者不能互相替代，纵向实验的模型与大规模原始产物主要在服务器上 |
 | 找不到 StateBank | 先恢复原始记录与 split；下载 Hub 数据不能自动生成项目物理标签 |
 | 离线加载报缺文件 | 核对 checkpoint、11 个 tokenizer/配置文件及数据；恢复资产时在联网终端执行固定 revision 下载 |
 | FFmpeg / TorchCodec 导入失败 | 检查 `ffmpeg@8` 并使用 `bash scripts/python.sh`；不要随意替换系统动态库 |
@@ -403,11 +426,10 @@ bash scripts/python.sh -m pytest tests research/action-atlas/tests -q -rs
 
 ## 后续阶段与复现边界
 
-1. **当前交付**：用户验证 token-preserving 缓存与噪声 pilot，完成全 StateBank 提取，运行 Hidden/PCA 与动作、时间对照。
-2. **预测性表示**：在同一绑定缓存上比较官方 SAE/RET，检查历史顺序、维度/预算和 seed；不以某个方法必须获胜为前提。
-3. **机制验证**：只在训练/验证数据上选择稳定候选，加入同 token、同去噪步、同范数/秩的随机及非候选特征控制。
-4. **闭环验证**：先核实当前策略能力，再从配对初始状态测接触、夹持、释放、掉落及成功率，不只看动作大小。
-5. **扩展轴**：world model、第二个 VLA 或 Init→SFT→RL，等待当前发现与资源条件支持后另行设计。
+1. **当前判断**：Contact 的本轮线性条件读出未提供超出时间／本体状态的证据；StableGrasp 的低维小幅增量需先检查 episode 稳定性和替代解释，不将正值自动升级为功能使用。
+2. **机制候选**：在训练／开发数据上冻结少量可追踪候选，再检查自然分量、干预落实程度、匹配控制和具体动作分量；不凭动作 RMS 最大化选候选。
+3. **闭环验证**：在开发数据上预先确定行为量、触发情境和对照，再使用实际未查看初始状态作配对确认。task 1 的四状态扩展只算开发证据。
+4. **条件性扩展**：SAE/RET、未来预测、world model、第二 VLA 与 RL 均不因本轮纵向读出自动启动。
 
 源码、模型、数据和实验记录各自版本化：保存 checkpoint revision/hash、上游 commit/patch、StateBank 身份、取层与 token/去噪规则、运行时、噪声及读出参数。相同方法名称不代表相同配置，代码完成不代表实验完成。
 
