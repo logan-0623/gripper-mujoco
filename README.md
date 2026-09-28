@@ -6,7 +6,7 @@
 
 当前主线是 **LIBERO Spatial 0–3 + 同一自训练 SmolVLA 谱系的 5k/10k/15k/20k/25k checkpoint**。官方 SmolVLA 是外部能力参照，不能拼入这条训练时间轴。使用共同 StateBank 观察和噪声比较可读性 Rₖ、离线动作作用 Uₖ，并与独立的配对仿真能力 Sₖ 对齐；随后才决定是否需要更强的机制候选和闭环确认。完整有效协议见[实验设计 §0](docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md)。
 
-**状态更新：2026-09-28。** 五点纵向 Rₖ／Uₖ／Sₖ、StableGrasp 逐演示留一及无标签 `formation_0` 的 5k/25k 跨任务离线动作对照已完成。旧 480-D token／预测路线不是当前纵向机制结论。本轮未启动新训练、RL、闭环或正式独立确认。
+**状态更新：2026-09-28。** 五点纵向 Rₖ／Uₖ／Sₖ、StableGrasp 逐演示留一及无标签 `formation_0` 的 5k/25k 跨任务离线动作对照已完成；late tap 又补测了 16 条匹配随机方向。旧 480-D token／预测路线不是当前纵向机制结论。本轮未启动新训练、RL、闭环或正式独立确认。
 
 ## 导航
 
@@ -63,6 +63,8 @@
 服务器原始结果位于 `/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/`：`longitudinal_contact_minimal_20260926/summary_conditional_pca32.json` 绑定五点离线、PCA-32 条件读出与行为结果，原始高维条件版保留为 `summary_conditional.json`；同目录的 `readouts_conditional_capacity/report.json`、`readouts_conditional_pca32/report.json`、`readouts_episode_loo/report.json`、`readouts/report.json` 和 `readouts_moment_aligned/report.json` 保存各类读出；`functional_contact_task1_states22_25/report.json` 保存闭环扩展。日志在 `/root/autodl-tmp/experiment-logs/`。这些原始产物不随 Git clone 下载；在本地只有源码和本 README 时，不能声称已复现服务器结果。
 
 最新无标签候选对照另存服务器 `flow_e2_task_validation_n64_r2/` 与 `candidate_controls_e2_taskval/full_005000/`、`full_025000/`。两点使用完全相同的状态和噪声；late tap 的 formation 相对两随机方向平均，前 10 个部署动作 RMS 差为 5k **+0.002610**、25k **+0.004317**，但 5k 的 8/8 演示已有正差，25k 的 Object 7 为负、Spatial 9 正差只来自一个演示。效果主要在 gripper 分量，且 25k 一个随机方向已接近候选；目前不支持“后来才开始使用该物理特征”。完整逐任务口径和后续停止边界见[实验设计 §0.12](docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md)。
+
+随后在同一 64 状态、8 演示、2 噪声的 development 集上，把 late tap 随机对照扩至 16 条；服务器结果在 `candidate_controls_random16_late_20260928/full_005000/`、`full_025000/`。候选相对 16 随机方向平均的前 10 动作 RMS 差为 5k **+0.002803**、25k **+0.005594**，但两端各有 1 条随机方向超过候选；25k 的 Object 7 为负，Spatial 9 大正差仅 1 个演示，主要增量仍来自 gripper。no-op=0、状态配对与结果哈希通过。这是离线动作敏感性证据，不是交互语义、闭环功能或后期首次招募的确认；输入区域遮挡还缺逐状态标注，未运行。
 
 ## 研究问题与测量边界
 
