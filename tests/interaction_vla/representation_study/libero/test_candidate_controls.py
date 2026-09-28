@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from interaction_vla.representation_study.libero.candidate_controls import mask_batch, action_metrics, postprocess_actions
+from interaction_vla.representation_study.libero.candidate_controls import mask_batch, action_metrics, postprocess_actions, validate_split
 from interaction_vla.representation_study.libero.phase_edit import PhaseEdit
 from interaction_vla.representation_study.libero.flow_trace import FlowEdit, install_flow_edit
 
@@ -33,6 +33,20 @@ def test_action_window_and_postprocessing_contract():
         assert v.shape==(100,7)
         return v+1
     np.testing.assert_allclose(postprocess_actions(post,x,"cpu"),x+1)
+
+
+def test_task_split_requires_unseen_validation_tasks():
+    records = [NS(state_id="train", suite="spatial", task_id=0, source_episode_id="a"),
+               NS(state_id="valid", suite="spatial", task_id=1, source_episode_id="b")]
+    split = NS(assignments={"train": "train", "valid": "validation"})
+    validate_split(records, split, ["train"], ["valid"], "task")
+    records[1].task_id = 0
+    with pytest.raises(ValueError, match="task leakage"):
+        validate_split(records, split, ["train"], ["valid"], "task")
+    validate_split(records, split, ["train"], ["valid"], "episode")
+    records[1].source_episode_id = "a"
+    with pytest.raises(ValueError, match="episode leakage"):
+        validate_split(records, split, ["train"], ["valid"], "episode")
 
 
 def test_phase_trigger_causal_quota_reset_and_observe_only():

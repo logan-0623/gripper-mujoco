@@ -75,6 +75,20 @@ def action_metrics(delta, prefix):
     return out
 
 
+def validate_split(records, split, train_ids, validation_ids, split_group):
+    by_id = {row.state_id: row for row in records}
+    if any(split.assignments.get(i) != "train" for i in train_ids):
+        raise ValueError("training partition mismatch")
+    if any(split.assignments.get(i) != "validation" for i in validation_ids):
+        raise ValueError("validation partition mismatch")
+    train_episodes = {episode(by_id[i]) for i in train_ids}
+    validation_episodes = {episode(by_id[i]) for i in validation_ids}
+    if train_episodes & validation_episodes:
+        raise ValueError("episode leakage")
+    if split_group == "task" and {key[:2] for key in train_episodes} & {key[:2] for key in validation_episodes}:
+        raise ValueError("task leakage")
+
+
 def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, reference_trace,
         candidates, output, *, max_states=32, repeats=3, dose=.5, mask_spec=None, batch_size=4,
         target_id="formation_0", control_ids=("low_change_0", "matched_random_0", "matched_random_1")):
@@ -83,8 +97,9 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
     if not 0 < dose <= 1 or max_states < 4 or repeats < 1 or batch_size < 1:
         raise ValueError("invalid bounded experiment settings")
     ids, reference, binding, manifest = load_trace(reference_trace)
-    if binding.get("partition") != "validation" or binding.get("split_group") != "episode" or binding.get("query_mode") != "natural_integration" or binding.get("flow_edit") is not None:
-        raise ValueError("requires unedited episode-validation natural trace")
+    split_group = binding.get("split_group")
+    if binding.get("partition") != "validation" or split_group not in {"episode", "task"} or binding.get("query_mode") != "natural_integration" or binding.get("flow_edit") is not None:
+        raise ValueError("requires unedited validation natural trace with task or episode split")
     for key, actual in (("checkpoint_tree_sha256", _tree_sha256(checkpoint)),
                         ("contract_tree_sha256", _tree_sha256(contract)),
                         ("metadata_tree_sha256", _tree_sha256(metadata)),
@@ -98,25 +113,21 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
                                      for p in sorted(dataset_root.glob(pattern))})
     if dataset_hash != binding["dataset_scientific_sha256"]:
         raise ValueError("dataset contents differ from reference")
-    records, bank_manifest, _, split = load_state_bank(bank)
+    records, bank_manifest, task_split, episode_split = load_state_bank(bank)
     if not bank_manifest.get("audit_passed"):
         raise ValueError("unaudited StateBank")
+    split = task_split if split_group == "task" else episode_split
     by_id = {r.state_id:r for r in records}
     selected = [by_id[i] for i in ids[:max_states]]
-    if any(split.assignments[r.state_id] != "validation" for r in selected):
-        raise ValueError("validation partition mismatch")
     train_ids, train, train_binding, train_manifest = load_trace(train_trace)
-    if train_binding.get("partition") != "train" or train_binding.get("split_group") != "episode" or train_binding.get("checkpoint_tree_sha256") != binding["checkpoint_tree_sha256"]:
+    if train_binding.get("partition") != "train" or train_binding.get("split_group") != split_group or train_binding.get("checkpoint_tree_sha256") != binding["checkpoint_tree_sha256"]:
         raise ValueError("training center cache differs from checkpoint/partition")
     if train_binding.get("query_mode") != "natural_integration" or train_binding.get("flow_edit") is not None:
         raise ValueError("training centers require unedited natural traces")
     for key in ("state_bank_sha256","dataset_scientific_sha256","contract_tree_sha256","metadata_tree_sha256","image_binding","num_steps"):
         if train_binding.get(key) != binding.get(key):
             raise ValueError(f"train/validation contract mismatch: {key}")
-    if any(split.assignments.get(i) != "train" for i in train_ids):
-        raise ValueError("training partition mismatch")
-    if {episode(by_id[i]) for i in train_ids} & {episode(r) for r in selected}:
-        raise ValueError("episode leakage")
+    validate_split(records, split, train_ids, ids[:max_states], split_group)
     # Trace tensors are [state, repeat, flow_stage, token, hidden].  Reduce
     # every axis except hidden so suppression stays in the 720-D feature space.
     centers = {tap: train[tap].mean(axis=(0, 1, 2, 3)) for tap in ("expert_middle", "expert_late")}
@@ -249,7 +260,8 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
               "target_id":target_id,"control_ids":list(control_ids),
               "controls":"target coefficient redirected into unit random/low-change directions; same nominal dose",
               "effects_sha256":file_hash(output/"effects.npz"),"summary":summary,
-              "limits":["four validation episodes; descriptive only","raw shared directions do not guarantee semantic alignment",
+              "split_group":split_group,
+              "limits":["development validation; descriptive only","raw shared directions do not guarantee semantic alignment",
                         "fixed queries now report candidate-minus-no-op local effects; natural integration measures action-plan effects",
                         "no new closed-loop success measurement", "fixed no-op vs natural numerical floor reported, not subtracted"]}
     write_json_atomic(output/"report.json",report)
