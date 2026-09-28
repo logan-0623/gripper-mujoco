@@ -6,7 +6,7 @@
 
 当前主线是 **LIBERO Spatial 0–3 + 同一自训练 SmolVLA 谱系的 5k/10k/15k/20k/25k checkpoint**。官方 SmolVLA 是外部能力参照，不能拼入这条训练时间轴。使用共同 StateBank 观察和噪声比较可读性 Rₖ、离线动作作用 Uₖ，并与独立的配对仿真能力 Sₖ 对齐；随后才决定是否需要更强的机制候选和闭环确认。完整有效协议见[实验设计 §0](docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md)。
 
-**状态更新：2026-09-27。** 五点纵向 Rₖ／Uₖ／Sₖ、条件读出、同宽乱序控制和共享 PCA-32 补测已在服务器完成。旧 480-D token／预测路线已产生本机结果，但不是当前纵向机制结论。本轮未启动新训练、RL 或正式独立确认。
+**状态更新：2026-09-28。** 五点纵向 Rₖ／Uₖ／Sₖ、StableGrasp 逐演示留一及无标签 `formation_0` 的 5k/25k 跨任务离线动作对照已完成。旧 480-D token／预测路线不是当前纵向机制结论。本轮未启动新训练、RL、闭环或正式独立确认。
 
 ## 导航
 
@@ -35,11 +35,12 @@
 | Shared StateBank | 20 个任务、100 个 episode、13,603 个状态；既有回放与标注审计归档 | 是测量基础，不是模型能力证明 |
 | 旧 480-D token／预测路线 | 本机 `smolvla_tokens_mps/manifest.json` 记录完整 13,603 状态；Hidden/PCA、动作与事件读出结果已生成 | 使用另一 checkpoint／tap／问题设置，不能与纵向 720-D expert 分析混作同一结果 |
 | 同谱系能力 Sₖ | 5 个 checkpoint × Spatial 0–3 × 各任务 40 个配对初始状态，共 800 条 rollout | 一个训练 seed；逐任务差异与多次选择仍属探索 |
-| 纵向可读性 Rₖ | 五点共同 train/validation trace；各 128 状态、4 个独立演示 episode；原始、矩对齐与跨 checkpoint 读出完成 | 常规 readout 不控制本体状态；迁移失败不单独证明信息重组 |
+| 纵向可读性 Rₖ | 五点共同 train/validation trace；每分区 128 状态、4 个任务；原始、矩对齐与跨 checkpoint 读出完成。train trace 的 11 个演示又完成逐 episode 留一诊断 | 常规 readout 不控制本体状态；留一仍是原训练分区的开发集证据，非独立确认 |
 | 离线作用 Uₖ | 同一批 32 个 validation states × 3 噪声重复，Contact 候选与两个 matched-random、low-change 比较 | 动作改变不等于物理事件或闭环功能；仅 4 个独立演示 episode |
+| 无标签候选跨任务 E2→E3 | 512-state task-split 发现集之外的 4 个 validation 任务、64 状态、8 演示 × 2 噪声；5k/25k 的 formation、随机和 low-change 配对离线对照 | 5k 已有动作作用，25k 逐任务混合；尚不能称晚期功能招募、物理特征或闭环行为作用 |
 | task 1 闭环扩展 | 状态 22–25：baseline、Contact、matched-random 各 4/4 成功 | 未复现单个旧状态的失败；不是 Contact 特异性作用确认 |
 
-最近一次仓库级完整回归记录是历史结果，不能代替当前提交的回归。本轮纵向条件读出相关测试已在本地与服务器各通过 6 项；真实数据运行及其限制见下节。
+最近一次仓库级完整回归记录是历史结果，不能代替当前提交的回归。逐演示留一代码相关测试本地通过 5 项；新 task-split 干预合同相关测试本地与服务器各通过 6 项。真实数据运行及其限制见下节。
 
 已有轻量历史证据在 [docs/results/](docs/results/)；本机 `outputs/` 与服务器 `/root/autodl-tmp/` 中的原始结果不进入 Git。不要将仓库中的历史报告理解成当前版本已重跑全部实验。
 
@@ -57,9 +58,11 @@
 
 ¹ expert-late stage 9 的独立验证 MSE gain（训练均值预测误差减 Ridge 误差），越大越好。² 前 10 个部署动作的逐状态配对 RMS 差，中位数为正表示 Contact 候选比两个 matched-random 控制的平均影响更大；不是成功率增益。
 
-能力大幅提高时，Contact 的简单可读性几乎不变；机器人状态单独读出的 gain 甚至达到 0.214。把已观察时间和 robot state 同时纳入后，原始高维 expert-late stage-9 在五个 checkpoint 均未增加 Contact 验证性能。训练集共享 PCA-32 也没有使 Contact 在该 stage 超过本体／时间或同宽乱序对照。StableGrasp PCA-32 在 20k、25k 的四个任务上有小幅条件增量，但 5k 也为正、10k 为负，不能称为单调形成或功能招募。10k 与 25k 的 Uₖ 均值还分别被单个异常状态强烈左右；task 1 状态 22–25 的三组闭环均为 4/4 成功，没有 Contact 特异性事件变化。
+能力大幅提高时，Contact 的简单可读性几乎不变；机器人状态单独读出的 gain 甚至达到 0.214。把已观察时间和 robot state 同时纳入后，原始高维 expert-late stage-9 在五个 checkpoint 均未增加 Contact 验证性能。训练集共享 PCA-32 也没有使 Contact 在该 stage 超过本体／时间或同宽乱序对照。StableGrasp PCA-32 在 20k、25k 的四个任务验证集上有小幅条件增量；但逐训练演示留一时，两点各仅 5/11 个 episode 为正，5k/10k 也已有信号，加入模拟器几何与真实演示夹爪动作后 20k/25k 的任务宏平均增益接近零。后者是不可部署、可能阻断中介的诊断性对照，不能证明内部信息无用；整体亦不支持单调形成或功能招募。10k 与 25k 的 Contact Uₖ 均值还分别被单个异常状态强烈左右；task 1 状态 22–25 的三组闭环均为 4/4 成功，没有 Contact 特异性事件变化。逐 episode 数值与下一判别步骤见[实验设计 §0.11](docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md)。
 
-服务器原始结果位于 `/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/`：`longitudinal_contact_minimal_20260926/summary_conditional_pca32.json` 绑定五点离线、PCA-32 条件读出与行为结果，原始高维条件版保留为 `summary_conditional.json`；同目录的 `readouts_conditional_capacity/report.json`、`readouts_conditional_pca32/report.json`、`readouts/report.json` 和 `readouts_moment_aligned/report.json` 保存各类读出；`functional_contact_task1_states22_25/report.json` 保存闭环扩展。日志在 `/root/autodl-tmp/experiment-logs/`。这些原始产物不随 Git clone 下载；在本地只有源码和本 README 时，不能声称已复现服务器结果。
+服务器原始结果位于 `/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/`：`longitudinal_contact_minimal_20260926/summary_conditional_pca32.json` 绑定五点离线、PCA-32 条件读出与行为结果，原始高维条件版保留为 `summary_conditional.json`；同目录的 `readouts_conditional_capacity/report.json`、`readouts_conditional_pca32/report.json`、`readouts_episode_loo/report.json`、`readouts/report.json` 和 `readouts_moment_aligned/report.json` 保存各类读出；`functional_contact_task1_states22_25/report.json` 保存闭环扩展。日志在 `/root/autodl-tmp/experiment-logs/`。这些原始产物不随 Git clone 下载；在本地只有源码和本 README 时，不能声称已复现服务器结果。
+
+最新无标签候选对照另存服务器 `flow_e2_task_validation_n64_r2/` 与 `candidate_controls_e2_taskval/full_005000/`、`full_025000/`。两点使用完全相同的状态和噪声；late tap 的 formation 相对两随机方向平均，前 10 个部署动作 RMS 差为 5k **+0.002610**、25k **+0.004317**，但 5k 的 8/8 演示已有正差，25k 的 Object 7 为负、Spatial 9 正差只来自一个演示。效果主要在 gripper 分量，且 25k 一个随机方向已接近候选；目前不支持“后来才开始使用该物理特征”。完整逐任务口径和后续停止边界见[实验设计 §0.12](docs/superpowers/specs/2026-09-10-predictive-interaction-state-experiment-design.md)。
 
 ## 研究问题与测量边界
 
