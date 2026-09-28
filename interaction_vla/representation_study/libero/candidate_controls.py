@@ -155,8 +155,9 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
             edit = replace(edit, center=torch.tensor(centers[edit.tap]))
             edits[f"{edit.tap}:{candidate}"] = edit
     spec = json.loads(mask_spec.read_text()) if mask_spec else None
-    if {e.tap for e in edits.values()} != {"expert_middle", "expert_late"} or len(edits) != 8:
-        raise ValueError("requires exactly one candidate artifact per middle/late tap")
+    taps = {e.tap for e in edits.values()}
+    if not taps or len(taps) != len(candidates) or len(edits) != len(taps) * (1 + len(control_ids)):
+        raise ValueError("requires one candidate artifact per tap and all requested controls")
     mask_cases = []
     if spec:
         if not spec.get("annotation_source") or spec.get("reference_binding_sha256") != manifest["binding_sha256"]:
@@ -208,7 +209,7 @@ def run(bank, dataset_root, checkpoint, contract, metadata, train_trace, referen
                 if edit:
                     tap = edit.tap
                     metrics["fixed_hidden_delta_rms_by_stage"] = np.sqrt(np.mean(np.square(fixed[tap]-fixed_noop[tap],dtype=float),axis=(2,3)))
-                for tap in ("expert_middle", "expert_late"):
+                for tap in sorted(taps):
                     target = next(e for e in edits.values() if e.tap == tap and e is not edit)
                     delta = fixed[tap] - (fixed_noop[tap] if edit is not None else baseline[tap])
                     metrics[f"{tap}_projection_delta_by_stage"] = np.einsum("nstd,d->ns",delta,target.coefficient_direction.numpy()) / delta.shape[2]
