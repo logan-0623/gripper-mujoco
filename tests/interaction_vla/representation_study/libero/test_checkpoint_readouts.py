@@ -90,9 +90,10 @@ def test_full_report_and_contract_failures(tmp_path, monkeypatch):
     assert len(result["conditional_readouts"]) == 8
     assert (tmp_path / "output/report.json").is_file()
     reduced = cr.run(tmp_path, checkpoints, tmp_path / "reduced", conditional_controls=True,
-                     conditional_pca_dim=2)
+                     conditional_pca_dim=2, episode_loo=True, episode_loo_stage=1)
     assert reduced["conditional_pca_dim"] == 2
     assert len(reduced["conditional_readouts"]) == 8
+    assert len(reduced["episode_leave_one_out"]["rows"]) == 32
     with pytest.raises(FileExistsError):
         cr.run(tmp_path, checkpoints, tmp_path / "output")
     corrupt["image_binding"] = "changed"

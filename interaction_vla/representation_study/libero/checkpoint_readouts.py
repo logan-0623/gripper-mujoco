@@ -152,8 +152,78 @@ def conditional_probe_matrix(features, controls, train_y, validation_y,
     return result
 
 
+def episode_leave_one_out(pooled, records, alpha, pca_dim, stage=9):
+    """Development-only episode stability; every fold fits PCA and readouts afresh."""
+    names = list(pooled)
+    episodes = sorted({episode(row) for row in records})
+    if any(sum(key[:2] == task for key in episodes) < 2
+           for task in {key[:2] for key in episodes}):
+        raise ValueError("episode leave-one-out needs at least two episodes per task")
+    y = targets(records)["stable_grasp"]
+    basic = np.column_stack(([row.frame_index for row in records],
+                             np.asarray([row.observation.robot_state for row in records], dtype=float))).astype(float)
+    privileged = np.column_stack((basic,
+                                  [row.labels.geometry.gripper_target_distance if row.labels.geometry else np.nan
+                                   for row in records],
+                                  [row.observation.action[6] for row in records]))
+    if not np.isfinite(privileged).all():
+        raise ValueError("non-finite observed or privileged diagnostic controls")
+    rows = []
+    for held in episodes:
+        valid = np.asarray([episode(row) == held for row in records])
+        train = ~valid
+        joined = np.concatenate([pooled[name]["train"]["expert_late"][train, stage]
+                                 for name in names])
+        if pca_dim >= min(joined.shape):
+            raise ValueError("episode-fold PCA dimension exceeds training matrix rank")
+        pca = PCA(n_components=pca_dim, svd_solver="randomized", random_state=0).fit(joined)
+        tr, va = [row for row, keep in zip(records, train) if keep], [row for row, keep in zip(records, valid) if keep]
+        for context, controls in (("observed", basic), ("privileged_geometry_demo_gripper", privileged)):
+            control_pair = (controls[train], controls[valid])
+            baseline = probe_matrix({context: control_pair}, y[train], y[valid], tr, va, alpha)
+            if baseline["status"] != "complete":
+                raise ValueError(f"episode fold has no estimable baseline: {held}")
+            for name in names:
+                values = pooled[name]["train"]["expert_late"][:, stage]
+                features = {name: (pca.transform(values[train]), pca.transform(values[valid]))}
+                result = conditional_probe_matrix(features, control_pair, y[train], y[valid],
+                                                  tr, va, alpha, baseline["rows"])
+                if result["status"] != "complete":
+                    raise ValueError(f"episode fold has no estimable target: {held}")
+                macro = next(row for row in result["rows"] if row["task"] == "macro")
+                rows.append({"checkpoint": name, "context": context,
+                             "task": list(held[:2]), "source_episode": held[2],
+                             "states": int(valid.sum()), "finite_labels": int(np.isfinite(y[valid]).sum()),
+                             "positive_labels": int(np.nansum(y[valid])),
+                             "gain_over_context": macro["incremental_mse_gain"],
+                             "gain_over_shuffled": macro["incremental_over_shuffled_mse_gain"],
+                             "context_mse": macro["observed_state_mse"], "augmented_mse": macro["mse"]})
+        print(f"Complete held episode {held}", flush=True)
+    summary = []
+    for name in names:
+        for context in ("observed", "privileged_geometry_demo_gripper"):
+            subset = [row for row in rows if row["checkpoint"] == name and row["context"] == context]
+            per_task = {}
+            for task in sorted({tuple(row["task"]) for row in subset}):
+                selected = [row for row in subset if tuple(row["task"]) == task]
+                per_task[str(task[1])] = {key: float(np.mean([row[key] for row in selected]))
+                                          for key in ("gain_over_context", "gain_over_shuffled")}
+            summary.append({"checkpoint": name, "context": context,
+                            "episodes": len(subset), "positive_episodes": sum(row["gain_over_context"] > 0 for row in subset),
+                            "task_macro_gain_over_context": float(np.mean([v["gain_over_context"] for v in per_task.values()])),
+                            "task_macro_gain_over_shuffled": float(np.mean([v["gain_over_shuffled"] for v in per_task.values()])),
+                            "by_task": per_task})
+    return {"role": "development; out-of-fold on originally training episodes, not independent confirmation",
+            "target": "stable_grasp", "tap": "expert_late", "stage": stage,
+            "pca_dim": pca_dim, "pca_fit": "all checkpoint train rows excluding held episode in each fold",
+            "contexts": {"observed": "frame index + robot state",
+                         "privileged_geometry_demo_gripper": "observed + simulator gripper-target distance + current demonstrated gripper action; diagnostic only"},
+            "rows": rows, "summary": summary}
+
+
 def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=False,
-        conditional_controls=False, conditional_pca_dim=None):
+        conditional_controls=False, conditional_pca_dim=None, episode_loo=False,
+        episode_loo_stage=9):
     if output.exists():
         raise FileExistsError(f"refusing to overwrite: {output}")
     if len(checkpoints) < 2 or len({c[0] for c in checkpoints}) != len(checkpoints):
@@ -162,6 +232,8 @@ def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=Fals
         raise ValueError("alpha must be finite and positive")
     if conditional_pca_dim is not None and (not conditional_controls or conditional_pca_dim < 1):
         raise ValueError("conditional PCA requires positive dimension and conditional controls")
+    if episode_loo and conditional_pca_dim is None:
+        raise ValueError("episode leave-one-out requires train-only conditional PCA")
     records, manifest, _, split = load_state_bank(bank)
     if not manifest.get("audit_passed"):
         raise ValueError("StateBank audit has not passed")
@@ -293,6 +365,11 @@ def run(bank, checkpoints, output, *, alpha=10.0, transfer_moment_alignment=Fals
               "conditional_controls": "observed frame index + robot state; no task one-hot" if conditional_controls else None,
               "conditional_pca_dim": conditional_pca_dim,
               "conditional_pca_fit": "shared PCA over all checkpoint train rows per tap/stage; validation excluded" if conditional_pca_dim else None}
+    if episode_loo:
+        if not 0 <= episode_loo_stage < pooled[names[0]]["train"]["expert_late"].shape[1]:
+            raise ValueError("episode leave-one-out stage is outside the flow trace")
+        report["episode_leave_one_out"] = episode_leave_one_out(
+            pooled, selected["train"], alpha, conditional_pca_dim, stage=episode_loo_stage)
     if conditional_controls:
         report["conditional_capacity_control"] = "same-width feature rows shuffled independently within train and validation; seed 20260927"
     write_json_atomic(output / "report.json", report)
@@ -308,12 +385,15 @@ def main():
     parser.add_argument("--transfer-moment-alignment", action="store_true")
     parser.add_argument("--conditional-controls", action="store_true")
     parser.add_argument("--conditional-pca-dim", type=int)
+    parser.add_argument("--episode-loo", action="store_true")
+    parser.add_argument("--episode-loo-stage", type=int, default=9)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     run(args.bank, args.checkpoint, args.output, alpha=args.alpha,
         transfer_moment_alignment=args.transfer_moment_alignment,
         conditional_controls=args.conditional_controls,
-        conditional_pca_dim=args.conditional_pca_dim)
+        conditional_pca_dim=args.conditional_pca_dim, episode_loo=args.episode_loo,
+        episode_loo_stage=args.episode_loo_stage)
 
 
 if __name__ == "__main__":
