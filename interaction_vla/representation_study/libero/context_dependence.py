@@ -123,11 +123,30 @@ def run(effects, bank, output, *, seed=20260929, bootstrap_samples=10000,
     if max_states is not None:
         if max_states < 4 or max_states > len(state_ids):
             raise ValueError("invalid max_states")
-        state_ids = state_ids[:max_states]
     records, manifest, _, _ = load_state_bank(bank)
     by_id = {record.state_id: record for record in records}
     if any(state_id not in by_id for state_id in state_ids):
         raise ValueError("effects contain a state outside the StateBank")
+    if max_states is not None:
+        # Smoke selection is only an engineering check: seed it with one
+        # contact/non-contact pair per task when the prefix is unbalanced.
+        ordered = [by_id[state_id] for state_id in state_ids]
+        chosen = []
+        tasks = sorted({(row.suite, row.task_id) for row in ordered})
+        for task in tasks:
+            contact = next((row for row in ordered
+                            if (row.suite, row.task_id) == task
+                            and _finite_context(row)
+                            and row.labels.contact.gripper_target), None)
+            reference = next((row for row in ordered
+                              if (row.suite, row.task_id) == task
+                              and _finite_context(row)
+                              and not row.labels.contact.gripper_target), None)
+            for row in (contact, reference):
+                if row is not None and row.state_id not in chosen:
+                    chosen.append(row.state_id)
+        chosen.extend(row.state_id for row in ordered if row.state_id not in chosen)
+        state_ids = chosen[:max_states]
     selected, pairs, matching = _match(records, state_ids)
     with np.load(effects_path, allow_pickle=False) as arrays:
         random_keys = sorted(key for key in arrays.files
