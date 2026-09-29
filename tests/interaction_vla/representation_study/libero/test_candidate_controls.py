@@ -106,3 +106,35 @@ def test_phase_pilot_freezes_six_runs_and_checks_actual_state(tmp_path, monkeypa
     assert len(calls)==6
     assert sum("--observe-only" in c for c in calls)==2
     assert json.loads((tmp_path/"result/report.json").read_text())["complete"]
+
+
+def test_context_bootstrap_is_task_stratified_and_reports_inconclusive_small_tasks():
+    from interaction_vla.representation_study.libero.context_dependence import _bootstrap
+
+    rows = [
+        {"task": ["suite", 0], "interaction_episode": "a", "difference": 1.0},
+        {"task": ["suite", 0], "interaction_episode": "b", "difference": 1.0},
+        {"task": ["suite", 1], "interaction_episode": "c", "difference": -1.0},
+        {"task": ["suite", 1], "interaction_episode": "d", "difference": -1.0},
+    ]
+    result = _bootstrap(rows, seed=0, samples=200)
+    assert result["observed_task_macro"] == 0.0
+    assert result["decision"] == "inconclusive"
+    assert result["tasks"] == 2
+
+
+def test_context_matching_prefers_same_episode_and_never_uses_effects():
+    from interaction_vla.representation_study.libero.context_dependence import _match
+
+    def row(state_id, frame, episode_id, contact):
+        return NS(state_id=state_id, suite="suite", task_id=0,
+                  source_episode_id=episode_id, frame_index=frame,
+                  observation=NS(robot_state=np.zeros(2)),
+                  labels=NS(contact=NS(gripper_target=contact),
+                             geometry=NS(gripper_target_distance=0.1)))
+
+    records = [row("i", 10, "ep", True), row("r_same", 11, "ep", False),
+               row("r_other", 10, "other", False)]
+    _, pairs, _ = _match(records, ["i", "r_same", "r_other"])
+    assert pairs[0]["reference_state_id"] == "r_same"
+    assert pairs[0]["same_episode"]
