@@ -72,7 +72,7 @@ uv venv --python 3.12.14 .venv-lerobot
 uv pip sync --python .venv-lerobot/bin/python requirements-action-atlas-macos.lock.txt
 ```
 
-合并 lock 包含 `research/action-atlas/` 的 editable 安装，需要先按 [research/README.md](research/README.md) 取得固定版本。Linux/CUDA 环境见 runbook。
+合并 lock 包含 `research/action-atlas/` 的 editable 安装，需要先取得固定版本：`git clone https://github.com/CWRU-AISM/action-atlas.git research/action-atlas && git -C research/action-atlas checkout --detach b8b0db331df18fc30a3fd92c45ec721d35d3ee52`（`run.sh prepare` 会自动执行同样的步骤）。Linux/CUDA 环境见 runbook。
 
 ### 模型与数据（固定版本）
 

@@ -22,7 +22,7 @@ build/
 dist/
 *.egg-info/
 
-# Local virtual environments and secrets
+# Local virtual environments, worktrees, and secrets
 .venv/
 .venv-*/
 .worktrees/
@@ -35,26 +35,21 @@ dist/
 *.tmp
 MUJOCO_LOG.TXT
 
-# Local datasets, external checkouts, and experiment assets
-/research/action-atlas/
-/research/ret/
-/lerobot/
-/demo_data/
-/demo_data_language/
-/omy_pnp/
-/omy_pnp_language/
-/asset/objaverse/plate_11/
-
-# Local checkpoints and experiment tracking
+# Generated datasets, checkpoints, StateBank, caches, and evaluation artifacts.
+# Keep small reproducible summaries in docs/results instead.
+/outputs/
 /ckpt/
 /wandb/
 
-# Generated datasets, checkpoints, caches, and evaluation artifacts.
-# Keep reproducible summaries in docs/results instead of versioning outputs.
-/outputs/
+# External checkouts (Action Atlas, RET) and local research notes.
+# run.sh clones the pinned Action Atlas commit on demand.
+/research/
 
-# Large experiment media belongs in Hugging Face or GitHub Releases. Keep the
-# two small README/demo GIFs versioned under docs/media.
-/docs/media/interaction_chunk_flat_vs_graph.gif
-/docs/media/flat_vs_graph_seed0_crowded.gif
-/docs/media/terminal_recovery_flat_vs_graph_id.gif
+# Downloaded papers, literature-search scratch output, and rendered media
+/paper/
+/output/
+/docs/media/
+
+# Personal reports and slides kept at the repository root
+/*.pdf
+/*_slides.html
