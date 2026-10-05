@@ -187,14 +187,16 @@ def transition_consistency(features, rows, horizon: int, *, minimum: int, pca_di
 def success_series(path: Path | None, tasks: set[tuple[str, int]]):
     if path is None:
         return None
+    # The capability timeline evaluates LIBERO Spatial tasks only.
     rows = json.loads(path.read_text())["rows"]
-    task_ids = {task for _, task in tasks}
     series = {}
     for row in rows:
-        if int(row["task"]) in task_ids:
+        if ("libero_spatial", int(row["task"])) in tasks:
             totals = series.setdefault(int(row["step"]), [0, 0])
             totals[0] += int(row["success"])
             totals[1] += int(row["episodes"])
+    if not series:
+        return {"status": "no_overlap", "reason": "traced tasks do not include the timeline's Spatial tasks"}
     return {str(step): {"success": s, "episodes": n, "rate": s / n} for step, (s, n) in sorted(series.items())}
 
 
