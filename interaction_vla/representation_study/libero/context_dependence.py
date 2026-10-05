@@ -30,7 +30,7 @@ def _features(record):
                        record.labels.geometry.gripper_target_distance], dtype=float)
 
 
-def _match(records, state_ids):
+def _match(records, state_ids, *, same_episode_only=False, max_match_distance=None):
     by_id = {record.state_id: record for record in records}
     selected = [by_id[state_id] for state_id in state_ids]
     usable = [record for record in selected if _finite_context(record)]
@@ -47,11 +47,15 @@ def _match(records, state_ids):
         same_episode = [row for row in references if episode(row) == episode(source)]
         pool = same_episode or [row for row in references
                                 if (row.suite, row.task_id) == (source.suite, source.task_id)]
+        if same_episode_only and not same_episode:
+            continue
         if not pool:
             continue
         source_x = _features(source) / scale
         distances = [float(np.linalg.norm(source_x - _features(row) / scale)) for row in pool]
         index = int(np.argmin(distances))
+        if max_match_distance is not None and distances[index] > max_match_distance:
+            continue
         donor = pool[index]
         pairs.append({"interaction_state_id": source.state_id,
                       "reference_state_id": donor.state_id,
@@ -109,7 +113,7 @@ def _bootstrap(pair_values, seed, samples):
 
 
 def run(effects, bank, output, *, seed=20260929, bootstrap_samples=10000,
-        max_states=None):
+        max_states=None, same_episode_only=False, max_match_distance=None):
     if output.exists():
         raise FileExistsError(output)
     report_path = effects / "report.json"
@@ -147,7 +151,9 @@ def run(effects, bank, output, *, seed=20260929, bootstrap_samples=10000,
                     chosen.append(row.state_id)
         chosen.extend(row.state_id for row in ordered if row.state_id not in chosen)
         state_ids = chosen[:max_states]
-    selected, pairs, matching = _match(records, state_ids)
+    selected, pairs, matching = _match(
+        records, state_ids, same_episode_only=same_episode_only,
+        max_match_distance=max_match_distance)
     with np.load(effects_path, allow_pickle=False) as arrays:
         random_keys = sorted(key for key in arrays.files
                              if key.startswith("expert_late:matched_random_")
@@ -199,6 +205,8 @@ def run(effects, bank, output, *, seed=20260929, bootstrap_samples=10000,
         "states": len(state_ids), "target": "formation_0", "controls": random_keys,
         "context_definition": "interaction = simulator gripper_target contact; reference = contact absent",
         "matching": "same episode when available, otherwise same task; nearest standardized frame_index + robot_state + gripper_target_distance",
+        "matching_options": {"same_episode_only": same_episode_only,
+                             "max_match_distance": max_match_distance},
         "matching_diagnostics": matching, "candidate_selection_uses_context_labels": False,
         "metrics": results, "bootstrap_seed": seed, "bootstrap_unit": "source interaction episode within task",
         "limits": ["development data", "matched references may be reused", "action RMS is not closed-loop utility",
@@ -214,9 +222,13 @@ def main():
     parser.add_argument("--bootstrap-samples", type=int, default=10000)
     parser.add_argument("--seed", type=int, default=20260929)
     parser.add_argument("--max-states", type=int)
+    parser.add_argument("--same-episode-only", action="store_true")
+    parser.add_argument("--max-match-distance", type=float)
     args = parser.parse_args()
     run(args.effects, args.bank, args.output, seed=args.seed,
-        bootstrap_samples=args.bootstrap_samples, max_states=args.max_states)
+        bootstrap_samples=args.bootstrap_samples, max_states=args.max_states,
+        same_episode_only=args.same_episode_only,
+        max_match_distance=args.max_match_distance)
     print(f"ALL_DONE output={args.output}", flush=True)
 
 

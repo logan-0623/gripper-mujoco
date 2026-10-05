@@ -76,6 +76,7 @@ def test_modern_vla_fusion_group_does_not_unfreeze_entire_vlm() -> None:
 def test_dataset_bound_loader_preserves_checkpoint_camera_contract(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    pytest.importorskip("lerobot")
     import lerobot.configs.policies as policy_configs
     import lerobot.datasets.dataset_metadata as dataset_metadata
     import lerobot.policies as policies

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import sys
 import time
+from collections.abc import Callable
 
 import glfw
 import mujoco
@@ -42,6 +43,9 @@ from .train import (
     load_training_checkpoint,
     resolve_training_data,
 )
+from .franka import FRANKA_LIBERO_APPROX_SCENE_PATH, FRANKA_SCENE_PATH
+from .smolvla_mujoco import SmolVLAMuJoCo, observation_batch, smolvla_state
+from .lerobot_bridge.capture import DualViewCapture
 
 
 def _macos_process_name() -> str:
@@ -54,7 +58,16 @@ def _macos_process_name() -> str:
     return "" if value is None else value.decode(errors="replace")
 
 
-def _make_env(config: ExperimentConfig, *, max_steps: int) -> FrankaContactEnv:
+def _make_env(
+    config: ExperimentConfig, *, max_steps: int, scene_preset: str = "custom"
+) -> FrankaContactEnv:
+    if scene_preset not in {"custom", "libero_approx"}:
+        raise ValueError("scene_preset must be custom or libero_approx")
+    physics = config.physics
+    scene_path = None
+    if scene_preset == "libero_approx":
+        physics = replace(physics, translation_delta=0.05, rotation_delta=0.5)
+        scene_path = FRANKA_LIBERO_APPROX_SCENE_PATH
     return FrankaContactEnv(
         max_objects=config.max_objects,
         max_steps=max_steps,
@@ -63,7 +76,8 @@ def _make_env(config: ExperimentConfig, *, max_steps: int) -> FrankaContactEnv:
         workspace_high=config.environment.workspace_high,
         crowded_anchor_min_distance=config.environment.crowded_anchor_min_distance,
         crowded_anchor_max_distance=config.environment.crowded_anchor_max_distance,
-        physics=config.physics,
+        physics=physics,
+        scene_path=scene_path or FRANKA_SCENE_PATH,
     )
 
 
@@ -80,6 +94,13 @@ class PhysicsVisualizationSession:
     policy: ActionPolicy | None = None
     statistics: TrainingStatistics | None = None
     learned_controller: ChunkedPolicyController | None = None
+    smolvla: SmolVLAMuJoCo | None = None
+    smolvla_capture: DualViewCapture | None = None
+    smolvla_task: str | None = None
+    smolvla_action_steps: int = 10
+    smolvla_plan: np.ndarray | None = None
+    smolvla_plan_index: int = 0
+    smolvla_image_provider: Callable[[], tuple[np.ndarray, np.ndarray]] | None = None
     last_chunk_diagnostics: ChunkControllerDiagnostics | None = None
     teleop: TeleopController | None = None
     done: bool = False
@@ -90,6 +111,7 @@ class PhysicsVisualizationSession:
     last_ik_projection_scale: float = 1.0
     last_info: dict[str, object] = field(default_factory=dict)
     executed_actions: list[np.ndarray] = field(default_factory=list)
+    last_tcp_delta: float = 0.0
 
     @classmethod
     def create(
@@ -102,17 +124,30 @@ class PhysicsVisualizationSession:
         layout_mode: str,
         max_steps: int,
         checkpoint: str | Path | None = None,
+        task: str | None = None,
+        policy_device: str = "auto",
+        action_steps: int = 10,
+        scene_preset: str = "libero_approx",
     ) -> "PhysicsVisualizationSession":
-        if controller not in {"expert", "flat", "graph", "teleop"}:
-            raise ValueError("controller must be expert, flat, graph, or teleop")
-        if controller in {"flat", "graph"} and checkpoint is None:
+        if controller not in {"expert", "flat", "graph", "teleop", "smolvla"}:
+            raise ValueError("controller must be expert, flat, graph, teleop, or smolvla")
+        if controller in {"flat", "graph", "smolvla"} and checkpoint is None:
             raise ValueError(f"{controller} controller requires --checkpoint")
+        if controller == "smolvla" and not task:
+            raise ValueError("smolvla controller requires --task")
+        if action_steps < 1:
+            raise ValueError("action_steps must be positive")
         if max_steps < 1:
             raise ValueError("max_steps must be positive")
         config = load_config(config_path)
         if config.backend != "franka_contact":
             raise ValueError("physics visualization requires backend=franka_contact")
-        env = _make_env(config, max_steps=max_steps)
+        effective_scene_preset = (
+            scene_preset if controller == "smolvla" else "custom"
+        )
+        env = _make_env(
+            config, max_steps=max_steps, scene_preset=effective_scene_preset
+        )
         env.reset(seed=seed, object_count=object_count, layout_mode=layout_mode)
         expert = PhysicsScriptedExpert(config.physics) if controller == "expert" else None
         if expert is not None:
@@ -120,11 +155,16 @@ class PhysicsVisualizationSession:
         policy = None
         statistics = None
         learned_controller = None
+        smolvla = None
+        smolvla_capture = None
         builder = SceneGraphBuilder(
             max_objects=config.max_objects,
             feature_schema="physics_v2",
         )
-        if checkpoint is not None:
+        if controller == "smolvla":
+            smolvla = SmolVLAMuJoCo(checkpoint, device=policy_device)
+            smolvla_capture = DualViewCapture(env.model, width=256, height=256)
+        elif checkpoint is not None:
             from .physics_data import expert_gate_provenance
 
             policy, statistics, payload = load_training_checkpoint(checkpoint, "cpu")
@@ -194,6 +234,10 @@ class PhysicsVisualizationSession:
             policy=policy,
             statistics=statistics,
             learned_controller=learned_controller,
+            smolvla=smolvla,
+            smolvla_capture=smolvla_capture,
+            smolvla_task=task,
+            smolvla_action_steps=int(action_steps),
             teleop=TeleopController() if controller == "teleop" else None,
         )
 
@@ -215,6 +259,31 @@ class PhysicsVisualizationSession:
         self.last_chunk_diagnostics = None
         self.last_info = {}
         self.executed_actions.clear()
+        self.last_tcp_delta = 0.0
+        self.smolvla_plan = None
+        self.smolvla_plan_index = 0
+
+    def close(self) -> None:
+        if self.smolvla_capture is not None:
+            self.smolvla_capture.close()
+
+    def edit_task_key(self, key: int, action: int) -> None:
+        if self.smolvla is None or action not in (glfw.PRESS, glfw.REPEAT):
+            return
+        if key == glfw.KEY_BACKSPACE:
+            self.smolvla_task = (self.smolvla_task or "")[:-1]
+            self.smolvla_plan = None
+        elif key == glfw.KEY_ESCAPE:
+            self.smolvla_task = ""
+            self.smolvla_plan = None
+        elif key == glfw.KEY_ENTER:
+            self.smolvla_plan = None
+
+    def append_task_text(self, codepoint: int) -> None:
+        if self.smolvla is None or not 32 <= codepoint <= 126:
+            return
+        self.smolvla_task = (self.smolvla_task or "") + chr(codepoint)
+        self.smolvla_plan = None
 
     def _policy_action(self) -> np.ndarray:
         if self.policy is None or self.statistics is None:
@@ -237,9 +306,35 @@ class PhysicsVisualizationSession:
         action[6] = np.clip(action[6], 0.0, 1.0)
         return action.astype(np.float32)
 
+    def _smolvla_action(self) -> np.ndarray:
+        if self.smolvla is None or not self.smolvla_task:
+            raise RuntimeError("SmolVLA controller is not initialized")
+        if self.smolvla_plan is None or self.smolvla_plan_index >= len(self.smolvla_plan):
+            if self.smolvla_image_provider is not None:
+                image, image2 = self.smolvla_image_provider()
+            else:
+                if self.smolvla_capture is None:
+                    raise RuntimeError("SmolVLA has no image provider")
+                frame = self.smolvla_capture.capture(self.env, include_teacher=False)
+                image, image2 = frame.views["agent"].rgb, frame.views["wrist"].rgb
+            batch = observation_batch(
+                image=image,
+                image2=image2,
+                state=smolvla_state(self.env),
+                task=self.smolvla_task,
+                device=self.smolvla.device,
+            )
+            plan = self.smolvla.action_chunk(batch)
+            self.smolvla_plan = plan[: self.smolvla_action_steps].astype(np.float32)
+            self.smolvla_plan_index = 0
+        action = self.smolvla_plan[self.smolvla_plan_index]
+        self.smolvla_plan_index += 1
+        return action.copy()
+
     def advance(self) -> None:
         if self.done:
             return
+        tcp_before, _ = self.env.controller.tcp_pose()
         snapshot = self.env.snapshot()
         if self.expert is not None:
             action = self.expert.act(
@@ -247,6 +342,8 @@ class PhysicsVisualizationSession:
             )
         elif self.teleop is not None:
             action = self.teleop.action()
+        elif self.smolvla is not None:
+            action = self._smolvla_action()
         elif self.learned_controller is not None:
             action, self.last_chunk_diagnostics = self.learned_controller.act(
                 self.env
@@ -264,6 +361,8 @@ class PhysicsVisualizationSession:
         self.last_action = np.asarray(action, dtype=np.float32).copy()
         self.executed_actions.append(self.last_action.copy())
         transition = self.env.step(self.last_action)
+        tcp_after, _ = self.env.controller.tcp_pose()
+        self.last_tcp_delta = float(np.linalg.norm(tcp_after - tcp_before))
         self.done = transition.done
         self.reason = transition.reason
         self.last_info = dict(transition.info)
@@ -299,7 +398,9 @@ class PhysicsVisualizationSession:
             f"{self.controller_name}/{phase} | step {self.env.step_count} | "
             f"target {self.env.target_name} | L {','.join(sorted(contact.left_objects)) or '-'} "
             f"R {','.join(sorted(contact.right_objects)) or '-'} | stable {stable} | "
-            f"IK {ik_status}{projection_status}{strict_status} | {reason}"
+            f"IK {ik_status}{projection_status}{strict_status} | "
+            f"tcpΔ {self.last_tcp_delta:.4f}m | "
+            f"a [{','.join(f'{v:+.2f}' for v in self.last_action)}] | {reason}"
         )
 
 
@@ -501,6 +602,45 @@ def _render_four_viewports(
             diagnostics,
             context,
         )
+        if name == "agent" and session.smolvla is not None:
+            task = session.smolvla_task or "<empty>"
+            mujoco.mjr_overlay(
+                mujoco.mjtFont.mjFONT_NORMAL,
+                mujoco.mjtGridPos.mjGRID_BOTTOMLEFT,
+                viewports[name],
+                "TASK  (Esc clear · type · Enter confirm)",
+                task[-110:],
+                context,
+            )
+
+
+def _capture_policy_views(
+    session: PhysicsVisualizationSession,
+    *,
+    scenes: dict[str, mujoco.MjvScene],
+    cameras: dict[str, mujoco.MjvCamera],
+    option: mujoco.MjvOption,
+    context: mujoco.MjrContext,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Read policy RGB views from the dashboard's existing GL context."""
+    width = height = 256
+    viewport = mujoco.MjrRect(0, 0, width, height)
+    views: list[np.ndarray] = []
+    for name in ("agent", "wrist"):
+        mujoco.mjv_updateScene(
+            session.env.model,
+            session.env.data,
+            option,
+            None,
+            cameras[name],
+            mujoco.mjtCatBit.mjCAT_ALL,
+            scenes[name],
+        )
+        mujoco.mjr_render(viewport, scenes[name], context)
+        rgb = np.empty((height, width, 3), dtype=np.uint8)
+        mujoco.mjr_readPixels(rgb, None, viewport, context)
+        views.append(np.flipud(rgb).copy())
+    return views[0], views[1]
 
 
 def run_dashboard(
@@ -541,13 +681,33 @@ def run_dashboard(
     frames: list[MultiViewFrame] = []
     if recorder is not None:
         frames.append(recorder.capture(session.env))
-    if session.teleop is not None:
+    if session.teleop is not None or session.smolvla is not None:
+        def handle_key(_window, key, _scancode, action, _mods):
+            if session.teleop is not None:
+                session.teleop.handle_key(key, action)
+            session.edit_task_key(key, action)
+
         glfw.set_key_callback(
             window,
-            lambda _window, key, _scancode, action, _mods: session.teleop.handle_key(
-                key, action
-            ),
+            handle_key,
         )
+    if session.smolvla is not None:
+        glfw.set_char_callback(window, lambda _window, codepoint: session.append_task_text(codepoint))
+    if session.smolvla is not None:
+        session.smolvla_image_provider = lambda: _capture_policy_views(
+            session, scenes=scenes, cameras=cameras, option=option, context=context
+        )
+    # Paint the initial scene before the first (potentially slow) policy call.
+    _render_four_viewports(
+        session,
+        window,
+        scenes=scenes,
+        cameras=cameras,
+        option=option,
+        context=context,
+    )
+    glfw.swap_buffers(window)
+    completion_reported = False
     try:
         while not glfw.window_should_close(window):
             started = time.monotonic()
@@ -573,6 +733,19 @@ def run_dashboard(
             )
             glfw.swap_buffers(window)
             if session.done and session.teleop is None:
+                if session.controller_name == "smolvla":
+                    # Keep the final state visible so a user can inspect it.
+                    if not completion_reported:
+                        print(
+                            f"SmolVLA rollout finished: reason={session.reason.value} "
+                            f"steps={session.env.step_count} "
+                            f"failure={session.last_info.get('physics_failure', '-')}; "
+                            "close the MuJoCo window to exit.",
+                            flush=True,
+                        )
+                        completion_reported = True
+                    time.sleep(0.05)
+                    continue
                 time.sleep(0.75)
                 break
             time.sleep(max(0.0, 1.0 / session.env.physics.policy_hz - (time.monotonic() - started)))
@@ -624,9 +797,25 @@ def run_native(session: PhysicsVisualizationSession) -> None:
 def _common_arguments(parser: argparse.ArgumentParser, *, controller: bool = True) -> None:
     if controller:
         parser.add_argument(
-            "--controller", choices=("expert", "flat", "graph"), required=True
+            "--controller", choices=("expert", "flat", "graph", "smolvla"), required=True
         )
         parser.add_argument("--checkpoint")
+        parser.add_argument("--policy-device", default="auto", choices=("auto", "cpu", "mps", "cuda"))
+        parser.add_argument(
+            "--action-steps", type=int, default=10,
+            help="actions consumed from each predicted chunk; 10 matches the LIBERO evaluation protocol",
+        )
+        parser.add_argument(
+            "--scene-preset",
+            choices=("custom", "libero_approx"),
+            default="libero_approx",
+            help="MuJoCo scene style for SmolVLA; libero_approx is visually/control-scale similar, not official LIBERO",
+        )
+        parser.add_argument(
+            "--task",
+            default="pick up the green object and place it in the receptacle",
+            help="language instruction used by the SmolVLA controller",
+        )
     parser.add_argument("--config", default="configs/physics_smoke_macos.yaml")
     parser.add_argument("--layout", choices=("normal", "crowded"), default="crowded")
     parser.add_argument("--object-count", type=int, default=4)
@@ -682,9 +871,12 @@ def main() -> None:
                 layout_mode=args.layout,
                 max_steps=args.max_steps,
             )
-            output = run_dashboard(session, record=args.record)
-            if output is not None:
-                print(output)
+            try:
+                output = run_dashboard(session, record=args.record)
+                if output is not None:
+                    print(output)
+            finally:
+                session.close()
         elif args.command in {"dashboard", "native"}:
             session = PhysicsVisualizationSession.create(
                 config_path=args.config,
@@ -694,11 +886,18 @@ def main() -> None:
                 object_count=args.object_count,
                 layout_mode=args.layout,
                 max_steps=args.max_steps,
+                task=getattr(args, "task", None),
+                policy_device=getattr(args, "policy_device", "auto"),
+                action_steps=getattr(args, "action_steps", 10),
+                scene_preset=getattr(args, "scene_preset", "libero_approx"),
             )
-            if args.command == "dashboard":
-                run_dashboard(session)
-            else:
-                run_native(session)
+            try:
+                if args.command == "dashboard":
+                    run_dashboard(session)
+                else:
+                    run_native(session)
+            finally:
+                session.close()
         elif args.flat_checkpoint or args.graph_checkpoint:
             if not (args.flat_checkpoint and args.graph_checkpoint):
                 raise ValueError("comparison GIF requires both checkpoint paths")

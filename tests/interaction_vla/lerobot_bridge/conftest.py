@@ -8,6 +8,7 @@ from interaction_vla.lerobot_bridge.dataset_writer import LeRobotEpisodeWriter
 
 @pytest.fixture
 def tiny_lerobot_dataset(tmp_path: Path) -> tuple[Path, str]:
+    pytest.importorskip("lerobot")
     root = tmp_path / "tiny_lerobot"
     repo_id = "local/tiny_lerobot"
     writer = LeRobotEpisodeWriter.create(

@@ -89,7 +89,11 @@ def test_sac_temperature_is_created_on_a_non_cpu_policy_device() -> None:
     critics = OracleTwinQ(state_dim=36, action_dim=7).to(device)
     backend = SAC(actor=actor, critics=critics, config=_config(), gamma=0.99)
 
-    assert backend.log_alpha.device == device
+    # Unindexed requests (mps/cuda) resolve to an indexed device on allocation.
+    policy_device = next(actor.parameters()).device
+    assert policy_device.type == device.type
+    assert backend.log_alpha.device == policy_device
+    assert backend.log_alpha.device == next(critics.parameters()).device
 
 
 def test_sac_actor_pass_can_update_declared_representation() -> None:

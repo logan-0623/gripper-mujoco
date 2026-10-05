@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 
 import mujoco
@@ -19,8 +20,8 @@ from .contact_physics import (
 from .env import EnvStep, LayoutMode, TerminationReason
 from .franka import (
     ARM_JOINT_NAMES,
-    FINGER_JOINT_NAMES,
     FRANKA_SCENE_PATH,
+    FINGER_JOINT_NAMES,
     HOME_QPOS,
     OBJECT_NAMES,
 )
@@ -63,6 +64,7 @@ class FrankaContactEnv:
         crowded_anchor_min_distance: float = 0.055,
         crowded_anchor_max_distance: float = 0.075,
         physics: PhysicsConfig | None = None,
+        scene_path: str | Path = FRANKA_SCENE_PATH,
     ) -> None:
         if not 2 <= max_objects <= len(OBJECT_NAMES):
             raise ValueError(f"max_objects must be between 2 and {len(OBJECT_NAMES)}")
@@ -88,7 +90,7 @@ class FrankaContactEnv:
             raise ValueError("workspace_low must be below workspace_high")
         self.physics = physics or PhysicsConfig()
 
-        self.model = mujoco.MjModel.from_xml_path(str(FRANKA_SCENE_PATH))
+        self.model = mujoco.MjModel.from_xml_path(str(scene_path))
         if not np.isclose(self.model.opt.timestep, self.physics.timestep):
             raise ValueError("physics timestep does not match the compiled Franka scene")
         self.data = mujoco.MjData(self.model)

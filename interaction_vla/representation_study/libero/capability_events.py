@@ -25,6 +25,9 @@ class EpisodeEventTracker:
     requested_initial_state_id: int = -1
     initial_state_count: int = 0
     policy_noise_seed: int | None = None
+    selection_trace: list[dict[str, object]] | None = None
+    initial_qpos: list[float] | None = None
+    language: str = ""
 
     def add(self, frame: PrivilegedFrame) -> None:
         self.frames.append(replace(frame, frame_index=len(self.frames)))
@@ -113,6 +116,24 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool,
         "success": bool(success),
         "executed_actions": tracker.actions,
     }
+    if tracker.selection_trace is not None:
+        def first_object(event: str) -> dict[str, object] | None:
+            for frame in tracker.selection_trace:
+                names = sorted(name for name, value in frame["objects"].items() if value[event])
+                if names:
+                    return {"step": frame["step"], "objects": names,
+                            "target_first": (names[0] == frame["target"])
+                            if len(names) == 1 else None}
+            return None
+
+        result.update(
+            target=tracker.selection_trace[0]["target"],
+            language=tracker.language,
+            first_approach=first_object("approach"),
+            first_contact=first_object("contact"),
+            initial_qpos=tracker.initial_qpos,
+            selection_trace=tracker.selection_trace,
+        )
     if record_frame_trace:
         result["frame_trace"] = [
             {"step": frame.frame_index,
@@ -130,6 +151,25 @@ def _summarize(tracker: EpisodeEventTracker, labels, *, success: bool,
     return result
 
 
+def _selection_frame(adapter: LiberoOffscreenSimulator, step: int,
+                     approach_distance_m: float) -> dict[str, object]:
+    fingers = frozenset().union(*adapter._finger_groups().values())
+    pairs = adapter.contacts()
+    objects = {}
+    for name in (adapter.semantics.target, *adapter.semantics.distractors):
+        geoms = adapter._entity_geoms(name)
+        if not geoms:
+            raise ValueError(f"no collision geoms for LIBERO object {name}")
+        distance = adapter._surface_distance(fingers, geoms)
+        objects[name] = {
+            "distance_m": distance,
+            "approach": distance <= approach_distance_m,
+            "contact": any((a in fingers and b in geoms) or
+                           (b in fingers and a in geoms) for a, b in pairs),
+        }
+    return {"step": step, "target": adapter.semantics.target, "objects": objects}
+
+
 def install_libero_event_recorder(
     *,
     output: Path,
@@ -141,6 +181,8 @@ def install_libero_event_recorder(
     phase_controller=None,
     policy_noise_seed_base: int | None = None,
     record_frame_trace: bool = False,
+    record_object_selection: bool = False,
+    approach_distance_m: float = 0.03,
 ) -> None:
     from lerobot.envs.libero import LiberoEnv
 
@@ -150,6 +192,8 @@ def install_libero_event_recorder(
         raise ValueError("initial_state_count must be positive")
     if policy_noise_seed_base is not None and policy_noise_seed_base < 0:
         raise ValueError("policy_noise_seed_base must be non-negative")
+    if approach_distance_m <= 0:
+        raise ValueError("approach_distance_m must be positive")
     rows: list[dict[str, object]] = []
     monitors: dict[int, tuple[LiberoOffscreenSimulator, EpisodeEventTracker, bool]] = {}
     original_reset, original_step, original_close = LiberoEnv.reset, LiberoEnv.step, LiberoEnv.close
@@ -167,6 +211,8 @@ def install_libero_event_recorder(
                 "thresholds": thresholds.__dict__,
                 "drop_height_m": drop_height_m,
                 "record_frame_trace": record_frame_trace,
+                "record_object_selection": record_object_selection,
+                "approach_distance_m": approach_distance_m if record_object_selection else None,
                 "policy_noise_seed_base": policy_noise_seed_base,
                 "episodes": rows,
             },
@@ -225,8 +271,12 @@ def install_libero_event_recorder(
             thresholds=thresholds,
             drop_height_m=drop_height_m,
             frames=[],
+            language=str(env.task_description),
         )
         tracker.add(adapter._privileged_frame())
+        if record_object_selection:
+            tracker.initial_qpos = np.asarray(adapter.sim.data.qpos, dtype=float).tolist()
+            tracker.selection_trace = [_selection_frame(adapter, 0, approach_distance_m)]
         if phase_controller is not None:
             if any(not item[2] for key, item in monitors.items() if key != id(env)):
                 raise ValueError("phase editing requires one synchronous environment")
@@ -240,6 +290,10 @@ def install_libero_event_recorder(
         adapter, tracker, finished = monitors[id(env)]
         adapter._observation = adapter.domain._get_observations()
         tracker.add(adapter._privileged_frame())
+        if tracker.selection_trace is not None:
+            tracker.selection_trace.append(
+                _selection_frame(adapter, len(tracker.frames) - 1, approach_distance_m)
+            )
         if phase_controller is not None:
             phase_controller.update(tracker.frames[-1])
         success = bool(result[4].get("is_success", False))
@@ -268,6 +322,8 @@ def main(*, phase_controller=None) -> None:
     parser.add_argument("--rendered-episodes", type=int, default=0)
     parser.add_argument("--policy-noise-seed-base", type=int)
     parser.add_argument("--record-frame-trace", action="store_true")
+    parser.add_argument("--record-object-selection", action="store_true")
+    parser.add_argument("--approach-distance-m", type=float, default=0.03)
     args, forwarded = parser.parse_known_args()
     if forwarded[:1] == ["--"]:
         forwarded = forwarded[1:]
@@ -284,6 +340,8 @@ def main(*, phase_controller=None) -> None:
         phase_controller=phase_controller,
         policy_noise_seed_base=args.policy_noise_seed_base,
         record_frame_trace=args.record_frame_trace,
+        record_object_selection=args.record_object_selection,
+        approach_distance_m=args.approach_distance_m,
     )
     import lerobot.scripts.lerobot_eval as lerobot_eval
 
