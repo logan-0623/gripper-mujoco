@@ -1,0 +1,245 @@
+{
+  "demonstration_file": "/root/gripper-mujoco/data/libero/raw/libero_spatial/pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate_demo.hdf5",
+  "points": [
+    {
+      "initial_state_id": 0,
+      "demo": "demo_0",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 1,
+      "demo": "demo_0",
+      "frame": 20,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 2,
+      "demo": "demo_0",
+      "frame": 41,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 3,
+      "demo": "demo_0",
+      "frame": 61,
+      "fraction": 0.6
+    },
+    {
+      "initial_state_id": 4,
+      "demo": "demo_1",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 5,
+      "demo": "demo_1",
+      "frame": 24,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 6,
+      "demo": "demo_1",
+      "frame": 49,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 7,
+      "demo": "demo_1",
+      "frame": 73,
+      "fraction": 0.6
+    },
+    {
+      "initial_state_id": 8,
+      "demo": "demo_2",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 9,
+      "demo": "demo_2",
+      "frame": 24,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 10,
+      "demo": "demo_2",
+      "frame": 48,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 11,
+      "demo": "demo_2",
+      "frame": 73,
+      "fraction": 0.6
+    },
+    {
+      "initial_state_id": 12,
+      "demo": "demo_3",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 13,
+      "demo": "demo_3",
+      "frame": 20,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 14,
+      "demo": "demo_3",
+      "frame": 40,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 15,
+      "demo": "demo_3",
+      "frame": 61,
+      "fraction": 0.6
+    },
+    {
+      "initial_state_id": 16,
+      "demo": "demo_4",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 17,
+      "demo": "demo_4",
+      "frame": 22,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 18,
+      "demo": "demo_4",
+      "frame": 44,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 19,
+      "demo": "demo_4",
+      "frame": 66,
+      "fraction": 0.6
+    },
+    {
+      "initial_state_id": 20,
+      "demo": "demo_5",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 21,
+      "demo": "demo_5",
+      "frame": 22,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 22,
+      "demo": "demo_5",
+      "frame": 44,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 23,
+      "demo": "demo_5",
+      "frame": 66,
+      "fraction": 0.6
+    },
+    {
+      "initial_state_id": 24,
+      "demo": "demo_6",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 25,
+      "demo": "demo_6",
+      "frame": 22,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 26,
+      "demo": "demo_6",
+      "frame": 43,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 27,
+      "demo": "demo_6",
+      "frame": 65,
+      "fraction": 0.6
+    },
+    {
+      "initial_state_id": 28,
+      "demo": "demo_7",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 29,
+      "demo": "demo_7",
+      "frame": 24,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 30,
+      "demo": "demo_7",
+      "frame": 49,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 31,
+      "demo": "demo_7",
+      "frame": 73,
+      "fraction": 0.6
+    },
+    {
+      "initial_state_id": 32,
+      "demo": "demo_8",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 33,
+      "demo": "demo_8",
+      "frame": 22,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 34,
+      "demo": "demo_8",
+      "frame": 44,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 35,
+      "demo": "demo_8",
+      "frame": 66,
+      "fraction": 0.6
+    },
+    {
+      "initial_state_id": 36,
+      "demo": "demo_9",
+      "frame": 0,
+      "fraction": 0.0
+    },
+    {
+      "initial_state_id": 37,
+      "demo": "demo_9",
+      "frame": 22,
+      "fraction": 0.2
+    },
+    {
+      "initial_state_id": 38,
+      "demo": "demo_9",
+      "frame": 44,
+      "fraction": 0.4
+    },
+    {
+      "initial_state_id": 39,
+      "demo": "demo_9",
+      "frame": 65,
+      "fraction": 0.6
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/010000/pretrained_model",
+  "tasks": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "demos_per_task": 10,
+  "fractions": [
+    0.0,
+    0.2,
+    0.4,
+    0.6
+  ],
+  "raw_root": "/root/gripper-mujoco/data/libero/raw",
+  "seed_base": 2057736129,
+  "n_action_steps": 10,
+  "denoising_steps": 10,
+  "restore": "benchmark reset, then set_init_state(demo)"
+}
