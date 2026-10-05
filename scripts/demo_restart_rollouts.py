@@ -83,8 +83,6 @@ def _run_task(args: argparse.Namespace) -> None:
 
     capability_events.install_libero_event_recorder = install
     forwarded = list(_evaluation_command(args.checkpoint, args.task[0], args.output, 0, len(points)))
-    task_arg = forwarded.index(f"--env.task_ids=[{args.task[0]}]")
-    forwarded[task_arg:task_arg + 1] = ["--env.task_ids", str(args.task[0])]
     separator = forwarded.index("--")
     forwarded[separator:separator] = ["--policy-noise-seed-base", "2057736129"]
     sys.argv = [sys.argv[0], *forwarded[5:]]
