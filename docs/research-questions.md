@@ -186,3 +186,53 @@
 - [Sudden Drops in the Loss](https://arxiv.org/abs/2309.07311)（Chen et al., ICLR 2024）：内部结构突然形成，随后能力出现；在训练中干预该结构会改变能力的出现。
 - [Analyzing the Generalization and Reliability of Steering Vectors](https://arxiv.org/abs/2407.12404)（Tan et al.）：steering 效果在不同输入之间差异很大，有时方向相反。
 - [LEACE](https://arxiv.org/abs/2306.03819)（Belrose et al., 2023）与 [Mean Projection / LEACE for amnesic probing](https://arxiv.org/abs/2506.11673)（Dobrzeniecka et al., 2025）：正确的概念擦除方法。
+
+**第二批（用户补充，2026-10-05 精读）**
+- [Emergent World Representations in OpenVLA](https://arxiv.org/html/2509.24559)（2025-09）：从 OpenVLA 中层激活可以线性读出未来状态变化 Δe(t→t+K)，表现优于直接用嵌入的基线；预训练数据越多样越明显，仅做微调时较弱。**启发：** 用未来状态变化作为探针目标，它不是输入变量。
+- [SAEs reveal interpretable and steerable features in VLA models](https://arxiv.org/html/2603.19183)（2026-03，π₀.₅ / OpenVLA）：按跨 episode 覆盖度等指标把 SAE 特征分成"通用"和"记忆"两类。消融 4 个最通用的特征，成功率降到 0/40；消融记忆特征几乎无影响（92.5%）。
+- [VLA-Trace](https://arxiv.org/html/2605.30117)（2026）：用 CKA 追踪"VLM 预训练 → VLA 预训练 → 任务微调"三个阶段的表示漂移，并用注意力敲除定位控制通路。**与我们的 CKA 和训练动态部分直接重叠**，我们的区别必须落在同一谱系的细粒度 checkpoint、flow stage 和闭环判决上。
+- Action Atlas（2603.19233）补充细节：
+  - 对 token 做平均池化后的 SAE 重建质量很高，但用它替换原激活会让 π₀.₅ 的成功率从 96% 跌到 8%。必须逐 token 处理。
+  - SmolVLA、π₀.₅、GR00T 都表现出分工：expert 编码运动基元，VLM 编码目标语义。
+  - 跨任务注入激活会把机器人引向源任务的绝对坐标。
+- Observing and Controlling（2603.05487，Stanford/NVIDIA）：用线性 observer 读出特征，再用闭式最小范数加性控制把读数推进目标区间。π₀.₅ 把手抓取比例 14% → 74%，推理开销约 1%。注意它**不作用于扩散或 flow 头**。
+- Decoding Task Progress（2608.13474）补充：在第 0 层沿探针方向注入后，**后续各层读出的进度没有改变**，信号被下游覆盖。
+- Mechanistic steering（2509.00328）：VLA 微调中只有不到 25% 的 FFN 神经元被改写，语义结构基本保留。
+
+**"重建"相关**
+- [Lost in Reconstruction / SALT](https://arxiv.org/html/2608.10484v1)（CMU，2026-08）：只用重建损失训练的动作 tokenizer 会侵蚀动词语义（动词与动作 token 的互信息随压缩率升高而下降）。加入"用冻结 LM 从动作潜变量生成指令"的辅助目标后，SimplerEnv 成功率 42.7% → 71.9%。
+- [LaMP](https://arxiv.org/html/2603.25399)（2026-06）：增加一个 motion expert，用 flow matching 生成 3D 场景流；action expert 以**只走了一步去噪**的运动隐藏状态为条件。LIBERO 98.3%，LIBERO-Plus OOD 79.3%。
+- [ALAM](https://arxiv.org/html/2605.10819)（2026-05）：从无动作标签的视频中学习潜在动作（帧重建），加上组合一致性和可逆一致性两个约束。MetaWorld 上 π₀ 从 47.9% 提升到 85.0%；探针显示可加性误差和可逆性误差降低 25–85 倍。
+
+## 从第二批论文得到的修正
+
+1. **逐 token 处理，不再做平均池化。** 我们所有探针和干预都在 50 个动作 token 上取了平均。Action Atlas 已经证明这会丢失动作所需的信息。
+2. **干预后要检查下游是否接住了信号。** 在 flow trace 里测：注入后，下游层和后续 stage 的读出是否随之改变。
+3. **用"目标区间 + 最小范数"的控制取代固定剂量。** 这是 Buurmeijer et al. 的做法，并且每次推理都施加。Q0c 应以此为主要方法。
+4. **SAE 或重建的质量要用"替换回原模型后的闭环成功率"来评估，不能看 MSE。** Action Atlas 与 SALT 给出了同样的教训：重建好不代表功能保留。
+5. **探针目标改为非输入变量。** 按 OpenVLA 世界表示一文的做法，用未来状态变化 Δ(t→t+K)，以及物体相对位姿的变化。
+
+## Q6（新增）：重建与结构约束是诊断工具，还是加速训练的手段？
+
+可以从两个方向借鉴"重建"：
+
+### Q6a：诊断，测一个不会饱和的结构量
+- **对象：** 各 checkpoint 隐藏状态的时间代数结构。
+- **ALAM 式指标：**
+  - 可加性：Δh(t→t+2) 是否约等于 Δh(t→t+1) + Δh(t+1→t+2)。
+  - 可逆性：正向与反向转移是否互为相反。
+- **SALT 式指标：** 能否从 expert 隐藏状态解码指令中的动词。
+- **两种世界：**
+  - 这些结构量在 5k→15k 期间随能力上升而变好。这就是"知道"之外的"组织方式在变"，可以和 Q0a 的脆弱度互相印证。
+  - 结构量不变，或者动词可解码性随训练下降，后者对应 SALT 说的语义侵蚀。
+- **判据：** 结构量与逐任务成功率的相关性，显著高于线性探针准确率与成功率的相关性（看 episode 级 CI）。
+
+### Q6b：干预训练，辅助重建目标能否加速能力形成
+- **做法：** 在相同步数下比较三组：
+  1. 原配方。
+  2. 加 LaMP 式的未来场景流辅助预测。
+  3. 加 ALAM 式的潜在动作一致性约束。
+- **主指标：** 达到 80% 成功率所需步数，以及 Q3 的吸引域宽度。
+- **判据：** 若第 2 或第 3 组节省 ≥30% 的步数，说明"缺少关于未来的结构"是能力形成的瓶颈。这正好对应你最初关心的"结构化输入、特征提取"方向，并且能用 Q6a 的诊断量解释为什么有效。
+- **成本：** 需要训练，放在 Q0–Q2 之后。
+

@@ -6,7 +6,7 @@
 
 | 项目 | 实际做法 | 问题 |
 |---|---|---|
-| 特征 | action expert 的 `expert_middle` / `expert_late` 层激活，**在 50 个动作 token 和 3 次噪声上取平均**，每个 flow stage 单独测 | 不含 VLM 侧。取平均会抹掉 token 间的时序信息 |
+| 特征 | action expert 的 `expert_middle` / `expert_late` 层激活，**在 50 个动作 token 和 3 次噪声上取平均**，每个 flow stage 单独测 | 不含 VLM 侧。取平均会抹掉 token 间的时序信息。Action Atlas（2603.19233）发现，对 token 平均池化后的 SAE 替换回模型，π₀.₅ 成功率从 96% 跌到 8% |
 | 报告的 stage | stage 9，即最后一次去噪调用 | 此时 x_t 已接近策略自己的最终动作，而夹爪开合命令与 Contact 高度相关。可读性可能来自"模型自己的动作计划"，不是感知 |
 | 状态 | StateBank 中的**演示状态**，不是策略自己 rollout 中的状态 | 5k 模型在自己的状态分布上会犯错，这里测不到 |
 | 读出器 | Ridge，α=10 固定，不调参。对二值标签直接做 MSE 回归 | — |
