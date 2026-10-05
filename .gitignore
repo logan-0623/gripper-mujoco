@@ -41,6 +41,10 @@ MUJOCO_LOG.TXT
 /ckpt/
 /wandb/
 
+# Raw LIBERO HDF5 and vendored third-party code kept on the server
+/data/
+/third_party/
+
 # External checkouts (Action Atlas, RET) and local research notes.
 # run.sh clones the pinned Action Atlas commit on demand.
 /research/
