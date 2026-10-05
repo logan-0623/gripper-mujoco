@@ -1,7 +1,7 @@
 """Q2 step 2: restart the policy from demonstration states partway through a task.
 
 For each LIBERO Spatial task, simulator states are taken from the original
-demonstrations at fixed fractions of their length (0, 0.25, 0.5, 0.75). The
+demonstrations at fixed fractions of their length (0, 0.2, 0.4, 0.6). The
 benchmark reset runs as usual, then the simulator is set to the demonstration
 state and the policy runs freely under the native evaluation contract (same
 command, seed base, action chunking and step budget as the capability
@@ -12,7 +12,9 @@ a per-step deficit keeps the gap even from late restarts.
 The restart hook sits underneath the physical-event recorder, so recorded
 events begin at the restored state. No settling steps are taken after the
 restore: the default LeRobot wait action opens the gripper and would drop a
-held object.
+held object. Restarts whose demonstration state already satisfies the task goal
+are recorded and excluded from the summary, since every checkpoint would
+"succeed" there in one step.
 """
 from __future__ import annotations
 
@@ -32,7 +34,7 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 from interaction_vla.representation_study.libero.acquisition import _evaluation_command
 
-FRACTIONS = (0.0, 0.25, 0.5, 0.75)
+FRACTIONS = (0.0, 0.2, 0.4, 0.6)
 
 
 def _write(path: Path, value: object) -> None:
@@ -68,6 +70,7 @@ def _run_task(args: argparse.Namespace) -> None:
         "points": [{"initial_state_id": i, "demo": key, "frame": frame, "fraction": fraction}
                    for i, (key, frame, fraction, _) in enumerate(points)]})
     original_install = capability_events.install_libero_event_recorder
+    already_done: dict[int, bool] = {}
 
     def install(**kwargs):
         real_reset = LiberoEnv.reset
@@ -76,6 +79,8 @@ def _run_task(args: argparse.Namespace) -> None:
             index = int(env.init_state_id)  # set by the recorder before it calls this reset
             real_reset(env, *call_args, **call_kwargs)
             raw_obs = env._env.set_init_state(points[index % len(points)][3])
+            already_done[index % len(points)] = bool(env._env.check_success())
+            _write(args.output / "restore_checks.json", {"goal_satisfied_at_restore": already_done})
             return env._format_raw_obs(raw_obs), {"is_success": False}
 
         LiberoEnv.reset = reset
@@ -95,16 +100,20 @@ def summarize(output: Path, tasks) -> dict:
         root = output / f"task{task}"
         points = json.loads((root / "restart_points.json").read_text())["points"]
         events = json.loads((root / "physical_events.json").read_text())["episodes"]
+        done = json.loads((root / "restore_checks.json").read_text())["goal_satisfied_at_restore"]
         by_id = {p["initial_state_id"]: p for p in points}
         for event in events:
             point = by_id[int(event["initial_state_id"])]
-            rows.append({"task": task, **point, "success": bool(event["success"]),
+            rows.append({"task": task, **point, "goal_satisfied_at_restore": done[str(point["initial_state_id"])],
+                         "success": bool(event["success"]), "steps": int(event["steps"]),
                          "stable_grasp": bool(event["stable_grasp"]),
                          "unintended_drop": bool(event["unintended_drop"])})
     by_fraction = {}
     for fraction in sorted({r["fraction"] for r in rows}):
-        selected = [r for r in rows if r["fraction"] == fraction]
+        selected = [r for r in rows if r["fraction"] == fraction and not r["goal_satisfied_at_restore"]]
         by_fraction[str(fraction)] = {"success": sum(r["success"] for r in selected), "episodes": len(selected),
+                                      "excluded_goal_already_satisfied": sum(
+                                          r["fraction"] == fraction and r["goal_satisfied_at_restore"] for r in rows),
                                       "by_task": {str(t): sum(r["success"] for r in selected if r["task"] == t)
                                                   for t in tasks}}
     summary = {"rows": rows, "by_fraction": by_fraction}

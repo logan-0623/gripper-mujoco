@@ -12,11 +12,14 @@ def test_summary_groups_success_by_restart_fraction(tmp_path):
     root = tmp_path / "task0"
     root.mkdir()
     points = [{"initial_state_id": i, "demo": "demo_0", "frame": f, "fraction": fr}
-              for i, (f, fr) in enumerate([(0, 0.0), (50, 0.5)])]
+              for i, (f, fr) in enumerate([(0, 0.0), (50, 0.5), (90, 0.5)])]
     (root / "restart_points.json").write_text(json.dumps({"points": points}))
     (root / "physical_events.json").write_text(json.dumps({"episodes": [
-        {"initial_state_id": 0, "success": False, "stable_grasp": False, "unintended_drop": False},
-        {"initial_state_id": 1, "success": True, "stable_grasp": True, "unintended_drop": False}]}))
+        {"initial_state_id": 0, "success": False, "stable_grasp": False, "unintended_drop": False, "steps": 280},
+        {"initial_state_id": 1, "success": True, "stable_grasp": True, "unintended_drop": False, "steps": 40},
+        {"initial_state_id": 2, "success": True, "stable_grasp": False, "unintended_drop": False, "steps": 1}]}))
+    (root / "restore_checks.json").write_text(json.dumps({"goal_satisfied_at_restore": {"0": False, "1": False, "2": True}}))
     summary = module.summarize(tmp_path, [0])
     assert summary["by_fraction"]["0.0"]["success"] == 0
-    assert summary["by_fraction"]["0.5"] == {"success": 1, "episodes": 1, "by_task": {"0": 1}}
+    assert summary["by_fraction"]["0.5"] == {"success": 1, "episodes": 1, "excluded_goal_already_satisfied": 1,
+                                             "by_task": {"0": 1}}
