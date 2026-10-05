@@ -40,9 +40,10 @@ def test_linux_requirements_and_readme_expose_the_formal_libero_path() -> None:
     assert "libero" in requirements
     readme = Path("README.md").read_text(encoding="utf-8")
     assert "[SERVER_RUNBOOK.md](SERVER_RUNBOOK.md)" in readme
-    for command in ("discover", "intervene", "report"):
-        assert f"libero features {command}" in readme
+    assert "[docs/research-questions.md](docs/research-questions.md)" in readme
+    assert "[docs/findings.md](docs/findings.md)" in readme
     runbook = Path("SERVER_RUNBOOK.md").read_text(encoding="utf-8")
-    for command in ("state-bank collect", "stages snapshot", "probes run", "longitudinal plan"):
+    for command in ("state-bank collect", "state-bank approve-timelines"):
         assert f"libero {command}" in runbook
-    assert "不要运行新 SFT、closed-loop intervention、PPO 或 SAC" in runbook
+    assert "./run.sh all" in runbook
+    assert "scripts/feedback_branch_pilot.py" in runbook
