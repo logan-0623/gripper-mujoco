@@ -1,6 +1,6 @@
 # Q2 第二步：从演示中途重启，10k 与 25k 的差距在哪一段
 
-运行日期：2026-10-05 至 10-06，代码提交 `73d6cc3`，服务器为 RTX 4080 SUPER。实验脚本是 [demo_restart_rollouts.py](../../../scripts/demo_restart_rollouts.py)。
+运行日期：2026-10-05 至 10-06，代码提交 `a11d658`（服务器 `code_commit.txt` 记录的是历史重写前的等价提交 `73d6cc3`），服务器为 RTX 4080 SUPER。实验脚本是 [demo_restart_rollouts.py](../../../scripts/demo_restart_rollouts.py)。
 
 ## 要回答的问题
 
