@@ -2,7 +2,7 @@
 
 运行日期：2026-10-05。服务器 RTX 4080 SUPER。
 
-- **代码：** 仓库提交 `56c0c30`（Q0b、Q6a），`6aa87ec`（Q2），`2757370`（Q1）。
+- **代码：** 仓库提交 `fd2c607`（Q0b、Q6a），`cacf6ac`（Q2），`4d4d694`（Q1）。
 - **模型：** 同一自训练 SmolVLA 谱系（seed=1000）的 5k、10k、15k、20k、25k 五个 checkpoint，见 [lineage.json](../libero_smolvla_acquisition_timeline/lineage.json)。
 - **数据：** Q0b、Q6a、Q2 都只读取已有的 natural flow trace（`flow_e1_v2_train512_r3`）：
   - 512 个 StateBank 演示状态，来自 48 条独立 episode、14 个任务（Spatial 和 Object 两个套件）。
