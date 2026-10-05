@@ -1,0 +1,15 @@
+{
+  "checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/005000/pretrained_model",
+  "tasks": [
+    0,
+    1
+  ],
+  "initial_state_offset": 0,
+  "episodes_per_task": 10,
+  "open_steps": 8,
+  "n_action_steps": 10,
+  "denoising_steps": 10,
+  "seed": 2057736129,
+  "intervention": "override gripper command to -1 after stable grasp and 2cm lift",
+  "role": "feasibility_pilot"
+}

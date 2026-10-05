@@ -1,0 +1,12 @@
+{
+  "action_checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/005000/pretrained_model",
+  "action_weights_sha256": "06ba6aed14b0fc0c9892072dad2985add32fa4a2702391115516ccfce24ffa03",
+  "hybrid_weights_sha256": "6f2b560563aaf50b8e93f4a453bb5458492444000d1b875f5de175882d737bad",
+  "parameters": {
+    "action": 99849312,
+    "prefix": 350196864
+  },
+  "prefix_checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/025000/pretrained_model",
+  "prefix_weights_sha256": "ba11ea0569591682e09c8d24981280dbfbd9359c0aca4adaba7a1028a6706f8b",
+  "schema": "smolvla_module_transplant_v1"
+}

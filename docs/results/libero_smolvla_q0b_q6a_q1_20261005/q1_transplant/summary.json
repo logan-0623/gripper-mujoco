@@ -1,0 +1,97 @@
+{
+  "arms": {
+    "25k": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/timeline_v2_states0_39/step_025000",
+    "5k": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/timeline_v2_states0_39/step_005000",
+    "vlm25k_expert5k": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/q1_transplant_20261005/eval/vlm25k_expert5k",
+    "vlm5k_expert25k": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/q1_transplant_20261005/eval/vlm5k_expert25k"
+  },
+  "cells": 160,
+  "ci_clusters": "task (4 clusters; wide by design)",
+  "paired_differences": {
+    "5k - 25k": {
+      "ci_high": -0.625,
+      "ci_low": -0.8375,
+      "clusters": 4,
+      "mean": -0.7375,
+      "pairs": 160
+    },
+    "5k - vlm25k_expert5k": {
+      "ci_high": -0.13125,
+      "ci_low": -0.225,
+      "clusters": 4,
+      "mean": -0.16875,
+      "pairs": 160
+    },
+    "5k - vlm5k_expert25k": {
+      "ci_high": 0.0,
+      "ci_low": -0.34375,
+      "clusters": 4,
+      "mean": -0.20625,
+      "pairs": 160
+    },
+    "vlm25k_expert5k - 25k": {
+      "ci_high": -0.4625,
+      "ci_low": -0.69375,
+      "clusters": 4,
+      "mean": -0.56875,
+      "pairs": 160
+    },
+    "vlm5k_expert25k - 25k": {
+      "ci_high": -0.4125,
+      "ci_low": -0.65,
+      "clusters": 4,
+      "mean": -0.53125,
+      "pairs": 160
+    },
+    "vlm5k_expert25k - vlm25k_expert5k": {
+      "ci_high": 0.14375,
+      "ci_low": -0.15625,
+      "clusters": 4,
+      "mean": 0.0375,
+      "pairs": 160
+    }
+  },
+  "schema": "smolvla_module_transplant_v1_report",
+  "success": {
+    "25k": {
+      "by_task": {
+        "0": 30,
+        "1": 37,
+        "2": 35,
+        "3": 36
+      },
+      "episodes": 160,
+      "success": 138
+    },
+    "5k": {
+      "by_task": {
+        "0": 1,
+        "1": 6,
+        "2": 12,
+        "3": 1
+      },
+      "episodes": 160,
+      "success": 20
+    },
+    "vlm25k_expert5k": {
+      "by_task": {
+        "0": 7,
+        "1": 16,
+        "2": 18,
+        "3": 6
+      },
+      "episodes": 160,
+      "success": 47
+    },
+    "vlm5k_expert25k": {
+      "by_task": {
+        "0": 13,
+        "1": 21,
+        "2": 8,
+        "3": 11
+      },
+      "episodes": 160,
+      "success": 53
+    }
+  }
+}

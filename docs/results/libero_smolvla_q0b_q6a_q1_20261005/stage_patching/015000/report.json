@@ -1,0 +1,884 @@
+{
+  "binding_sha256": "a8093049ba7e62764784479bdaf15146933ad2227f7e08b418d72431277c31ca",
+  "curves": {
+    "opposite": {
+      "expert_late": [
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0006183980393965621,
+            "ci_low": -2.2824499994936584e-05,
+            "clusters": 32,
+            "mean": 0.00021904207462242198,
+            "pairs": 64
+          },
+          "stage": 0
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.000604196339811753,
+            "ci_low": -0.00022907383866992403,
+            "clusters": 32,
+            "mean": 0.00014818223549895038,
+            "pairs": 64
+          },
+          "stage": 1
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0006331990833421732,
+            "ci_low": -0.00015757618565977115,
+            "clusters": 32,
+            "mean": 0.00017679878012444306,
+            "pairs": 64
+          },
+          "stage": 2
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0006557522042275633,
+            "ci_low": -7.679687885025925e-05,
+            "clusters": 32,
+            "mean": 0.00021899626288046647,
+            "pairs": 64
+          },
+          "stage": 3
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0005242985916594952,
+            "ci_low": 3.590224706696964e-05,
+            "clusters": 32,
+            "mean": 0.0002252127810429272,
+            "pairs": 64
+          },
+          "stage": 4
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.00024458754616319556,
+            "ci_low": -2.3260012679481977e-05,
+            "clusters": 32,
+            "mean": 0.0001140251645139756,
+            "pairs": 64
+          },
+          "stage": 5
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.00021417349916653524,
+            "ci_low": 5.847506947521141e-05,
+            "clusters": 32,
+            "mean": 0.00013892541038273976,
+            "pairs": 64
+          },
+          "stage": 6
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0001991313442187115,
+            "ci_low": 1.1480126645816808e-05,
+            "clusters": 32,
+            "mean": 0.00012466515468645412,
+            "pairs": 64
+          },
+          "stage": 7
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.00036457525626716413,
+            "ci_low": 8.959889711322848e-05,
+            "clusters": 32,
+            "mean": 0.000246003585960608,
+            "pairs": 64
+          },
+          "stage": 8
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.005019148562833784,
+            "ci_low": 0.003685435948550459,
+            "clusters": 32,
+            "mean": 0.004418686528879334,
+            "pairs": 64
+          },
+          "stage": 9
+        }
+      ],
+      "expert_middle": [
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.00021865913481159766,
+            "ci_low": -0.0002571691505227651,
+            "clusters": 32,
+            "mean": 8.183390011851088e-06,
+            "pairs": 64
+          },
+          "stage": 0
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0003047430568831218,
+            "ci_low": -0.00012240935597993577,
+            "clusters": 32,
+            "mean": 6.37260009668239e-05,
+            "pairs": 64
+          },
+          "stage": 1
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0005794700714963499,
+            "ci_low": -0.0014096142826229264,
+            "clusters": 32,
+            "mean": -0.00022961567074020195,
+            "pairs": 64
+          },
+          "stage": 2
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0007416902505312951,
+            "ci_low": -0.0016154859769668113,
+            "clusters": 32,
+            "mean": -0.00023837373858737188,
+            "pairs": 64
+          },
+          "stage": 3
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0007636644651244185,
+            "ci_low": -0.0016488388264195484,
+            "clusters": 32,
+            "mean": -0.0002457054445645923,
+            "pairs": 64
+          },
+          "stage": 4
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0007541509324556564,
+            "ci_low": -0.0016307501885404248,
+            "clusters": 32,
+            "mean": -0.00023641074941949114,
+            "pairs": 64
+          },
+          "stage": 5
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0006665737031225293,
+            "ci_low": -0.0015441258223664088,
+            "clusters": 32,
+            "mean": -0.000225301186986826,
+            "pairs": 64
+          },
+          "stage": 6
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0005225819296911874,
+            "ci_low": -0.0001918117609177129,
+            "clusters": 32,
+            "mean": 0.00018756579150824848,
+            "pairs": 64
+          },
+          "stage": 7
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0005573123232468197,
+            "ci_low": 0.00031858434966382145,
+            "clusters": 32,
+            "mean": 0.00043157162245321956,
+            "pairs": 64
+          },
+          "stage": 8
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.006226194479089598,
+            "ci_low": 0.004660607029545394,
+            "clusters": 32,
+            "mean": 0.005429103119922729,
+            "pairs": 64
+          },
+          "stage": 9
+        }
+      ],
+      "x_t": [
+        {
+          "flip_rate": {
+            "ci_high": 0.04477611940298507,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.015625,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.05154518735650112,
+            "ci_low": -0.006132410783390947,
+            "clusters": 32,
+            "mean": 0.019020832787617792,
+            "pairs": 64
+          },
+          "stage": 0
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.05747679045092834,
+            "ci_low": 0.004629629629629629,
+            "clusters": 32,
+            "mean": 0.026041666666666664,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.0762679595800434,
+            "ci_low": 0.007184174738708297,
+            "clusters": 32,
+            "mean": 0.03766261573923657,
+            "pairs": 64
+          },
+          "stage": 1
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.12963747645951035,
+            "ci_low": 0.025632911392405065,
+            "clusters": 32,
+            "mean": 0.06770833333333333,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.14092678382623544,
+            "ci_low": 0.04441500567944827,
+            "clusters": 32,
+            "mean": 0.08724538986621155,
+            "pairs": 64
+          },
+          "stage": 2
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.25186868686868674,
+            "ci_low": 0.08333333333333333,
+            "clusters": 32,
+            "mean": 0.16145833333333331,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.26289131258103166,
+            "ci_low": 0.12588765167317312,
+            "clusters": 32,
+            "mean": 0.19072451098554666,
+            "pairs": 64
+          },
+          "stage": 3
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.4731236559139785,
+            "ci_low": 0.2237062404870624,
+            "clusters": 32,
+            "mean": 0.34375,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.43573022004202683,
+            "ci_low": 0.2618915014943539,
+            "clusters": 32,
+            "mean": 0.34628991456941094,
+            "pairs": 64
+          },
+          "stage": 4
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.6776001821493626,
+            "ci_low": 0.43714500115446775,
+            "clusters": 32,
+            "mean": 0.5572916666666666,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.6176729911377974,
+            "ci_low": 0.46337307980658526,
+            "clusters": 32,
+            "mean": 0.5389459527104918,
+            "pairs": 64
+          },
+          "stage": 5
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.8757089841586351,
+            "ci_low": 0.7251392369813422,
+            "clusters": 32,
+            "mean": 0.796875,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.8298720556655425,
+            "ci_low": 0.7305744795224401,
+            "clusters": 32,
+            "mean": 0.7788068251684308,
+            "pairs": 64
+          },
+          "stage": 6
+        },
+        {
+          "flip_rate": {
+            "ci_high": 1.0,
+            "ci_low": 0.9408461723639865,
+            "clusters": 32,
+            "mean": 0.9739583333333333,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.9405348930772537,
+            "ci_low": 0.8985338470769219,
+            "clusters": 32,
+            "mean": 0.9205125821754336,
+            "pairs": 64
+          },
+          "stage": 7
+        },
+        {
+          "flip_rate": {
+            "ci_high": 1.0,
+            "ci_low": 0.9821428571428571,
+            "clusters": 32,
+            "mean": 0.9947916666666667,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.9844760248284847,
+            "ci_low": 0.9683805517141976,
+            "clusters": 32,
+            "mean": 0.9762829355895519,
+            "pairs": 64
+          },
+          "stage": 8
+        },
+        {
+          "flip_rate": {
+            "ci_high": 1.0,
+            "ci_low": 1.0,
+            "clusters": 32,
+            "mean": 1.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": {
+            "ci_high": 0.9898487153242934,
+            "ci_low": 0.9766084070136021,
+            "clusters": 32,
+            "mean": 0.9830995528027415,
+            "pairs": 64
+          },
+          "stage": 9
+        }
+      ]
+    },
+    "same": {
+      "expert_late": [
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 0
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 1
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 2
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 3
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 4
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 5
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 6
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 7
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 8
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 9
+        }
+      ],
+      "expert_middle": [
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 0
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 1
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 2
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 3
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 4
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 5
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 6
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 7
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 8
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 9
+        }
+      ],
+      "x_t": [
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 0
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 1
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 2
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 3
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 4
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 5
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 6
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 7
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 8
+        },
+        {
+          "flip_rate": {
+            "ci_high": 0.0,
+            "ci_low": 0.0,
+            "clusters": 32,
+            "mean": 0.0,
+            "pairs": 64
+          },
+          "shift_toward_donor": null,
+          "stage": 9
+        }
+      ]
+    }
+  },
+  "decision_rules": {
+    "decisive_stages": "stages where a single-stage MLP-sublayer patch transfers the donor decision",
+    "same_donor_max_disruption": "sign changes caused by same-decision donors; should stay near 0",
+    "x_t_commitment_stage": "earliest stage from which every later x_t patch transfers the donor decision (flip-rate CI lower bound > 0.5); None if no such stage"
+  },
+  "decisive_stages": {
+    "expert_late": [],
+    "expert_middle": []
+  },
+  "exploration_only": true,
+  "limits": [
+    "offline demo states, not closed-loop",
+    "MLP-sublayer patch, not full residual",
+    "matching uses robot state and frame index only"
+  ],
+  "noop_max_abs_error": 0.0,
+  "same_donor_max_disruption": {
+    "expert_late": 0.0,
+    "expert_middle": 0.0,
+    "x_t": 0.0
+  },
+  "schema": "smolvla_flow_stage_patching_v1_report",
+  "x_t_commitment_stage": 6
+}

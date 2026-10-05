@@ -1,0 +1,494 @@
+{
+  "by_phase": {
+    "10k": {
+      "align_precontact": {
+        "gripper_agreement": 0.7286274509803922,
+        "noise_spread": 0.09118442237377167,
+        "rotation_l2": 0.07408831175772927,
+        "translation_l2": 0.4046271923022406
+      },
+      "approach": {
+        "gripper_agreement": 0.9592074592074593,
+        "noise_spread": 0.05329708755016327,
+        "rotation_l2": 0.0715040625163487,
+        "translation_l2": 0.4114709481330063
+      },
+      "contact": {
+        "gripper_agreement": 0.8726495726495725,
+        "noise_spread": 0.0846463143825531,
+        "rotation_l2": 0.08769890222856802,
+        "translation_l2": 0.4843812234194891
+      },
+      "place": {
+        "gripper_agreement": 0.7722222222222223,
+        "noise_spread": 0.11544781178236008,
+        "rotation_l2": 0.08835343293865834,
+        "translation_l2": 0.3010654831621216
+      },
+      "release_retreat": {
+        "gripper_agreement": 0.9533333333333334,
+        "noise_spread": 0.05467952415347099,
+        "rotation_l2": 0.06304736501760318,
+        "translation_l2": 0.23689412936058032
+      },
+      "transport": {
+        "gripper_agreement": 0.8826156299840512,
+        "noise_spread": 0.08377761393785477,
+        "rotation_l2": 0.089150925488748,
+        "translation_l2": 0.4293312053415783
+      }
+    },
+    "15k": {
+      "align_precontact": {
+        "gripper_agreement": 0.7658823529411765,
+        "noise_spread": 0.07703342288732529,
+        "rotation_l2": 0.07075211266153701,
+        "translation_l2": 0.3832721701674457
+      },
+      "approach": {
+        "gripper_agreement": 0.9608391608391609,
+        "noise_spread": 0.042965054512023926,
+        "rotation_l2": 0.06604948268938589,
+        "translation_l2": 0.37484390401427586
+      },
+      "contact": {
+        "gripper_agreement": 0.8948717948717948,
+        "noise_spread": 0.06958350539207458,
+        "rotation_l2": 0.08321727497144771,
+        "translation_l2": 0.45772329791833516
+      },
+      "place": {
+        "gripper_agreement": 0.8277777777777778,
+        "noise_spread": 0.08282473683357239,
+        "rotation_l2": 0.07610754509097672,
+        "translation_l2": 0.27916895177326567
+      },
+      "release_retreat": {
+        "gripper_agreement": 1.0,
+        "noise_spread": 0.03209148347377777,
+        "rotation_l2": 0.05848786338791625,
+        "translation_l2": 0.20997554896838921
+      },
+      "transport": {
+        "gripper_agreement": 0.9138755980861244,
+        "noise_spread": 0.06584548205137253,
+        "rotation_l2": 0.08227018312060812,
+        "translation_l2": 0.3980413365401774
+      }
+    },
+    "20k": {
+      "align_precontact": {
+        "gripper_agreement": 0.7717647058823529,
+        "noise_spread": 0.07259741425514221,
+        "rotation_l2": 0.07016720194772746,
+        "translation_l2": 0.37435245139305584
+      },
+      "approach": {
+        "gripper_agreement": 0.9627039627039629,
+        "noise_spread": 0.04203067347407341,
+        "rotation_l2": 0.06411562636093056,
+        "translation_l2": 0.3705812307535398
+      },
+      "contact": {
+        "gripper_agreement": 0.8957264957264957,
+        "noise_spread": 0.06770934164524078,
+        "rotation_l2": 0.08148247669659583,
+        "translation_l2": 0.4461360942760951
+      },
+      "place": {
+        "gripper_agreement": 0.8555555555555556,
+        "noise_spread": 0.07422778755426407,
+        "rotation_l2": 0.07703412223697986,
+        "translation_l2": 0.26853003329022035
+      },
+      "release_retreat": {
+        "gripper_agreement": 0.9933333333333334,
+        "noise_spread": 0.032263077795505524,
+        "rotation_l2": 0.05665908008468438,
+        "translation_l2": 0.20289394444624137
+      },
+      "transport": {
+        "gripper_agreement": 0.9078149920255184,
+        "noise_spread": 0.06357290595769882,
+        "rotation_l2": 0.07975872786609403,
+        "translation_l2": 0.38689996302629
+      }
+    },
+    "25k": {
+      "align_precontact": {
+        "gripper_agreement": 0.7760784313725488,
+        "noise_spread": 0.07164343446493149,
+        "rotation_l2": 0.06994626087579914,
+        "translation_l2": 0.3726835795346225
+      },
+      "approach": {
+        "gripper_agreement": 0.9641025641025641,
+        "noise_spread": 0.0414581336081028,
+        "rotation_l2": 0.06398780215704827,
+        "translation_l2": 0.36952649060638054
+      },
+      "contact": {
+        "gripper_agreement": 0.8982905982905982,
+        "noise_spread": 0.06635233759880066,
+        "rotation_l2": 0.08072378147425537,
+        "translation_l2": 0.4366657733199978
+      },
+      "place": {
+        "gripper_agreement": 0.8500000000000001,
+        "noise_spread": 0.0741889551281929,
+        "rotation_l2": 0.07667656741605623,
+        "translation_l2": 0.2663964683081068
+      },
+      "release_retreat": {
+        "gripper_agreement": 1.0,
+        "noise_spread": 0.029486125335097313,
+        "rotation_l2": 0.0561179356841127,
+        "translation_l2": 0.20103436867608088
+      },
+      "transport": {
+        "gripper_agreement": 0.9121212121212121,
+        "noise_spread": 0.06208263337612152,
+        "rotation_l2": 0.07933050297648647,
+        "translation_l2": 0.38203354478597573
+      }
+    },
+    "5k": {
+      "align_precontact": {
+        "gripper_agreement": 0.6768627450980392,
+        "noise_spread": 0.11006908118724823,
+        "rotation_l2": 0.07780244951931477,
+        "translation_l2": 0.4512393012214875
+      },
+      "approach": {
+        "gripper_agreement": 0.9494172494172494,
+        "noise_spread": 0.06043493002653122,
+        "rotation_l2": 0.07028484832017833,
+        "translation_l2": 0.41859358227664634
+      },
+      "contact": {
+        "gripper_agreement": 0.7504273504273503,
+        "noise_spread": 0.11839321255683899,
+        "rotation_l2": 0.08786249336259953,
+        "translation_l2": 0.5367804105374068
+      },
+      "place": {
+        "gripper_agreement": 0.8055555555555555,
+        "noise_spread": 0.09374534338712692,
+        "rotation_l2": 0.0821770595549713,
+        "translation_l2": 0.29504351424828723
+      },
+      "release_retreat": {
+        "gripper_agreement": 0.9666666666666666,
+        "noise_spread": 0.054550230503082275,
+        "rotation_l2": 0.06644274602088449,
+        "translation_l2": 0.263207351121475
+      },
+      "transport": {
+        "gripper_agreement": 0.7830940988835726,
+        "noise_spread": 0.10256839543581009,
+        "rotation_l2": 0.08746455050886015,
+        "translation_l2": 0.4918280576965829
+      }
+    }
+  },
+  "dropped_near_episode_end": 25,
+  "episodes": 48,
+  "exploration_only": true,
+  "horizon": 10,
+  "inputs": {
+    "10k": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/flow_e1_v2_train512_r3/natural_010000",
+    "15k": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/flow_e1_v2_train512_r3/natural_015000",
+    "20k": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/flow_e1_v2_train512_r3/natural_020000",
+    "25k": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/flow_e1_v2_train512_r3/natural_025000",
+    "5k": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/flow_e1_v2_train512_r3/natural_005000"
+  },
+  "notes": [
+    "demonstration states (in-distribution), not the policy's own closed-loop states",
+    "demonstration is one valid action sequence; compare checkpoints, not absolutes"
+  ],
+  "paired_minus_last": {
+    "10k": {
+      "gripper_agreement": {
+        "ci_high": -0.01715705524634097,
+        "ci_low": -0.03640113348342608,
+        "clusters": 48,
+        "mean": -0.025872689938398356,
+        "pairs": 487
+      },
+      "noise_spread": {
+        "ci_high": 0.021071260390709282,
+        "ci_low": 0.015547085073342015,
+        "clusters": 48,
+        "mean": 0.01842955097143043,
+        "pairs": 487
+      },
+      "rotation_l2": {
+        "ci_high": 0.009211244805159806,
+        "ci_low": 0.006387020371068835,
+        "clusters": 48,
+        "mean": 0.007918081952008082,
+        "pairs": 487
+      },
+      "translation_l2": {
+        "ci_high": 0.05146426955902212,
+        "ci_low": 0.033876439737900825,
+        "clusters": 48,
+        "mean": 0.04280634705154559,
+        "pairs": 487
+      }
+    },
+    "15k": {
+      "gripper_agreement": {
+        "ci_high": 0.003378024292291109,
+        "ci_low": -0.0076355340503632225,
+        "clusters": 48,
+        "mean": -0.0025325119780971956,
+        "pairs": 487
+      },
+      "noise_spread": {
+        "ci_high": 0.004791465656608708,
+        "ci_low": 0.001993292651387739,
+        "clusters": 48,
+        "mean": 0.0033900036688825188,
+        "pairs": 487
+      },
+      "rotation_l2": {
+        "ci_high": 0.0028855776203489795,
+        "ci_low": 0.0016312044319064048,
+        "clusters": 48,
+        "mean": 0.002224625501011206,
+        "pairs": 487
+      },
+      "translation_l2": {
+        "ci_high": 0.017105939478841564,
+        "ci_low": 0.006935866019682078,
+        "clusters": 48,
+        "mean": 0.012214852277894829,
+        "pairs": 487
+      }
+    },
+    "20k": {
+      "gripper_agreement": {
+        "ci_high": -0.0016800712655681916,
+        "ci_low": -0.004808992630440138,
+        "clusters": 48,
+        "mean": -0.0032169746748802203,
+        "pairs": 487
+      },
+      "noise_spread": {
+        "ci_high": 0.0016595238449612292,
+        "ci_low": 0.0005351742100433602,
+        "clusters": 48,
+        "mean": 0.0011118464210133777,
+        "pairs": 487
+      },
+      "rotation_l2": {
+        "ci_high": 0.0005494014583718503,
+        "ci_low": 0.0001187941766464562,
+        "clusters": 48,
+        "mean": 0.0003305914143669936,
+        "pairs": 487
+      },
+      "translation_l2": {
+        "ci_high": 0.005109382148064025,
+        "ci_low": 0.0019473167765971808,
+        "clusters": 48,
+        "mean": 0.00349323438863974,
+        "pairs": 487
+      }
+    },
+    "5k": {
+      "gripper_agreement": {
+        "ci_high": -0.06890899610881934,
+        "ci_low": -0.11212753170910492,
+        "clusters": 48,
+        "mean": -0.08973305954825461,
+        "pairs": 487
+      },
+      "noise_spread": {
+        "ci_high": 0.03971731843560212,
+        "ci_low": 0.028664372752734476,
+        "clusters": 48,
+        "mean": 0.034319584129772145,
+        "pairs": 487
+      },
+      "rotation_l2": {
+        "ci_high": 0.009247209539571791,
+        "ci_low": 0.005582566247635112,
+        "clusters": 48,
+        "mean": 0.007456481187793197,
+        "pairs": 487
+      },
+      "translation_l2": {
+        "ci_high": 0.10160112822938044,
+        "ci_low": 0.06875158251186356,
+        "clusters": 48,
+        "mean": 0.08424661537966208,
+        "pairs": 487
+      }
+    }
+  },
+  "phase_counts": {
+    "align_precontact": 85,
+    "approach": 143,
+    "contact": 39,
+    "place": 6,
+    "release_retreat": 5,
+    "transport": 209
+  },
+  "schema": "smolvla_offline_action_error_v1",
+  "source_sha256": "095d90ee24e747860de00d9703eff6eefe057a992b1803ac2ced3e639286ee50",
+  "states": 487,
+  "summary": {
+    "10k": {
+      "gripper_agreement": {
+        "ci_high": 0.9168517924023544,
+        "ci_low": 0.8340202122438964,
+        "clusters": 48,
+        "mean": 0.8767967145790554,
+        "pairs": 487
+      },
+      "noise_spread": {
+        "ci_high": 0.08304137741810227,
+        "ci_low": 0.0696438864494662,
+        "clusters": 48,
+        "mean": 0.07628125776546324,
+        "pairs": 487
+      },
+      "rotation_l2": {
+        "ci_high": 0.09132758553817089,
+        "ci_low": 0.07139656913884071,
+        "clusters": 48,
+        "mean": 0.08094608927315668,
+        "pairs": 487
+      },
+      "translation_l2": {
+        "ci_high": 0.44421186297975085,
+        "ci_low": 0.39490937246237073,
+        "clusters": 48,
+        "mean": 0.4206275361483284,
+        "pairs": 487
+      }
+    },
+    "15k": {
+      "gripper_agreement": {
+        "ci_high": 0.933868563184374,
+        "ci_low": 0.8631623508098891,
+        "clusters": 48,
+        "mean": 0.9001368925393566,
+        "pairs": 487
+      },
+      "noise_spread": {
+        "ci_high": 0.06637681160612713,
+        "ci_low": 0.05560070673708394,
+        "clusters": 48,
+        "mean": 0.06124171042849273,
+        "pairs": 487
+      },
+      "rotation_l2": {
+        "ci_high": 0.08507789094157206,
+        "ci_low": 0.06632576193787633,
+        "clusters": 48,
+        "mean": 0.0752526328221598,
+        "pairs": 487
+      },
+      "translation_l2": {
+        "ci_high": 0.41631143490146266,
+        "ci_low": 0.36311724539222506,
+        "clusters": 48,
+        "mean": 0.3900360413746777,
+        "pairs": 487
+      }
+    },
+    "20k": {
+      "gripper_agreement": {
+        "ci_high": 0.9340859874798852,
+        "ci_low": 0.8617161968376164,
+        "clusters": 48,
+        "mean": 0.8994524298425736,
+        "pairs": 487
+      },
+      "noise_spread": {
+        "ci_high": 0.06489046907415236,
+        "ci_low": 0.05292342899031845,
+        "clusters": 48,
+        "mean": 0.058963553180623594,
+        "pairs": 487
+      },
+      "rotation_l2": {
+        "ci_high": 0.08321626762922549,
+        "ci_low": 0.0642960986336852,
+        "clusters": 48,
+        "mean": 0.07335859873551559,
+        "pairs": 487
+      },
+      "translation_l2": {
+        "ci_high": 0.40650929103287003,
+        "ci_low": 0.3547782473404392,
+        "clusters": 48,
+        "mean": 0.38131442348542255,
+        "pairs": 487
+      }
+    },
+    "25k": {
+      "gripper_agreement": {
+        "ci_high": 0.9363318959382917,
+        "ci_low": 0.8657444638694638,
+        "clusters": 48,
+        "mean": 0.9026694045174538,
+        "pairs": 487
+      },
+      "noise_spread": {
+        "ci_high": 0.06385775146711695,
+        "ci_low": 0.051821230162098816,
+        "clusters": 48,
+        "mean": 0.05785170675961022,
+        "pairs": 487
+      },
+      "rotation_l2": {
+        "ci_high": 0.08295801638758826,
+        "ci_low": 0.06402403668599997,
+        "clusters": 48,
+        "mean": 0.0730280073211486,
+        "pairs": 487
+      },
+      "translation_l2": {
+        "ci_high": 0.40262641122741955,
+        "ci_low": 0.35162845935567516,
+        "clusters": 48,
+        "mean": 0.37782118909678275,
+        "pairs": 487
+      }
+    },
+    "5k": {
+      "gripper_agreement": {
+        "ci_high": 0.8550678614846896,
+        "ci_low": 0.7688051878094765,
+        "clusters": 48,
+        "mean": 0.8129363449691991,
+        "pairs": 487
+      },
+      "noise_spread": {
+        "ci_high": 0.09751411473703475,
+        "ci_low": 0.08636649979467718,
+        "clusters": 48,
+        "mean": 0.09217129103472223,
+        "pairs": 487
+      },
+      "rotation_l2": {
+        "ci_high": 0.09126323341765702,
+        "ci_low": 0.07055127151061706,
+        "clusters": 48,
+        "mean": 0.0804844885089418,
+        "pairs": 487
+      },
+      "translation_l2": {
+        "ci_high": 0.4882834733321454,
+        "ci_low": 0.43191441329070057,
+        "clusters": 48,
+        "mean": 0.4620678044764449,
+        "pairs": 487
+      }
+    }
+  }
+}

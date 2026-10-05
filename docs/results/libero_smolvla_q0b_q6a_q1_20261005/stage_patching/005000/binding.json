@@ -1,0 +1,32 @@
+{
+  "checkpoint_tree_sha256": "de755b0d2814d9dc552ff7cb7f0dc8881f555f5617728a86a45943df7f0a0bee",
+  "decision_margin": 0.5,
+  "executed_steps": 10,
+  "pair_seed": 0,
+  "repeats": [
+    0,
+    1,
+    2
+  ],
+  "schema": "smolvla_flow_stage_patching_v1",
+  "sites": [
+    "x_t",
+    "expert_middle",
+    "expert_late"
+  ],
+  "source_sha256": "993a21fbf6310b3c80608788871aff4d61ba69e7b5caa0e01038d1949dc8668a",
+  "stages": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "trace": "/root/autodl-tmp/smolvla-official-reproduction-v2/acquisition/flow_e1_v2_train512_r3/natural_005000",
+  "trace_binding_sha256": "70cb2a52c3915310dbee975d02bf10b05d83aa91a6590118ab0ac92c5dabbda0"
+}
