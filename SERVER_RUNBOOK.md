@@ -242,6 +242,47 @@ nohup ./run.sh all > /data/run.log 2>&1 &
   --task 0 --task 1 --episodes 10
 ```
 
+## 8. Q0b 与 Q6a 分析（只用已有 flow trace）
+
+两个脚本都直接读取 `run.sh traces` 已经生成的 natural flow trace，不需要重新训练。
+- 下面用 `$TRACES/<step>` 表示每个 checkpoint 的 trace 目录（例如 `flow_e1_v2_train512_r3` 下的各 checkpoint 子目录）。运行前先用 `ls` 核对实际目录名。
+- 每个 trace 目录必须包含 `manifest.json` 和 `binding.json`。
+
+**Q0b：抓或放的决定在第几个 flow 步确定。** 每个 checkpoint 分别运行；`--trace` 必须是同一个 checkpoint 的 trace。
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv-lerobot/bin/python -m \
+  interaction_vla.representation_study.libero.stage_patching \
+  --bank "$STATE_BANK" --dataset-root "$DATASET_ROOT" --metadata "$METADATA" \
+  --checkpoint "$CKPT/025000/pretrained_model" --trace "$TRACES/025000" \
+  --output "$OUT/stage_patching/025000" --device cuda --batch-size 16 --max-pairs 64
+```
+
+- 输出 `report.json`，主要字段有三个：
+  - `x_t_commitment_stage`：从这一步起，替换 flow 状态 x_t 就能稳定转移决定。
+  - `decisive_stages`：单步替换 expert MLP 子层输出就能转移决定的 stage。
+  - `same_donor_max_disruption`：用决定相同的 donor 替换时造成的扰动，应接近 0。
+- 运行开始时会先做一次不打补丁的推理，必须复现 trace（`noop_max_abs_error` 应约为 0）。
+- 先跑 25k，再跑 5k 和 10k，比较承诺步是否随训练提前。
+
+**Q6a：探针准确率饱和之后仍会变化的结构量。** 一次读入全部 checkpoint。每个 trace 约占 4–5 GB 内存，脚本按 checkpoint 逐个加载。
+
+```bash
+.venv-lerobot/bin/python -m interaction_vla.representation_study.libero.representation_structure \
+  --bank "$STATE_BANK" \
+  --checkpoint 5k "$TRACES/005000" --checkpoint 10k "$TRACES/010000" \
+  --checkpoint 15k "$TRACES/015000" --checkpoint 20k "$TRACES/020000" \
+  --checkpoint 25k "$TRACES/025000" \
+  --success "$ACQ/timeline_v2_states0_39_summary/report.json" \
+  --output "$OUT/representation_structure"
+```
+
+- 输出逐 checkpoint、tap、stage、token 选择的四项结果：
+  - 条件增益：在本体状态基础上加入隐藏层后，分数提高多少。
+  - 脆弱度。
+  - 时间转移一致性：现有 trace 是稀疏采样的，这一项会报告不可估计；需要按帧连续的 trace 才能计算。
+  - 对齐后的成功率序列。
+
 ## 7. 中断与续跑
 
 `run.sh` 的各阶段在开始前检查已有输出（例如已完成的 25k 谱系、lineage 文件）并复用；中断后重跑同一阶段即可。续跑前不要手工删改输出目录里的 manifest 或哈希文件。

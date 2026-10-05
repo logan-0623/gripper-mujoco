@@ -162,8 +162,8 @@
 
 ## 立即可做的顺序
 
-1. **Q0a 与 Q2 第一步：** 都只用已有 flow trace，不需要新的 GPU 计算。
-2. **Q0b：** 逐 stage 的激活替换。在 32 个配对状态上做离线实验，成本很低，并且能直接判断旧干预失败是不是因为施加的 stage 不对。
+1. **Q0a、Q6a 与 Q2 第一步：** 都只用已有 flow trace，不需要新的 GPU 计算。Q0a 和 Q6a 已实现为 `libero/representation_structure.py`，包括条件增益、脆弱度和时间转移一致性三项指标。
+2. **Q0b：** 逐 stage 的激活替换，已实现为 `libero/stage_patching.py`。离线实验成本很低，并且能直接判断旧干预失败是不是因为施加的 stage 不对。运行命令见 runbook 第 8 节。
 3. **Q1：** 参数移植，两组混合模型，各 40 条 rollout。
 4. **拉回 5k 和 10k 的强制掉落结果：** 检查 Spatial 0 的视频。
 
