@@ -7,7 +7,7 @@ from typing import Final, Mapping
 
 
 STAGE_MANIFEST_SCHEMA_VERSION: Final[str] = "policy_stage_manifest_v1"
-SUPPORTED_BACKENDS: Final[tuple[str, ...]] = ("act", "smolvla", "pi0")
+SUPPORTED_BACKENDS: Final[tuple[str, ...]] = ("smolvla", "pi0")
 SUPPORTED_STAGES: Final[tuple[str, ...]] = (
     "pretrained",
     "sft",

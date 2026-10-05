@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-import json
 from pathlib import Path
 from typing import Any
 
 import torch
-
-from interaction_vla.lerobot_bridge.rollout import load_act_runtime
 
 from ..schemas.stages import StageManifest
 from ..taps.capture import (
@@ -22,12 +19,6 @@ from .base import validate_backend_manifest
 
 
 _TAP_MODULES: dict[str, dict[str, tuple[str, bool, str, str]]] = {
-    "act": {
-        "vision_backbone": ("model.backbone", False, "last", "mean"),
-        "temporal_fused": ("model.encoder", False, "last", "last"),
-        "decoder_input": ("model.decoder", False, "last", "last"),
-        "pre_action": ("model.action_head", True, "last", "last"),
-    },
     "smolvla": {
         "vision_output": ("model.vlm_with_expert.vlm.model.vision_model", False, "first", "mean"),
         "multimodal_fusion": ("model.vlm_with_expert", False, "first", "last"),
@@ -48,11 +39,6 @@ _TAP_MODULES: dict[str, dict[str, tuple[str, bool, str, str]]] = {
 }
 
 _TRAINABLE_PREFIXES: dict[str, dict[str, tuple[str, ...]]] = {
-    "act": {
-        "vision": ("model.backbone",),
-        "fusion": ("model.encoder", "model.decoder", "model.encoder_"),
-        "action_head": ("model.action_head",),
-    },
     "smolvla": {
         "vision": ("model.vlm_with_expert.vlm.model.vision_model",),
         "fusion": (
@@ -88,14 +74,8 @@ class LeRobotPolicyBackend:
         self.preprocessor: Any | None = None
         self.postprocessor: Any | None = None
         self.manifest: StageManifest | None = None
-        self.residual_policy: Any | None = None
-        self.residual_scale: torch.Tensor | None = None
-        self.residual_tap_id: str | None = None
-        self.last_residual_action_was_clipped = False
 
-    def _load_plain_checkpoint(self, checkpoint: str) -> tuple[Any, Any, Any]:
-        if self.backend_name == "act":
-            return load_act_runtime(checkpoint, device=self.device)
+    def _load_checkpoint(self, checkpoint: str) -> tuple[Any, Any, Any]:
         from lerobot.policies import make_pre_post_processors
 
         if self.backend_name == "smolvla":
@@ -126,42 +106,6 @@ class LeRobotPolicyBackend:
         policy.eval()
         return policy, preprocessor, postprocessor
 
-    def _load_checkpoint(self, checkpoint: str) -> tuple[Any, Any, Any]:
-        bundle = Path(checkpoint) / "residual_study.json"
-        self.residual_policy = None
-        self.residual_scale = None
-        self.residual_tap_id = None
-        self.last_residual_action_was_clipped = False
-        if not bundle.is_file():
-            return self._load_plain_checkpoint(checkpoint)
-        metadata = json.loads(bundle.read_text(encoding="utf-8"))
-        if metadata.get("schema_version") != "interaction_residual_policy_bundle_v1":
-            raise ValueError("residual policy bundle schema is incompatible")
-        if metadata.get("backend") != self.backend_name:
-            raise ValueError("residual policy bundle backend is incompatible")
-        policy, preprocessor, postprocessor = self._load_plain_checkpoint(
-            str(metadata["policy_checkpoint"])
-        )
-        from ..rl.core import ResidualActorCritic
-
-        payload = torch.load(
-            Path(checkpoint) / "residual.pt", map_location=self.device, weights_only=False
-        )
-        residual = ResidualActorCritic(
-            int(payload["latent_dim"]),
-            action_dim=int(payload.get("action_dim", 7)),
-            adapt_representation=bool(payload.get("adapt_representation", False)),
-        ).to(self.device)
-        residual.load_state_dict(payload["state_dict"])
-        residual.eval()
-        scale = torch.as_tensor(metadata["residual_scale"], dtype=torch.float32, device=self.device)
-        if scale.shape != (7,) or not torch.isfinite(scale).all() or torch.any(scale < 0.0):
-            raise ValueError("residual policy scale must be a non-negative finite seven-vector")
-        self.residual_policy = residual
-        self.residual_scale = scale
-        self.residual_tap_id = str(metadata["tap_id"])
-        return policy, preprocessor, postprocessor
-
     def load_stage(self, manifest: StageManifest) -> None:
         validate_backend_manifest(self, manifest)
         policy, preprocessor, postprocessor = self._load_checkpoint(
@@ -188,9 +132,6 @@ class LeRobotPolicyBackend:
         rename_map: Mapping[str, str] | None = None,
     ) -> None:
         """Load foundation weights while binding policy features to one LeRobotDataset."""
-        if self.backend_name == "act" or (Path(checkpoint) / "residual_study.json").is_file():
-            self.load_checkpoint(checkpoint)
-            return
         from lerobot.configs.policies import PreTrainedConfig
         from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
         from lerobot.policies import make_policy, make_pre_post_processors
@@ -234,73 +175,23 @@ class LeRobotPolicyBackend:
         self.preprocessor = preprocessor
         self.postprocessor = postprocessor
         self.manifest = None
-        self.residual_policy = None
-        self.residual_scale = None
-        self.residual_tap_id = None
 
     def _loaded(self) -> tuple[Any, Any, Any]:
         if self.policy is None or self.preprocessor is None or self.postprocessor is None:
             raise RuntimeError(f"{self.backend_name} backend has no loaded stage")
         return self.policy, self.preprocessor, self.postprocessor
 
-    def _raw_batch(self, batch: Mapping[str, object]) -> dict[str, object]:
-        policy, _, _ = self._loaded()
-        result = dict(batch)
-        if self.backend_name == "act":
-            feature = getattr(policy.config, "env_state_feature", None)
-            key = "observation.environment_state"
-            if feature is not None and key not in result:
-                state = result.get("observation.state")
-                if not isinstance(state, torch.Tensor) or state.ndim != 2:
-                    raise ValueError(
-                        "ACT compatibility injection requires batched observation.state"
-                    )
-                width = int(feature.shape[0])
-                result[key] = torch.zeros(
-                    (state.shape[0], width), dtype=state.dtype, device=state.device
-                )
-        return result
-
     def encode(self, batch: Mapping[str, object]) -> object:
         _, preprocessor, _ = self._loaded()
-        return preprocessor(self._raw_batch(batch))
+        return preprocessor(dict(batch))
 
     def act(self, batch: Mapping[str, object]) -> object:
-        if self.residual_policy is not None:
-            assert self.residual_tap_id is not None
-            result = self.get_latents(batch, (self.residual_tap_id,))
-            return result["__action__"]
         policy, preprocessor, postprocessor = self._loaded()
-        processed = preprocessor(self._raw_batch(batch))
+        processed = preprocessor(dict(batch))
         policy.reset()
         with torch.no_grad():
             normalized = policy.predict_action_chunk(processed)
             return postprocessor(normalized)
-
-    def _apply_residual(
-        self, actions: torch.Tensor, latent: torch.Tensor
-    ) -> torch.Tensor:
-        self.last_residual_action_was_clipped = False
-        if self.residual_policy is None:
-            return actions
-        if self.residual_scale is None:
-            raise RuntimeError("loaded residual policy has no scale")
-        if actions.ndim != 3 or actions.shape[-1] != 7:
-            raise ValueError("residual composition requires action chunks with width seven")
-        with torch.no_grad():
-            delta = self.residual_policy.sample(
-                latent.to(self.device), deterministic=True
-            ).residual
-        result = actions.clone()
-        first = result[:, 0] + self.residual_scale * delta
-        unclipped = first.clone()
-        first[:, :6] = first[:, :6].clamp(-1.0, 1.0)
-        first[:, 6] = first[:, 6].clamp(0.0, 1.0)
-        self.last_residual_action_was_clipped = bool(
-            torch.any(torch.abs(first - unclipped) > 1.0e-7).item()
-        )
-        result[:, 0] = first
-        return result
 
     def _module_taps(self, tap_ids: Sequence[str]) -> tuple[ModuleTap, ...]:
         expected = {tap.tap_id for tap in registered_taps(self.backend_name)}
@@ -323,9 +214,8 @@ class LeRobotPolicyBackend:
     def get_latents(
         self, batch: Mapping[str, object], taps: Sequence[str]
     ) -> Mapping[str, object]:
-        self.last_residual_action_was_clipped = False
         policy, preprocessor, postprocessor = self._loaded()
-        processed = preprocessor(self._raw_batch(batch))
+        processed = preprocessor(dict(batch))
         state = processed.get("observation.state")
         if not isinstance(state, torch.Tensor) or state.ndim != 2:
             raise ValueError("processed policy batch must contain batched observation.state")
@@ -338,12 +228,6 @@ class LeRobotPolicyBackend:
                 batch_size=batch_size,
             )
             actions = postprocessor(normalized)
-            if self.residual_policy is not None:
-                if self.residual_tap_id not in latents:
-                    raise ValueError(
-                        "loaded residual policy requires its action-proximal tap"
-                    )
-                actions = self._apply_residual(actions, latents[self.residual_tap_id])
         return {**latents, "__action__": actions.detach().to("cpu", torch.float32)}
 
     def set_trainable_groups(self, groups: Sequence[str]) -> None:
@@ -372,7 +256,7 @@ class LeRobotPolicyBackend:
         mode: str,
     ) -> torch.Tensor:
         policy, preprocessor, postprocessor = self._loaded()
-        processed = preprocessor(self._raw_batch(batch))
+        processed = preprocessor(dict(batch))
         state = processed.get("observation.state")
         if not isinstance(state, torch.Tensor) or state.ndim != 2:
             raise ValueError("processed intervention batch must contain batched state")
@@ -380,50 +264,16 @@ class LeRobotPolicyBackend:
         policy.reset()
         intervention = ForwardTapIntervention(policy, tap)
         with torch.no_grad():
-            batch_size = int(state.shape[0])
-            residual_latent: torch.Tensor | None = None
-            if self.residual_policy is not None and tap_id != self.residual_tap_id:
-                assert self.residual_tap_id is not None
-                capture = ForwardTapCapture(
-                    policy, self._module_taps((self.residual_tap_id,))
-                )
-                normalized, captured = capture.capture(
-                    lambda: intervention.run(
-                        lambda: policy.predict_action_chunk(processed),
-                        batch_size=batch_size,
-                        mode=mode,
-                    ),
-                    batch_size=batch_size,
-                )
-                residual_latent = captured[self.residual_tap_id]
-            else:
-                normalized = intervention.run(
-                    lambda: policy.predict_action_chunk(processed),
-                    batch_size=batch_size,
-                    mode=mode,
-                )
-                if self.residual_policy is not None:
-                    if intervention.last_tensor is None:
-                        raise ValueError("residual tap intervention captured no replacement")
-                    residual_latent = pool_latent_with_grad(
-                        intervention.last_tensor,
-                        batch_size=batch_size,
-                        selector=tap.tensor_selector,
-                    )
+            normalized = intervention.run(
+                lambda: policy.predict_action_chunk(processed),
+                batch_size=int(state.shape[0]),
+                mode=mode,
+            )
             actions = postprocessor(normalized)
-            if residual_latent is not None:
-                actions = self._apply_residual(actions, residual_latent)
             return actions.detach().to("cpu", torch.float32)
 
     def _predict_with_grad(self, processed: dict[str, Any]) -> torch.Tensor:
         policy, _, _ = self._loaded()
-        if self.backend_name == "act":
-            from lerobot.utils.constants import OBS_IMAGES
-
-            values = dict(processed)
-            if policy.config.image_features:
-                values[OBS_IMAGES] = [values[key] for key in policy.config.image_features]
-            return policy.model(values)[0]
         if self.backend_name == "smolvla":
             from lerobot.utils.constants import (
                 OBS_LANGUAGE_ATTENTION_MASK,
@@ -445,7 +295,7 @@ class LeRobotPolicyBackend:
         self, batch: Mapping[str, object], *, tap_id: str
     ) -> tuple[torch.Tensor, torch.Tensor]:
         policy, preprocessor, postprocessor = self._loaded()
-        processed = preprocessor(self._raw_batch(batch))
+        processed = preprocessor(dict(batch))
         state = processed.get("observation.state")
         if not isinstance(state, torch.Tensor) or state.ndim != 2:
             raise ValueError("differentiable policy batch must contain batched state")
@@ -474,11 +324,6 @@ class LeRobotPolicyBackend:
         return actions, latent
 
 
-class ACTBackend(LeRobotPolicyBackend):
-    def __init__(self, *, device: str = "auto") -> None:
-        super().__init__("act", device=device)
-
-
 class SmolVLABackend(LeRobotPolicyBackend):
     def __init__(self, *, device: str = "auto") -> None:
         super().__init__("smolvla", device=device)
@@ -490,7 +335,7 @@ class PI0Backend(LeRobotPolicyBackend):
 
 
 def make_backend(name: str, *, device: str = "auto") -> LeRobotPolicyBackend:
-    constructors = {"act": ACTBackend, "smolvla": SmolVLABackend, "pi0": PI0Backend}
+    constructors = {"smolvla": SmolVLABackend, "pi0": PI0Backend}
     if name not in constructors:
         raise ValueError(f"unsupported backend: {name}")
     return constructors[name](device=device)

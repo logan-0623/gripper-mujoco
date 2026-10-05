@@ -11,13 +11,13 @@ from pathlib import Path
 import numpy as np
 from scipy.sparse import csr_matrix
 from sklearn.decomposition import PCA
+from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
 from ..state_bank.io import write_json_atomic
 from .flow_diff import load_trace
 from .flow_trace import file_hash
-from .predictive_states import SparseReadoutRidge
 from .state_bank import load_state_bank
 
 TAPS = ("expert_middle", "expert_late")
@@ -25,6 +25,21 @@ CONTRACT = ("state_bank_sha256", "dataset_revision", "dataset_scientific_sha256"
             "contract_tree_sha256", "metadata_tree_sha256", "image_binding",
             "num_steps", "chunk_size", "max_action_dim", "expert_middle_index",
             "expert_late_index", "query_mode")
+
+
+class SparseReadoutRidge(Ridge):
+    """Keep sklearn's Ridge solver, avoiding dense BLAS in its final intercept."""
+
+    def _set_intercept(self, X_offset, y_offset, X_scale=None):
+        if not self.fit_intercept:
+            self.intercept_ = 0.0
+            return
+        self.coef_ = self.coef_.astype(X_offset.dtype, copy=False)
+        if X_scale is not None:
+            self.coef_ = self.coef_ / X_scale
+        # Same offset dot product for one or multiple targets. Elementwise
+        # reduction avoids the false macOS matmul FP flags without hiding warnings.
+        self.intercept_ = y_offset - np.sum(self.coef_ * X_offset, axis=-1)
 
 
 def episode(row):

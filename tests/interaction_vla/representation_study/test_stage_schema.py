@@ -18,8 +18,8 @@ def _binding(name: str) -> ArtifactBinding:
 
 def _manifest(**updates) -> StageManifest:
     values = {
-        "study_id": "act_seed_0",
-        "backend": "act",
+        "study_id": "smolvla_seed_0",
+        "backend": "smolvla",
         "stage": "sft",
         "checkpoint": _binding("checkpoint"),
         "config": _binding("config.yaml"),
@@ -28,9 +28,9 @@ def _manifest(**updates) -> StageManifest:
         "state_bank": _binding("state-bank"),
         "trainable_groups": ("policy",),
         "latent_taps": (
-            "vision_backbone",
-            "temporal_fused",
-            "decoder_input",
+            "vision_output",
+            "multimodal_fusion",
+            "action_expert_input",
             "pre_action",
         ),
     }
@@ -39,7 +39,7 @@ def _manifest(**updates) -> StageManifest:
 
 
 def test_stage_schema_supports_all_policy_families_and_training_stages() -> None:
-    assert SUPPORTED_BACKENDS == ("act", "smolvla", "pi0")
+    assert SUPPORTED_BACKENDS == ("smolvla", "pi0")
     assert SUPPORTED_STAGES == (
         "pretrained",
         "sft",
@@ -47,7 +47,7 @@ def test_stage_schema_supports_all_policy_families_and_training_stages() -> None
         "rl_head",
         "rl_representation",
     )
-    assert _manifest().backend == "act"
+    assert _manifest().backend == "smolvla"
     assert _manifest(backend="smolvla").backend == "smolvla"
     assert _manifest(backend="pi0").backend == "pi0"
 
@@ -63,7 +63,7 @@ def test_stage_manifest_rejects_unknown_stage_duplicate_taps_and_groups() -> Non
     with pytest.raises(ValueError, match="stage"):
         _manifest(stage="rl_everything")
     with pytest.raises(ValueError, match="latent taps"):
-        _manifest(latent_taps=("vision_backbone", "vision_backbone"))
+        _manifest(latent_taps=("vision_output", "vision_output"))
     with pytest.raises(ValueError, match="trainable groups"):
         _manifest(trainable_groups=("policy", "policy"))
 

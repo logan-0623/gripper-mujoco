@@ -27,12 +27,6 @@ class TapSpec:
 
 
 _REGISTRY: Final[dict[str, tuple[TapSpec, ...]]] = {
-    "act": (
-        TapSpec("visual", "vision_backbone"),
-        TapSpec("fused", "temporal_fused"),
-        TapSpec("policy_input", "decoder_input"),
-        TapSpec("action_proximal", "pre_action"),
-    ),
     "smolvla": (
         TapSpec("visual", "vision_output"),
         TapSpec("fused", "multimodal_fusion"),

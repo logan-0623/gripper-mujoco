@@ -23,7 +23,7 @@ def _binding(name: str) -> ArtifactBinding:
     return ArtifactBinding(uri=name, sha256="b" * 64)
 
 
-def _manifest(backend: str = "act") -> StageManifest:
+def _manifest(backend: str = "smolvla") -> StageManifest:
     taps = registered_taps(backend)
     return StageManifest(
         study_id=f"{backend}_seed_0",
@@ -40,24 +40,24 @@ def _manifest(backend: str = "act") -> StageManifest:
 
 
 def test_registered_backends_expose_exact_scientific_tap_roles() -> None:
-    for backend in ("act", "smolvla", "pi0"):
+    for backend in ("smolvla", "pi0"):
         taps = registered_taps(backend)
         assert tuple(tap.role for tap in taps) == REQUIRED_TAP_ROLES
         assert len({tap.tap_id for tap in taps}) == len(REQUIRED_TAP_ROLES)
 
 
 def test_manifest_taps_are_fixed_per_backend() -> None:
-    validate_manifest_taps(_manifest("act"))
+    validate_manifest_taps(_manifest("smolvla"))
     with pytest.raises(ValueError, match="fixed tap registry"):
         validate_manifest_taps(
             StageManifest.from_dict(
-                {**_manifest("act").to_dict(), "latent_taps": ["pre_action"]}
+                {**_manifest("smolvla").to_dict(), "latent_taps": ["pre_action"]}
             )
         )
 
 
 class _FakeBackend:
-    backend_name = "act"
+    backend_name = "smolvla"
 
     def load_stage(self, manifest: StageManifest) -> None:
         self.manifest = manifest
@@ -80,7 +80,7 @@ class _FakeBackend:
 def test_policy_backend_protocol_and_manifest_backend_match() -> None:
     backend = _FakeBackend()
     assert isinstance(backend, PolicyBackend)
-    validate_backend_manifest(backend, _manifest("act"))
+    validate_backend_manifest(backend, _manifest("smolvla"))
     with pytest.raises(ValueError, match="backend"):
-        validate_backend_manifest(backend, _manifest("smolvla"))
+        validate_backend_manifest(backend, _manifest("pi0"))
 
