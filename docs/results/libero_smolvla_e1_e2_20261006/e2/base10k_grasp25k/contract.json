@@ -1,0 +1,36 @@
+{
+  "base": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/010000/pretrained_model",
+  "donor": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/025000/pretrained_model",
+  "window": "grasp",
+  "tasks": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "initial_state_offset": 0,
+  "episodes": 20,
+  "initial_state_count": 50,
+  "approach_distance_m": 0.1,
+  "lift_m": 0.02,
+  "seed_base": 2057736129,
+  "lockstep": "both policies act every step",
+  "shared_processors_sha256": {
+    "policy_postprocessor.json": [
+      "3b51f092c70c710ce0213ee1b63bf51b4878ec67828dd2d67daf9ef51081a41a",
+      "3b51f092c70c710ce0213ee1b63bf51b4878ec67828dd2d67daf9ef51081a41a"
+    ],
+    "policy_postprocessor_step_0_unnormalizer_processor.safetensors": [
+      "bd2398347237fa143ff1915e14f16ac48dd9e2bc257a8969bedf3992cb0d1ee4",
+      "bd2398347237fa143ff1915e14f16ac48dd9e2bc257a8969bedf3992cb0d1ee4"
+    ],
+    "policy_preprocessor.json": [
+      "122ec5106602b1bf129f49690d05ab2f49748a0ac6119de55ea0677d4e90d248",
+      "122ec5106602b1bf129f49690d05ab2f49748a0ac6119de55ea0677d4e90d248"
+    ],
+    "policy_preprocessor_step_5_normalizer_processor.safetensors": [
+      "bd2398347237fa143ff1915e14f16ac48dd9e2bc257a8969bedf3992cb0d1ee4",
+      "bd2398347237fa143ff1915e14f16ac48dd9e2bc257a8969bedf3992cb0d1ee4"
+    ]
+  }
+}

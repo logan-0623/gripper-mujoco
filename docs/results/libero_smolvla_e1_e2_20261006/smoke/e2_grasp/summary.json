@@ -1,0 +1,30 @@
+{
+  "rows": [
+    {
+      "task": 1,
+      "initial_state_id": 0,
+      "success": true,
+      "stable_grasp": true,
+      "steps": 188,
+      "donor_steps": 91,
+      "window_opened_step": 55,
+      "window_closed_step": 146
+    },
+    {
+      "task": 1,
+      "initial_state_id": 1,
+      "success": true,
+      "stable_grasp": true,
+      "steps": 129,
+      "donor_steps": 41,
+      "window_opened_step": 48,
+      "window_closed_step": 89
+    }
+  ],
+  "success": 2,
+  "episodes": 2,
+  "by_task": {
+    "1": 2
+  },
+  "mean_donor_fraction": 0.416403785488959
+}

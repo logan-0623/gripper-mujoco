@@ -1,0 +1,56 @@
+{
+  "checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/010000/pretrained_model",
+  "tasks": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "points": "events",
+  "mode": "policy",
+  "demos_per_task": "all annotated",
+  "fractions": [
+    0.0,
+    0.2,
+    0.4,
+    0.6
+  ],
+  "event_offsets": [
+    [
+      "contact-30",
+      "contact",
+      -30
+    ],
+    [
+      "contact-15",
+      "contact",
+      -15
+    ],
+    [
+      "contact-5",
+      "contact",
+      -5
+    ],
+    [
+      "contact",
+      "contact",
+      0
+    ],
+    [
+      "grasp",
+      "grasp",
+      0
+    ],
+    [
+      "grasp+10",
+      "grasp",
+      10
+    ]
+  ],
+  "raw_root": "/root/gripper-mujoco/data/libero/raw",
+  "bank": "/root/gripper-mujoco/outputs/representation_study/libero_smolvla/state_bank",
+  "seed_base": 2057736129,
+  "n_action_steps": 10,
+  "denoising_steps": 10,
+  "restore": "benchmark reset, then set_init_state(demo)"
+}

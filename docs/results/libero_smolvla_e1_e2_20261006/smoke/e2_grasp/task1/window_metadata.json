@@ -1,0 +1,19 @@
+{
+  "window": "grasp",
+  "episodes": [
+    {
+      "initial_state_id": 0,
+      "donor_steps": 91,
+      "steps": 188,
+      "window_opened_step": 55,
+      "window_closed_step": 146
+    },
+    {
+      "initial_state_id": 1,
+      "donor_steps": 41,
+      "steps": 129,
+      "window_opened_step": 48,
+      "window_closed_step": 89
+    }
+  ]
+}
