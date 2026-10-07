@@ -1,0 +1,18 @@
+{
+  "checkpoint": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/025000/pretrained_model",
+  "tasks": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "initial_state_offset": 0,
+  "episodes": 20,
+  "initial_state_count": 50,
+  "approach_distance_m": 0.1,
+  "push_steps": 4,
+  "push_action": 1.0,
+  "push_seed": 20261006,
+  "pose_convention": "relative_pose_9d(gripper_pose, target_pose) = StateBank gripper_to_target",
+  "seed_base": 2057736129
+}

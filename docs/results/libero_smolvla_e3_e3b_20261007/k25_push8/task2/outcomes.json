@@ -1,0 +1,149 @@
+{
+ "note": "per-episode outcomes extracted from physical_events.json",
+ "episodes": [
+  {
+   "initial_state_id": 0,
+   "success": false,
+   "stable_grasp": false,
+   "contact": false,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 1,
+   "success": false,
+   "stable_grasp": false,
+   "contact": true,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 2,
+   "success": true,
+   "stable_grasp": true,
+   "contact": true,
+   "supported_lift": true,
+   "unintended_drop": false,
+   "steps": 142
+  },
+  {
+   "initial_state_id": 3,
+   "success": true,
+   "stable_grasp": true,
+   "contact": true,
+   "supported_lift": true,
+   "unintended_drop": false,
+   "steps": 141
+  },
+  {
+   "initial_state_id": 4,
+   "success": true,
+   "stable_grasp": true,
+   "contact": true,
+   "supported_lift": true,
+   "unintended_drop": false,
+   "steps": 163
+  },
+  {
+   "initial_state_id": 5,
+   "success": false,
+   "stable_grasp": false,
+   "contact": true,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 6,
+   "success": false,
+   "stable_grasp": false,
+   "contact": true,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 7,
+   "success": false,
+   "stable_grasp": false,
+   "contact": true,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 8,
+   "success": false,
+   "stable_grasp": false,
+   "contact": true,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 9,
+   "success": false,
+   "stable_grasp": false,
+   "contact": true,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 10,
+   "success": false,
+   "stable_grasp": true,
+   "contact": true,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 11,
+   "success": false,
+   "stable_grasp": true,
+   "contact": true,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 12,
+   "success": true,
+   "stable_grasp": true,
+   "contact": true,
+   "supported_lift": true,
+   "unintended_drop": false,
+   "steps": 144
+  },
+  {
+   "initial_state_id": 13,
+   "success": false,
+   "stable_grasp": false,
+   "contact": false,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  },
+  {
+   "initial_state_id": 14,
+   "success": true,
+   "stable_grasp": true,
+   "contact": true,
+   "supported_lift": true,
+   "unintended_drop": false,
+   "steps": 143
+  },
+  {
+   "initial_state_id": 15,
+   "success": false,
+   "stable_grasp": false,
+   "contact": true,
+   "supported_lift": false,
+   "unintended_drop": false,
+   "steps": 280
+  }
+ ]
+}

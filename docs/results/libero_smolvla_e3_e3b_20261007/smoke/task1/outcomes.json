@@ -1,0 +1,23 @@
+{
+ "note": "per-episode outcomes extracted from physical_events.json",
+ "episodes": [
+  {
+   "initial_state_id": 0,
+   "success": true,
+   "stable_grasp": true,
+   "contact": true,
+   "supported_lift": true,
+   "unintended_drop": false,
+   "steps": 159
+  },
+  {
+   "initial_state_id": 1,
+   "success": true,
+   "stable_grasp": true,
+   "contact": true,
+   "supported_lift": true,
+   "unintended_drop": false,
+   "steps": 139
+  }
+ ]
+}
