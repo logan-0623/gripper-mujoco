@@ -1,0 +1,45 @@
+{
+  "lineage": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints",
+  "steps": [
+    5000,
+    10000,
+    15000,
+    20000,
+    25000
+  ],
+  "tasks": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "episodes": 40,
+  "initial_state_count": 50,
+  "seed_base": 2057736129,
+  "prompts": {
+    "correct": {
+      "0": "pick up the black bowl between the plate and the ramekin and place it on the plate",
+      "1": "pick up the black bowl next to the ramekin and place it on the plate",
+      "2": "pick up the black bowl from table center and place it on the plate",
+      "3": "pick up the black bowl on the cookie box and place it on the plate"
+    },
+    "empty": {
+      "0": "",
+      "1": "",
+      "2": "",
+      "3": ""
+    },
+    "gibberish": {
+      "0": "mynb iq pmz jplsg qeje ydtzirw zte jdxcv kpr dln ktugrpo qib zracx mw zv uat pkhxk",
+      "1": "eszy ci dpy opumz gdpa mnty ya woi xzhsdka aau ramvg nx aq hyo prhlh",
+      "2": "bccl fx zvj itgtb svfn umzx qlroq ibalok mnq frfhh af kf eqq lqvrf",
+      "3": "hsre lt pus ctapi rhgw pr rpm uehueq mxa vyc fysbj ya ip txm wznmx"
+    },
+    "other": {
+      "0": "pick up the black bowl next to the ramekin and place it on the plate",
+      "1": "pick up the black bowl from table center and place it on the plate",
+      "2": "pick up the black bowl on the cookie box and place it on the plate",
+      "3": "pick up the black bowl between the plate and the ramekin and place it on the plate"
+    }
+  }
+}
