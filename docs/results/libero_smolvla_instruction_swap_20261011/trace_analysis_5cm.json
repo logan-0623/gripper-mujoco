@@ -1,0 +1,344 @@
+{
+  "calibration": {
+    "25k": {
+      "within": 102,
+      "n": 136,
+      "p90_cm": 6.6,
+      "passes": false
+    }
+  },
+  "cells": {
+    "5k/other/scene0<-prompt1": {
+      "n": 40,
+      "class": {
+        "bowl": 14,
+        "key": 3,
+        "other": 23
+      },
+      "lifted": {
+        "akita_black_bowl_2": 9,
+        "none": 31
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 6.1,
+      "reach_to_target_bowl_cm": 14.7,
+      "reach_to_other_bowl_cm": 6.4,
+      "memorised_to_nearest_bowl_cm": 1.5,
+      "dtw_source_cm": 1.1,
+      "dtw_current_cm": 5.8,
+      "source_closer": 40
+    },
+    "5k/other/scene1<-prompt2": {
+      "n": 40,
+      "class": {
+        "other": 39,
+        "key": 1
+      },
+      "lifted": {
+        "none": 40
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 8.2,
+      "reach_to_target_bowl_cm": 29.2,
+      "reach_to_other_bowl_cm": 21.2,
+      "memorised_to_nearest_bowl_cm": 22.1,
+      "dtw_source_cm": 1.1,
+      "dtw_current_cm": 9.4,
+      "source_closer": 40
+    },
+    "5k/other/scene2<-prompt3": {
+      "n": 40,
+      "class": {
+        "other": 16,
+        "key": 24
+      },
+      "lifted": {
+        "none": 40
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 4.4,
+      "reach_to_target_bowl_cm": 17.2,
+      "reach_to_other_bowl_cm": 26.7,
+      "memorised_to_nearest_bowl_cm": 14.9,
+      "dtw_source_cm": 0.8,
+      "dtw_current_cm": 3.1,
+      "source_closer": 40
+    },
+    "5k/other/scene3<-prompt0": {
+      "n": 40,
+      "class": {
+        "other": 39,
+        "key": 1
+      },
+      "lifted": {
+        "none": 40
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 8.7,
+      "reach_to_target_bowl_cm": 13.1,
+      "reach_to_other_bowl_cm": 40.8,
+      "memorised_to_nearest_bowl_cm": 21.8,
+      "dtw_source_cm": 1.0,
+      "dtw_current_cm": 2.1,
+      "source_closer": 40
+    },
+    "15k/other/scene0<-prompt1": {
+      "n": 40,
+      "class": {
+        "bowl": 28,
+        "other": 8,
+        "key": 4
+      },
+      "lifted": {
+        "akita_black_bowl_2": 24,
+        "none": 16,
+        "akita_black_bowl_1": 1
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 4.1,
+      "reach_to_target_bowl_cm": 14.3,
+      "reach_to_other_bowl_cm": 4.7,
+      "memorised_to_nearest_bowl_cm": 1.5,
+      "dtw_source_cm": 1.0,
+      "dtw_current_cm": 6.0,
+      "source_closer": 40
+    },
+    "15k/other/scene1<-prompt2": {
+      "n": 40,
+      "class": {
+        "other": 26,
+        "key": 14
+      },
+      "lifted": {
+        "none": 40
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 5.8,
+      "reach_to_target_bowl_cm": 29.1,
+      "reach_to_other_bowl_cm": 23.7,
+      "memorised_to_nearest_bowl_cm": 22.1,
+      "dtw_source_cm": 0.7,
+      "dtw_current_cm": 9.5,
+      "source_closer": 40
+    },
+    "15k/other/scene2<-prompt3": {
+      "n": 40,
+      "class": {
+        "key": 34,
+        "bowl": 1,
+        "other": 5
+      },
+      "lifted": {
+        "none": 36,
+        "akita_black_bowl_2": 4
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 3.9,
+      "reach_to_target_bowl_cm": 13.7,
+      "reach_to_other_bowl_cm": 26.4,
+      "memorised_to_nearest_bowl_cm": 14.9,
+      "dtw_source_cm": 0.6,
+      "dtw_current_cm": 2.7,
+      "source_closer": 40
+    },
+    "15k/other/scene3<-prompt0": {
+      "n": 40,
+      "class": {
+        "other": 38,
+        "key": 2
+      },
+      "lifted": {
+        "none": 33,
+        "glazed_rim_porcelain_ramekin_1": 7
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 7.8,
+      "reach_to_target_bowl_cm": 15.1,
+      "reach_to_other_bowl_cm": 41.5,
+      "memorised_to_nearest_bowl_cm": 21.8,
+      "dtw_source_cm": 0.8,
+      "dtw_current_cm": 2.4,
+      "source_closer": 40
+    },
+    "25k/correct/scene0<-prompt0": {
+      "n": 40,
+      "class": {
+        "bowl": 34,
+        "other": 6
+      },
+      "lifted": {
+        "akita_black_bowl_1": 32,
+        "none": 8
+      },
+      "success": 31,
+      "reach_to_memorised_cm": 6.5,
+      "reach_to_target_bowl_cm": 6.5,
+      "reach_to_other_bowl_cm": 22.5,
+      "memorised_to_nearest_bowl_cm": 0.0,
+      "dtw_source_cm": 0.8,
+      "dtw_current_cm": 0.8,
+      "source_closer": 0
+    },
+    "25k/correct/scene1<-prompt1": {
+      "n": 40,
+      "class": {
+        "bowl": 40
+      },
+      "lifted": {
+        "akita_black_bowl_1": 40
+      },
+      "success": 36,
+      "reach_to_memorised_cm": 2.8,
+      "reach_to_target_bowl_cm": 2.8,
+      "reach_to_other_bowl_cm": 51.8,
+      "memorised_to_nearest_bowl_cm": 0.0,
+      "dtw_source_cm": 0.7,
+      "dtw_current_cm": 0.7,
+      "source_closer": 0
+    },
+    "25k/correct/scene2<-prompt2": {
+      "n": 40,
+      "class": {
+        "bowl": 40
+      },
+      "lifted": {
+        "akita_black_bowl_1": 38,
+        "none": 2
+      },
+      "success": 37,
+      "reach_to_memorised_cm": 4.2,
+      "reach_to_target_bowl_cm": 4.2,
+      "reach_to_other_bowl_cm": 28.5,
+      "memorised_to_nearest_bowl_cm": 0.0,
+      "dtw_source_cm": 0.7,
+      "dtw_current_cm": 0.7,
+      "source_closer": 0
+    },
+    "25k/correct/scene3<-prompt3": {
+      "n": 40,
+      "class": {
+        "bowl": 40
+      },
+      "lifted": {
+        "akita_black_bowl_1": 37,
+        "none": 3
+      },
+      "success": 32,
+      "reach_to_memorised_cm": 3.9,
+      "reach_to_target_bowl_cm": 3.9,
+      "reach_to_other_bowl_cm": 34.8,
+      "memorised_to_nearest_bowl_cm": 0.0,
+      "dtw_source_cm": 0.7,
+      "dtw_current_cm": 0.7,
+      "source_closer": 0
+    },
+    "25k/other/scene0<-prompt1": {
+      "n": 40,
+      "class": {
+        "bowl": 36,
+        "key": 3,
+        "other": 1
+      },
+      "lifted": {
+        "akita_black_bowl_2": 29,
+        "none": 11,
+        "akita_black_bowl_1": 5
+      },
+      "success": 1,
+      "reach_to_memorised_cm": 3.7,
+      "reach_to_target_bowl_cm": 15.2,
+      "reach_to_other_bowl_cm": 4.0,
+      "memorised_to_nearest_bowl_cm": 1.5,
+      "dtw_source_cm": 0.8,
+      "dtw_current_cm": 6.1,
+      "source_closer": 40
+    },
+    "25k/other/scene1<-prompt2": {
+      "n": 40,
+      "class": {
+        "key": 19,
+        "other": 21
+      },
+      "lifted": {
+        "none": 40
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 5.3,
+      "reach_to_target_bowl_cm": 29.5,
+      "reach_to_other_bowl_cm": 23.5,
+      "memorised_to_nearest_bowl_cm": 22.1,
+      "dtw_source_cm": 0.7,
+      "dtw_current_cm": 9.5,
+      "source_closer": 40
+    },
+    "25k/other/scene2<-prompt3": {
+      "n": 40,
+      "class": {
+        "key": 30,
+        "other": 7,
+        "bowl": 3
+      },
+      "lifted": {
+        "none": 34,
+        "akita_black_bowl_2": 6
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 4.0,
+      "reach_to_target_bowl_cm": 14.3,
+      "reach_to_other_bowl_cm": 26.4,
+      "memorised_to_nearest_bowl_cm": 14.9,
+      "dtw_source_cm": 0.7,
+      "dtw_current_cm": 2.5,
+      "source_closer": 40
+    },
+    "25k/other/scene3<-prompt0": {
+      "n": 40,
+      "class": {
+        "other": 39,
+        "key": 1
+      },
+      "lifted": {
+        "none": 35,
+        "glazed_rim_porcelain_ramekin_1": 5
+      },
+      "success": 0,
+      "reach_to_memorised_cm": 7.9,
+      "reach_to_target_bowl_cm": 15.1,
+      "reach_to_other_bowl_cm": 41.3,
+      "memorised_to_nearest_bowl_cm": 21.8,
+      "dtw_source_cm": 0.8,
+      "dtw_current_cm": 2.3,
+      "source_closer": 40
+    }
+  },
+  "decision": {
+    "5k": {
+      "scenes_2_3_episodes": 80,
+      "key_fraction": 0.31,
+      "bowl_fraction": 0.0,
+      "dtw_source_median_cm": 0.8,
+      "dtw_current_median_cm": 2.7,
+      "supports_key": false,
+      "against_key": false
+    },
+    "15k": {
+      "scenes_2_3_episodes": 80,
+      "key_fraction": 0.45,
+      "bowl_fraction": 0.01,
+      "dtw_source_median_cm": 0.8,
+      "dtw_current_median_cm": 2.6,
+      "supports_key": false,
+      "against_key": false
+    },
+    "25k": {
+      "scenes_2_3_episodes": 80,
+      "key_fraction": 0.39,
+      "bowl_fraction": 0.04,
+      "dtw_source_median_cm": 0.8,
+      "dtw_current_median_cm": 2.4,
+      "supports_key": false,
+      "against_key": false
+    }
+  },
+  "threshold_cm": 5.0
+}
