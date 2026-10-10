@@ -1,0 +1,460 @@
+{
+  "10k": {
+    "unpushed": [
+      50,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 16,
+      "1": 5,
+      "2": 17,
+      "3": 12
+    },
+    "pushed8": [
+      5,
+      40
+    ],
+    "retention8": [
+      4,
+      21
+    ],
+    "unpushed_minus_15k": [
+      -0.2,
+      -0.325,
+      -0.075,
+      80
+    ],
+    "pushed8_minus_15k": [
+      -0.25,
+      -0.425,
+      -0.075,
+      40
+    ],
+    "unpushed_minus_C": null,
+    "pushed8_minus_C": null
+  },
+  "15k": {
+    "unpushed": [
+      66,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 17,
+      "1": 17,
+      "2": 14,
+      "3": 18
+    },
+    "pushed8": [
+      15,
+      40
+    ],
+    "retention8": [
+      11,
+      34
+    ],
+    "unpushed_minus_15k": null,
+    "pushed8_minus_15k": null,
+    "unpushed_minus_C": null,
+    "pushed8_minus_C": null
+  },
+  "20k": {
+    "unpushed": [
+      67,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 15,
+      "1": 20,
+      "2": 17,
+      "3": 15
+    },
+    "pushed8": [
+      14,
+      40
+    ],
+    "retention8": [
+      13,
+      35
+    ],
+    "unpushed_minus_15k": [
+      0.013,
+      -0.087,
+      0.113,
+      80
+    ],
+    "pushed8_minus_15k": [
+      -0.025,
+      -0.175,
+      0.125,
+      40
+    ],
+    "unpushed_minus_C": null,
+    "pushed8_minus_C": null
+  },
+  "25k": {
+    "unpushed": [
+      69,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 15,
+      "1": 18,
+      "2": 20,
+      "3": 16
+    },
+    "pushed8": [
+      17,
+      40
+    ],
+    "retention8": [
+      13,
+      33
+    ],
+    "unpushed_minus_15k": [
+      0.037,
+      -0.062,
+      0.138,
+      80
+    ],
+    "pushed8_minus_15k": [
+      0.05,
+      -0.1,
+      0.2,
+      40
+    ],
+    "unpushed_minus_C": null,
+    "pushed8_minus_C": null
+  },
+  "C@2500": {
+    "unpushed": [
+      57,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 12,
+      "1": 13,
+      "2": 17,
+      "3": 15
+    },
+    "pushed8": [
+      7,
+      40
+    ],
+    "retention8": [
+      4,
+      25
+    ],
+    "unpushed_minus_15k": [
+      -0.113,
+      -0.225,
+      -0.013,
+      80
+    ],
+    "pushed8_minus_15k": [
+      -0.2,
+      -0.35,
+      -0.075,
+      40
+    ],
+    "unpushed_minus_C": null,
+    "pushed8_minus_C": null
+  },
+  "W@2500": {
+    "unpushed": [
+      59,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 19,
+      "1": 11,
+      "2": 17,
+      "3": 12
+    },
+    "pushed8": [
+      13,
+      40
+    ],
+    "retention8": [
+      12,
+      30
+    ],
+    "unpushed_minus_15k": [
+      -0.087,
+      -0.212,
+      0.037,
+      80
+    ],
+    "pushed8_minus_15k": [
+      -0.05,
+      -0.25,
+      0.15,
+      40
+    ],
+    "unpushed_minus_C": [
+      0.025,
+      -0.087,
+      0.138,
+      80
+    ],
+    "pushed8_minus_C": [
+      0.15,
+      0.0,
+      0.3,
+      40
+    ]
+  },
+  "LE@2500": {
+    "unpushed": [
+      60,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 15,
+      "1": 16,
+      "2": 15,
+      "3": 14
+    },
+    "pushed8": [
+      9,
+      40
+    ],
+    "retention8": [
+      8,
+      31
+    ],
+    "unpushed_minus_15k": [
+      -0.075,
+      -0.2,
+      0.05,
+      80
+    ],
+    "pushed8_minus_15k": [
+      -0.15,
+      -0.3,
+      0.0,
+      40
+    ],
+    "unpushed_minus_C": [
+      0.037,
+      -0.062,
+      0.138,
+      80
+    ],
+    "pushed8_minus_C": [
+      0.05,
+      -0.125,
+      0.225,
+      40
+    ]
+  },
+  "LA@2500": {
+    "unpushed": [
+      65,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 17,
+      "1": 17,
+      "2": 18,
+      "3": 13
+    },
+    "pushed8": [
+      11,
+      40
+    ],
+    "retention8": [
+      11,
+      34
+    ],
+    "unpushed_minus_15k": [
+      -0.013,
+      -0.125,
+      0.1,
+      80
+    ],
+    "pushed8_minus_15k": [
+      -0.1,
+      -0.25,
+      0.025,
+      40
+    ],
+    "unpushed_minus_C": [
+      0.1,
+      -0.013,
+      0.212,
+      80
+    ],
+    "pushed8_minus_C": [
+      0.1,
+      -0.05,
+      0.25,
+      40
+    ]
+  },
+  "C@5000": {
+    "unpushed": [
+      66,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 17,
+      "1": 19,
+      "2": 17,
+      "3": 13
+    },
+    "pushed8": [
+      17,
+      40
+    ],
+    "retention8": [
+      15,
+      36
+    ],
+    "unpushed_minus_15k": [
+      0.0,
+      -0.1,
+      0.1,
+      80
+    ],
+    "pushed8_minus_15k": [
+      0.05,
+      -0.075,
+      0.2,
+      40
+    ],
+    "unpushed_minus_C": null,
+    "pushed8_minus_C": null
+  },
+  "W@5000": {
+    "unpushed": [
+      64,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 15,
+      "1": 18,
+      "2": 16,
+      "3": 15
+    },
+    "pushed8": [
+      15,
+      40
+    ],
+    "retention8": [
+      13,
+      33
+    ],
+    "unpushed_minus_15k": [
+      -0.025,
+      -0.125,
+      0.075,
+      80
+    ],
+    "pushed8_minus_15k": [
+      0.0,
+      -0.15,
+      0.15,
+      40
+    ],
+    "unpushed_minus_C": [
+      -0.025,
+      -0.1,
+      0.05,
+      80
+    ],
+    "pushed8_minus_C": [
+      -0.05,
+      -0.175,
+      0.075,
+      40
+    ]
+  },
+  "LE@5000": {
+    "unpushed": [
+      66,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 17,
+      "1": 16,
+      "2": 18,
+      "3": 15
+    },
+    "pushed8": [
+      12,
+      40
+    ],
+    "retention8": [
+      11,
+      33
+    ],
+    "unpushed_minus_15k": [
+      0.0,
+      -0.1,
+      0.1,
+      80
+    ],
+    "pushed8_minus_15k": [
+      -0.075,
+      -0.2,
+      0.05,
+      40
+    ],
+    "unpushed_minus_C": [
+      0.0,
+      -0.087,
+      0.087,
+      80
+    ],
+    "pushed8_minus_C": [
+      -0.125,
+      -0.275,
+      0.025,
+      40
+    ]
+  },
+  "LA@5000": {
+    "unpushed": [
+      67,
+      80
+    ],
+    "unpushed_by_task": {
+      "0": 20,
+      "1": 18,
+      "2": 17,
+      "3": 12
+    },
+    "pushed8": [
+      16,
+      40
+    ],
+    "retention8": [
+      14,
+      38
+    ],
+    "unpushed_minus_15k": [
+      0.013,
+      -0.1,
+      0.125,
+      80
+    ],
+    "pushed8_minus_15k": [
+      0.025,
+      -0.125,
+      0.175,
+      40
+    ],
+    "unpushed_minus_C": [
+      0.013,
+      -0.075,
+      0.1,
+      80
+    ],
+    "pushed8_minus_C": [
+      -0.025,
+      -0.2,
+      0.15,
+      40
+    ]
+  }
+}
