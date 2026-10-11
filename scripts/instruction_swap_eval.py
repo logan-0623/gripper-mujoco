@@ -5,8 +5,14 @@ handed to the policy replaced; nothing is trained. Conditions:
 * ``correct``: the task's own instruction (control, rerun under this harness).
 * ``empty``: the empty string.
 * ``gibberish``: random lowercase words with the same word lengths, fixed per task.
-* ``other``: the instruction of another Spatial task (task k gets task
-  (k+1) mod 4 of 0-3), i.e. the same verb and goal but a different bowl.
+* ``other``: the instruction of another task of the suite (task k gets task
+  (k+1) mod 4 of 0-3), i.e. the same verb and goal but a different object.
+* ``paraphrase``: the same object and goal reworded (hand-written, below), kept
+  within the training prompts' 5-22 tokens so token positions stay in range
+  (``empty`` is 1 token and ``gibberish`` 34-49, both outside it).
+
+``--suite`` evaluates another LIBERO suite; ``--lineage`` points at another
+checkpoint root (``<root>/<step:06d>/pretrained_model``).
 
 The override sets ``LiberoEnv.task_description`` after construction, which is
 what lerobot_eval puts in ``observation["task"]``; the event recorder logs the
@@ -32,9 +38,23 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 from interaction_vla.representation_study.libero.acquisition import _evaluation_command
 
-CONDITIONS = ("correct", "empty", "gibberish", "other")
+CONDITIONS = ("correct", "empty", "gibberish", "other", "paraphrase")
 NOISE_SEED_BASE = 2057736129
 LINEAGE = Path("/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints")
+PARAPHRASES = {
+    "pick up the black bowl between the plate and the ramekin and place it on the plate":
+        "grab the black bowl that sits between the plate and the ramekin and put it onto the plate",
+    "pick up the black bowl next to the ramekin and place it on the plate":
+        "grab the black bowl beside the ramekin and put it onto the plate",
+    "pick up the black bowl from table center and place it on the plate":
+        "grab the black bowl in the middle of the table and put it onto the plate",
+    "pick up the black bowl on the cookie box and place it on the plate":
+        "grab the black bowl sitting on top of the cookie box and put it onto the plate",
+    "pick up the alphabet soup and place it in the basket": "grab the alphabet soup can and put it into the basket",
+    "pick up the cream cheese and place it in the basket": "grab the cream cheese box and put it into the basket",
+    "pick up the salad dressing and place it in the basket": "grab the salad dressing bottle and put it into the basket",
+    "pick up the bbq sauce and place it in the basket": "grab the bbq sauce bottle and put it into the basket",
+}
 
 
 def instruction(condition: str, task: int, language: dict[int, str], tasks: list[int]) -> str:
@@ -46,6 +66,8 @@ def instruction(condition: str, task: int, language: dict[int, str], tasks: list
     if condition == "gibberish":
         rng = random.Random(task)
         return " ".join("".join(rng.choice("abcdefghijklmnopqrstuvwxyz") for _ in w) for w in own.split())
+    if condition == "paraphrase":
+        return PARAPHRASES[own]
     return language[tasks[(tasks.index(task) + 1) % len(tasks)]]
 
 
@@ -111,6 +133,7 @@ def _run_single(args: argparse.Namespace) -> None:
         _install_trace(LiberoEnv, args.output / "trace.json")
     forwarded = list(_evaluation_command(args.checkpoint, args.task, args.output, 0,
                                          args.episodes, args.initial_state_count))
+    forwarded = [a.replace("libero_spatial", args.suite) for a in forwarded]
     separator = forwarded.index("--")
     forwarded[separator:separator] = ["--policy-noise-seed-base", str(NOISE_SEED_BASE)]
     sys.argv = [sys.argv[0], *forwarded[5:]]
@@ -160,7 +183,9 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--step", type=int, action="append", help="checkpoint step (default: 5k-25k)")
-    p.add_argument("--condition", choices=CONDITIONS, action="append")
+    p.add_argument("--condition", choices=CONDITIONS, action="append", help="default: all but paraphrase")
+    p.add_argument("--suite", default="libero_spatial")
+    p.add_argument("--lineage", type=Path, default=LINEAGE)
     p.add_argument("--task", type=int, action="append")
     p.add_argument("--episodes", type=int, default=40)
     p.add_argument("--initial-state-count", type=int, default=50)
@@ -177,14 +202,14 @@ def main() -> None:
         return
     steps = args.step or [5000, 10000, 15000, 20000, 25000]
     tasks = args.task or [0, 1, 2, 3]
-    conditions = args.condition or list(CONDITIONS)
+    conditions = args.condition or list(CONDITIONS[:4])
     if not args.summarize_only:
         from libero.libero import benchmark
-        suite = benchmark.get_benchmark_dict()["libero_spatial"]()
+        suite = benchmark.get_benchmark_dict()[args.suite]()
         language = {t: suite.get_task(t).language for t in tasks}
         jobs = []
         for step in steps:
-            checkpoint = LINEAGE / f"{step:06d}" / "pretrained_model"
+            checkpoint = args.lineage / f"{step:06d}" / "pretrained_model"
             if not (checkpoint / "model.safetensors").is_file():
                 raise FileNotFoundError(checkpoint / "model.safetensors")
             for cond in conditions:
@@ -197,15 +222,16 @@ def main() -> None:
                     out.parent.mkdir(parents=True, exist_ok=True)
                     jobs.append([sys.executable, "-W", "error::RuntimeWarning", str(Path(__file__).resolve()),
                                  "--single", "--output", str(out), "--checkpoint", str(checkpoint),
-                                 "--task", str(task), "--prompt", instruction(cond, task, language, tasks),
+                                 "--task", str(task), "--suite", args.suite,
+                                 "--prompt", instruction(cond, task, language, tasks),
                                  "--episodes", str(args.episodes),
                                  "--initial-state-count", str(args.initial_state_count)]
                                 + (["--trace"] if args.trace else []))
         args.output.mkdir(parents=True, exist_ok=True)
         (args.output / "contract.json").write_text(json.dumps({
-            "lineage": str(LINEAGE), "steps": steps, "tasks": tasks, "episodes": args.episodes,
+            "lineage": str(args.lineage), "suite": args.suite, "steps": steps, "tasks": tasks, "episodes": args.episodes,
             "initial_state_count": args.initial_state_count, "seed_base": NOISE_SEED_BASE,
-            "prompts": {c: {t: instruction(c, t, language, tasks) for t in tasks} for c in CONDITIONS},
+            "prompts": {c: {t: instruction(c, t, language, tasks) for t in tasks} for c in conditions},
         }, indent=2) + "\n")
 
         def run(cmd):
