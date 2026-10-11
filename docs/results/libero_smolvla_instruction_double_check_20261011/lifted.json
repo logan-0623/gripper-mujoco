@@ -1,0 +1,166 @@
+{
+ "object_25k/025000/correct/task0": {
+  "alphabet_soup_1": 39,
+  "none": 1
+ },
+ "object_25k/025000/correct/task1": {
+  "cream_cheese_1": 40
+ },
+ "object_25k/025000/correct/task2": {
+  "salad_dressing_1": 40
+ },
+ "object_25k/025000/correct/task3": {
+  "bbq_sauce_1": 32,
+  "none": 8
+ },
+ "object_25k/025000/empty/task0": {
+  "none": 34,
+  "butter_1": 6
+ },
+ "object_25k/025000/empty/task1": {
+  "none": 40
+ },
+ "object_25k/025000/empty/task2": {
+  "none": 36,
+  "tomato_sauce_1": 4
+ },
+ "object_25k/025000/empty/task3": {
+  "none": 31,
+  "cream_cheese_1": 7,
+  "ketchup_1": 2
+ },
+ "object_25k/025000/other/task0": {
+  "none": 24,
+  "salad_dressing_1": 16
+ },
+ "object_25k/025000/other/task1": {
+  "none": 40
+ },
+ "object_25k/025000/other/task2": {
+  "salad_dressing_1": 40
+ },
+ "object_25k/025000/other/task3": {
+  "chocolate_pudding_1": 35,
+  "none": 5
+ },
+ "object_25k/025000/paraphrase/task0": {
+  "none": 23,
+  "alphabet_soup_1": 17
+ },
+ "object_25k/025000/paraphrase/task1": {
+  "cream_cheese_1": 34,
+  "none": 6
+ },
+ "object_25k/025000/paraphrase/task2": {
+  "salad_dressing_1": 31,
+  "none": 8,
+  "basket_1,salad_dressing_1": 1
+ },
+ "object_25k/025000/paraphrase/task3": {
+  "none": 23,
+  "bbq_sauce_1": 17
+ },
+ "official_spatial/000000/correct/task0": {
+  "akita_black_bowl_1": 38,
+  "none": 2
+ },
+ "official_spatial/000000/correct/task1": {
+  "akita_black_bowl_1": 37,
+  "none": 3
+ },
+ "official_spatial/000000/correct/task2": {
+  "akita_black_bowl_1": 39,
+  "none": 1
+ },
+ "official_spatial/000000/correct/task3": {
+  "akita_black_bowl_1": 37,
+  "none": 3
+ },
+ "official_spatial/000000/empty/task0": {
+  "akita_black_bowl_1": 33,
+  "none": 4,
+  "glazed_rim_porcelain_ramekin_1": 3
+ },
+ "official_spatial/000000/empty/task1": {
+  "akita_black_bowl_1": 33,
+  "glazed_rim_porcelain_ramekin_1": 3,
+  "akita_black_bowl_1,glazed_rim_porcelain_ramekin_1": 2,
+  "none": 2
+ },
+ "official_spatial/000000/empty/task2": {
+  "none": 22,
+  "glazed_rim_porcelain_ramekin_1": 12,
+  "akita_black_bowl_1": 6
+ },
+ "official_spatial/000000/empty/task3": {
+  "none": 39,
+  "glazed_rim_porcelain_ramekin_1": 1
+ },
+ "official_spatial/000000/other/task0": {
+  "akita_black_bowl_1": 28,
+  "none": 10,
+  "akita_black_bowl_2": 2
+ },
+ "official_spatial/000000/other/task1": {
+  "none": 40
+ },
+ "official_spatial/000000/other/task2": {
+  "none": 31,
+  "akita_black_bowl_2": 8,
+  "cookies_1": 1
+ },
+ "official_spatial/000000/other/task3": {
+  "none": 38,
+  "glazed_rim_porcelain_ramekin_1": 2
+ },
+ "official_spatial/000000/paraphrase/task0": {
+  "akita_black_bowl_1": 40
+ },
+ "official_spatial/000000/paraphrase/task1": {
+  "none": 36,
+  "glazed_rim_porcelain_ramekin_1": 2,
+  "akita_black_bowl_1,glazed_rim_porcelain_ramekin_1": 1,
+  "akita_black_bowl_1": 1
+ },
+ "official_spatial/000000/paraphrase/task2": {
+  "akita_black_bowl_1": 30,
+  "none": 9,
+  "akita_black_bowl_1,akita_black_bowl_2": 1
+ },
+ "official_spatial/000000/paraphrase/task3": {
+  "akita_black_bowl_1": 35,
+  "none": 5
+ },
+ "spatial_paraphrase/015000/paraphrase/task0": {
+  "akita_black_bowl_1": 38,
+  "none": 2
+ },
+ "spatial_paraphrase/015000/paraphrase/task1": {
+  "none": 36,
+  "glazed_rim_porcelain_ramekin_1": 4
+ },
+ "spatial_paraphrase/015000/paraphrase/task2": {
+  "akita_black_bowl_1": 33,
+  "none": 7
+ },
+ "spatial_paraphrase/015000/paraphrase/task3": {
+  "akita_black_bowl_1": 39,
+  "none": 1
+ },
+ "spatial_paraphrase/025000/paraphrase/task0": {
+  "akita_black_bowl_1": 38,
+  "none": 2
+ },
+ "spatial_paraphrase/025000/paraphrase/task1": {
+  "none": 38,
+  "glazed_rim_porcelain_ramekin_1": 2
+ },
+ "spatial_paraphrase/025000/paraphrase/task2": {
+  "akita_black_bowl_1": 39,
+  "none": 1
+ },
+ "spatial_paraphrase/025000/paraphrase/task3": {
+  "akita_black_bowl_1": 38,
+  "none": 2
+ }
+}

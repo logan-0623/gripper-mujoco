@@ -1,0 +1,42 @@
+{
+  "lineage": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints",
+  "suite": "libero_object",
+  "steps": [
+    25000
+  ],
+  "tasks": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "episodes": 40,
+  "initial_state_count": 50,
+  "seed_base": 2057736129,
+  "prompts": {
+    "correct": {
+      "0": "pick up the alphabet soup and place it in the basket",
+      "1": "pick up the cream cheese and place it in the basket",
+      "2": "pick up the salad dressing and place it in the basket",
+      "3": "pick up the bbq sauce and place it in the basket"
+    },
+    "empty": {
+      "0": "",
+      "1": "",
+      "2": "",
+      "3": ""
+    },
+    "other": {
+      "0": "pick up the cream cheese and place it in the basket",
+      "1": "pick up the salad dressing and place it in the basket",
+      "2": "pick up the bbq sauce and place it in the basket",
+      "3": "pick up the alphabet soup and place it in the basket"
+    },
+    "paraphrase": {
+      "0": "grab the alphabet soup can and put it into the basket",
+      "1": "grab the cream cheese box and put it into the basket",
+      "2": "grab the salad dressing bottle and put it into the basket",
+      "3": "grab the bbq sauce bottle and put it into the basket"
+    }
+  }
+}

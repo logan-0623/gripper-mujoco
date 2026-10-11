@@ -1,0 +1,102 @@
+{
+  "0k/correct": {
+    "success": 137,
+    "stable_grasp": 152,
+    "contact": 160,
+    "grasp_then_lift": 148,
+    "grasp_then_drop": 3,
+    "normal_release": 4,
+    "contact_onset_median": 65,
+    "episodes": 160,
+    "by_task": {
+      "0": 36,
+      "1": 34,
+      "2": 35,
+      "3": 32
+    },
+    "paired_vs_correct": {
+      "n": 160,
+      "both": 137,
+      "lost": 0,
+      "gained": 0
+    },
+    "language": [
+      "None"
+    ]
+  },
+  "0k/empty": {
+    "success": 1,
+    "stable_grasp": 74,
+    "contact": 95,
+    "grasp_then_lift": 72,
+    "grasp_then_drop": 7,
+    "normal_release": 0,
+    "contact_onset_median": 65,
+    "episodes": 160,
+    "by_task": {
+      "0": 1,
+      "1": 0,
+      "2": 0,
+      "3": 0
+    },
+    "paired_vs_correct": {
+      "n": 160,
+      "both": 1,
+      "lost": 136,
+      "gained": 0
+    },
+    "language": [
+      "None"
+    ]
+  },
+  "0k/other": {
+    "success": 6,
+    "stable_grasp": 25,
+    "contact": 42,
+    "grasp_then_lift": 25,
+    "grasp_then_drop": 2,
+    "normal_release": 1,
+    "contact_onset_median": 62,
+    "episodes": 160,
+    "by_task": {
+      "0": 6,
+      "1": 0,
+      "2": 0,
+      "3": 0
+    },
+    "paired_vs_correct": {
+      "n": 160,
+      "both": 5,
+      "lost": 132,
+      "gained": 1
+    },
+    "language": [
+      "None"
+    ]
+  },
+  "0k/paraphrase": {
+    "success": 40,
+    "stable_grasp": 111,
+    "contact": 137,
+    "grasp_then_lift": 103,
+    "grasp_then_drop": 10,
+    "normal_release": 0,
+    "contact_onset_median": 63,
+    "episodes": 160,
+    "by_task": {
+      "0": 35,
+      "1": 0,
+      "2": 2,
+      "3": 3
+    },
+    "paired_vs_correct": {
+      "n": 160,
+      "both": 35,
+      "lost": 102,
+      "gained": 5
+    },
+    "language": [
+      "None"
+    ]
+  }
+}
