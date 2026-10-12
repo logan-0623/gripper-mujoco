@@ -73,16 +73,17 @@ def checkpoint_lineage(checkpoint_root: Path, base_checkpoint: Path,
 
 def _evaluation_command(checkpoint: Path, task: int, output: Path,
                         initial_state_offset: int, episodes: int,
-                        initial_state_count: int | None = None) -> tuple[str, ...]:
+                        initial_state_count: int | None = None,
+                        suite: str = "libero_spatial") -> tuple[str, ...]:
     command = [
         sys.executable, "-W", "error::RuntimeWarning", "-m",
         "interaction_vla.representation_study.libero.capability_events",
         "--events-output", str(output / "physical_events.json"),
-        "--suite", "libero_spatial", "--initial-state-offset", str(initial_state_offset),
+        "--suite", suite, "--initial-state-offset", str(initial_state_offset),
         "--rendered-episodes", "0", "--",
         f"--policy.path={checkpoint}", "--policy.device=cuda", "--policy.use_amp=false",
         "--policy.n_action_steps=10", "--policy.num_steps=10", "--policy.empty_cameras=1",
-        "--env.type=libero", "--env.task=libero_spatial", f"--env.task_ids=[{task}]",
+        "--env.type=libero", f"--env.task={suite}", f"--env.task_ids=[{task}]",
         "--env.obs_type=pixels_agent_pos", "--env.init_states=true", "--env.fps=30",
         "--env.max_parallel_tasks=1",
         '--env.camera_name_mapping={"agentview_image":"camera1","robot0_eye_in_hand_image":"camera2"}',

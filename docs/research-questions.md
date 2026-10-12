@@ -261,7 +261,7 @@
 - **读出不足（否定机制）：** 10k 在所有 σ 下的变化 CI 都包含 0，或者为负。
 - **普遍去噪收益（不支持特异机制）：** 10k 和 25k 都显著提升，且两者提升之差的 CI 包含 0。
 - **局限：** σ = 0 时起点固定在原点，对 flow 而言可能偏离训练分布（高维下范数不典型），所以以 σ = 0.5 为主。
-- **代码：** 在 `flow_stage_mix.py` 的 `sample_actions` 包装里，噪声是统一采样的，在那里加缩放参数即可，随机数用法各组相同。
+- **代码：** `flow_stage_mix.py --donor-stages none --noise-scale σ [--noise-scope window]`。噪声先采样再缩放，各组随机数用法相同。
 
 ### 0b：E6 稳健性检查，排除 10k 恰好处于振荡低谷
 
@@ -273,6 +273,8 @@
   - **不成立：** E 的补回比例 < 1/3，或者 L − E 的 CI 下界 > 0。这说明 F15 依赖 10k 这一个点。
 
 ### 0c：方法 1 的指标——VLM 侧何时不再承担差距（离线，现有谱系）
+
+- **脚本：** [vlm_share.py](../scripts/vlm_share.py)。速度走 `denoise_step`，读 E6 的前缀缓存路径。已在本地核对：同一模型下，这条路径的损失与训练 `forward` 的损失逐元素相同。
 
 **依据**
 - F10：5k↔25k 整条 episode 的移植，需要两侧都换。
@@ -301,7 +303,7 @@
 
 ### 0d：Object 门槛
 
-- **前置工程：** 去掉 `grasp_window_switch.py`、`flow_stage_mix.py` 中写死的 `libero_spatial`。`task_registry_v1.yaml` 已收录 Object。
+- **前置工程（已完成）：** `grasp_window_switch.py`、`window_entry_probe.py`、`flow_stage_mix.py` 都加了 `--suite`，经由 `_evaluation_command(..., suite=)` 传入。`task_registry_v1.yaml` 已收录 Object。
 - **门槛：** 10k 对 25k，Object 0–3，初态 0–39。
   - 通过：跑 E6 的 E/L/X，判据同 E6。
   - 不通过：只报告 P1，因为 25k 的正确指令已是 143/160，接近上限。

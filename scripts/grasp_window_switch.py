@@ -103,7 +103,7 @@ def _run_task(args: argparse.Namespace) -> None:
             state_id = int(env.init_state_id) % len(env._init_states)  # same ID the recorder reports
             result = real_reset(env, *call_args, **call_kwargs)
             adapters[id(env)] = LiberoOffscreenSimulator.from_live_env(
-                env._env, suite="libero_spatial", task_id=int(env.task_id),
+                env._env, suite=args.suite, task_id=int(env.task_id),
                 task_name=str(env.task), language=str(env.task_description))
             window.reset(adapters[id(env)]._privileged_frame())
             live[id(env)] = {"initial_state_id": state_id, "donor_steps": 0, "steps": 0}
@@ -148,7 +148,7 @@ def _run_task(args: argparse.Namespace) -> None:
     lerobot_eval.make_policy = make_policy
     capability_events.install_libero_event_recorder = install
     forwarded = list(_evaluation_command(args.base, args.task[0], args.output, args.initial_state_offset,
-                                         args.episodes, args.initial_state_count))
+                                         args.episodes, args.initial_state_count, args.suite))
     separator = forwarded.index("--")
     forwarded[separator:separator] = ["--policy-noise-seed-base", "2057736129"]
     sys.argv = [sys.argv[0], *forwarded[5:]]
@@ -180,6 +180,7 @@ def main() -> None:
     p.add_argument("--base", type=Path, required=True, help="checkpoint acting outside the window")
     p.add_argument("--donor", type=Path, required=True, help="checkpoint acting inside the window")
     p.add_argument("--window", choices=("never", "grasp", "always"), required=True)
+    p.add_argument("--suite", default="libero_spatial", help="any suite the task registry supports")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--task", type=int, action="append", required=True)
     p.add_argument("--initial-state-offset", type=int, default=0)
@@ -203,6 +204,7 @@ def main() -> None:
         raise ValueError("base and donor use different pre/post-processors; actions would not be comparable")
     args.output.mkdir(parents=True)
     _write(args.output / "contract.json", {
+        "suite": args.suite,
         "base": str(args.base.resolve()), "donor": str(args.donor.resolve()), "window": args.window,
         "tasks": args.task, "initial_state_offset": args.initial_state_offset, "episodes": args.episodes,
         "initial_state_count": args.initial_state_count, "approach_distance_m": args.approach_distance,
@@ -210,7 +212,7 @@ def main() -> None:
         "shared_processors_sha256": processors})
     for task in args.task:
         print(f"RUN task={task}", flush=True)
-        subprocess.run([sys.executable, str(Path(__file__).resolve()), "--single-task",
+        subprocess.run([sys.executable, str(Path(__file__).resolve()), "--single-task", "--suite", args.suite,
                         "--base", str(args.base), "--donor", str(args.donor), "--window", args.window,
                         "--output", str(args.output / f"task{task}"), "--task", str(task),
                         "--initial-state-offset", str(args.initial_state_offset),

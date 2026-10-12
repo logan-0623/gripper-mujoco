@@ -132,8 +132,7 @@ def _run_single(args: argparse.Namespace) -> None:
     if args.trace:
         _install_trace(LiberoEnv, args.output / "trace.json")
     forwarded = list(_evaluation_command(args.checkpoint, args.task, args.output, 0,
-                                         args.episodes, args.initial_state_count))
-    forwarded = [a.replace("libero_spatial", args.suite) for a in forwarded]
+                                         args.episodes, args.initial_state_count, args.suite))
     separator = forwarded.index("--")
     forwarded[separator:separator] = ["--policy-noise-seed-base", str(NOISE_SEED_BASE)]
     sys.argv = [sys.argv[0], *forwarded[5:]]

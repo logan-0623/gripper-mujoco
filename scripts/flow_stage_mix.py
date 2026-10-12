@@ -21,6 +21,12 @@ computed, so it takes effect from the first chunk computed after window entry;
 every arm shares this timing. ``--push-steps`` applies the E3b push at window
 entry (``window_entry_probe.push_action``). Outcomes pair by task and
 initial-state ID across arms.
+
+E7 (noise scaling): ``--noise-scale`` multiplies the base's initial flow noise,
+on every chunk (``--noise-scope all``) or only on chunks computed inside the
+window (``window``). Noise is drawn before scaling, so random-number use is the
+same for every scale. With ``--donor-stages none`` the base acts alone, so an
+E7 arm is just ``--base <checkpoint> --donor-stages none --noise-scale s``.
 """
 from __future__ import annotations
 
@@ -70,7 +76,8 @@ def prefix_cache(flow, images, img_masks, lang_tokens, lang_masks, state):
     return pad, cache
 
 
-def install_mix(base, donor, window: GraspWindow, stages: frozenset[int], kv: str, live: dict) -> None:
+def install_mix(base, donor, window: GraspWindow, stages: frozenset[int], kv: str, live: dict,
+                noise_scale: float = 1.0, noise_scope: str = "all") -> None:
     flow, other = base.model, donor.model
     real_sample, real_denoise = flow.sample_actions, flow.denoise_step
 
@@ -79,6 +86,8 @@ def install_mix(base, donor, window: GraspWindow, stages: frozenset[int], kv: st
         if noise is None:
             noise = flow.sample_noise((state.shape[0], flow.config.chunk_size, flow.config.max_action_dim),
                                       state.device)
+        if noise_scale != 1.0 and (noise_scope == "all" or window.active):
+            noise = noise * noise_scale
         if not window.active:
             return real_sample(images, img_masks, lang_tokens, lang_masks, state, noise=noise, **kwargs)
         caches = {"donor": prefix_cache(other, images, img_masks, lang_tokens, lang_masks, state)}
@@ -134,7 +143,7 @@ def _run_task(args: argparse.Namespace) -> None:
             state_id = int(env.init_state_id) % len(env._init_states)  # same ID the recorder reports
             result = real_reset(env, *call_args, **call_kwargs)
             adapters[id(env)] = LiberoOffscreenSimulator.from_live_env(
-                env._env, suite="libero_spatial", task_id=int(env.task_id),
+                env._env, suite=args.suite, task_id=int(env.task_id),
                 task_name=str(env.task), language=str(env.task_description))
             window.reset(adapters[id(env)]._privileged_frame())
             live[id(env)] = {"initial_state_id": state_id, "steps": 0, "donor_steps": 0, "mixed_chunks": 0,
@@ -170,7 +179,8 @@ def _run_task(args: argparse.Namespace) -> None:
         donor_cfg = copy.deepcopy(cfg)
         donor_cfg.pretrained_path = args.donor
         donor = real_make_policy(cfg=donor_cfg, **kwargs).eval()
-        install_mix(base, donor, window, parse_stages(args.donor_stages, base.config.num_steps), args.kv, live)
+        install_mix(base, donor, window, parse_stages(args.donor_stages, base.config.num_steps), args.kv, live,
+                    args.noise_scale, args.noise_scope)
         base_select, base_reset = base.select_action, base.reset
 
         def select_action(observation):
@@ -191,7 +201,7 @@ def _run_task(args: argparse.Namespace) -> None:
     lerobot_eval.make_policy = make_policy
     capability_events.install_libero_event_recorder = install
     forwarded = list(_evaluation_command(args.base, task, args.output, args.initial_state_offset,
-                                         args.episodes, args.initial_state_count))
+                                         args.episodes, args.initial_state_count, args.suite))
     separator = forwarded.index("--")
     forwarded[separator:separator] = ["--policy-noise-seed-base", "2057736129"]
     sys.argv = [sys.argv[0], *forwarded[5:]]
@@ -204,6 +214,7 @@ def main() -> None:
     p.add_argument("--donor", type=Path, required=True)
     p.add_argument("--donor-stages", required=True, help="none | all | e.g. 0-4 or 0,3,5-9")
     p.add_argument("--kv", choices=("own", "base", "donor"), default="own")
+    p.add_argument("--suite", default="libero_spatial", help="any suite the task registry supports")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--task", type=int, action="append", required=True)
     p.add_argument("--initial-state-offset", type=int, default=0)
@@ -213,9 +224,12 @@ def main() -> None:
     p.add_argument("--lift", type=float, default=0.02)
     p.add_argument("--push-steps", type=int, default=0)
     p.add_argument("--push-action", type=float, default=1.0, help="E3b used 1.0")
+    p.add_argument("--noise-scale", type=float, default=1.0, help="E7: multiply the initial flow noise")
+    p.add_argument("--noise-scope", choices=("all", "window"), default="all")
     p.add_argument("--single-task", action="store_true", help=argparse.SUPPRESS)
     args = p.parse_args()
-    args.arm = f"stages={args.donor_stages},kv={args.kv},push={args.push_steps}"
+    args.arm = (f"stages={args.donor_stages},kv={args.kv},push={args.push_steps},"
+                f"noise={args.noise_scale}@{args.noise_scope}")
     parse_stages(args.donor_stages, 10)
     if args.single_task:
         _run_task(args)
@@ -231,21 +245,24 @@ def main() -> None:
         raise ValueError("base and donor use different pre/post-processors")
     args.output.mkdir(parents=True)
     _write(args.output / "contract.json", {
+        "suite": args.suite,
         "base": str(args.base.resolve()), "donor": str(args.donor.resolve()), "arm": args.arm,
         "donor_stages": args.donor_stages, "kv": args.kv, "tasks": args.task,
         "initial_state_offset": args.initial_state_offset, "episodes": args.episodes,
         "initial_state_count": args.initial_state_count, "approach_distance_m": args.approach_distance,
         "lift_m": args.lift, "push_steps": args.push_steps, "push_action": args.push_action,
+        "noise_scale": args.noise_scale, "noise_scope": args.noise_scope,
         "seed_base": 2057736129, "shared_processors_sha256": processors})
     for task in args.task:
-        subprocess.run([sys.executable, str(Path(__file__).resolve()), "--single-task",
+        subprocess.run([sys.executable, str(Path(__file__).resolve()), "--single-task", "--suite", args.suite,
                         "--base", str(args.base), "--donor", str(args.donor),
                         "--donor-stages", args.donor_stages, "--kv", args.kv,
                         "--output", str(args.output / f"task{task}"), "--task", str(task),
                         "--initial-state-offset", str(args.initial_state_offset),
                         "--episodes", str(args.episodes), "--initial-state-count", str(args.initial_state_count),
                         "--approach-distance", str(args.approach_distance), "--lift", str(args.lift),
-                        "--push-steps", str(args.push_steps), "--push-action", str(args.push_action)],
+                        "--push-steps", str(args.push_steps), "--push-action", str(args.push_action),
+                        "--noise-scale", str(args.noise_scale), "--noise-scope", args.noise_scope],
                        check=True)
     print(json.dumps({k: v for k, v in summarize(args.output, args.task).items() if k != "rows"}, indent=2),
           flush=True)

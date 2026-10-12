@@ -76,7 +76,7 @@ def _run_task(args: argparse.Namespace) -> None:
                              "entry_gripper_xyz": None,
                              "pushed_steps": 0, "push_displacement_m": None, "post_push_pose9d": None,
                              "adapter": LiberoOffscreenSimulator.from_live_env(
-                                 env._env, suite="libero_spatial", task_id=int(env.task_id),
+                                 env._env, suite=args.suite, task_id=int(env.task_id),
                                  task_name=str(env.task), language=str(env.task_description))}
             return result
 
@@ -110,7 +110,7 @@ def _run_task(args: argparse.Namespace) -> None:
 
     capability_events.install_libero_event_recorder = install
     forwarded = list(_evaluation_command(args.checkpoint, task, args.output, args.initial_state_offset,
-                                         args.episodes, args.initial_state_count))
+                                         args.episodes, args.initial_state_count, args.suite))
     separator = forwarded.index("--")
     forwarded[separator:separator] = ["--policy-noise-seed-base", "2057736129"]
     sys.argv = [sys.argv[0], *forwarded[5:]]
@@ -137,6 +137,7 @@ def summarize(output: Path, tasks) -> dict:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--checkpoint", type=Path, required=True)
+    p.add_argument("--suite", default="libero_spatial", help="any suite the task registry supports")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--task", type=int, action="append", required=True)
     p.add_argument("--initial-state-offset", type=int, default=0)
@@ -154,6 +155,7 @@ def main() -> None:
         raise FileExistsError(args.output)
     args.output.mkdir(parents=True)
     _write(args.output / "contract.json", {
+        "suite": args.suite,
         "checkpoint": str(args.checkpoint.resolve()), "tasks": args.task,
         "initial_state_offset": args.initial_state_offset, "episodes": args.episodes,
         "initial_state_count": args.initial_state_count, "approach_distance_m": args.approach_distance,
@@ -162,7 +164,7 @@ def main() -> None:
         "seed_base": 2057736129})
     for task in args.task:
         print(f"RUN task={task}", flush=True)
-        subprocess.run([sys.executable, str(Path(__file__).resolve()), "--single-task",
+        subprocess.run([sys.executable, str(Path(__file__).resolve()), "--single-task", "--suite", args.suite,
                         "--checkpoint", str(args.checkpoint), "--output", str(args.output / f"task{task}"),
                         "--task", str(task), "--initial-state-offset", str(args.initial_state_offset),
                         "--episodes", str(args.episodes), "--initial-state-count", str(args.initial_state_count),
