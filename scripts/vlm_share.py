@@ -132,6 +132,8 @@ def main() -> None:
     from interaction_vla.representation_study.libero.flow_trace import file_hash
 
     names, paths = zip(*(c.split("=", 1) for c in args.checkpoint))
+    if len(set(names)) != len(names):
+        raise ValueError(f"checkpoint names must be unique: {names}")
     models = {n: load(Path(path), args.device, args.empty_cameras, args.vlm_model_name)
               for n, path in zip(names, paths)}
     first = models[names[-1]]
