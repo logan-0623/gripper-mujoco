@@ -25,3 +25,5 @@ def test_bind_cameras_leaves_extra_features_missing():
     out = module.bind_cameras(batch, ["observation.images.camera1", "observation.images.camera2",
                                       "observation.images.camera3"])
     assert out == {"observation.state": 3, "observation.images.camera1": 1, "observation.images.camera2": 2}
+    renamed = {"observation.images.camera1": 1, "observation.state": 3}
+    assert module.bind_cameras(renamed, ["observation.images.camera1"]) is renamed

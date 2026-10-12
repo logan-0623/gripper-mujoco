@@ -57,7 +57,9 @@ def switch_point(names, ratios, rho):
 def bind_cameras(batch: dict, image_features) -> dict:
     """Dataset cameras (image, image2) -> the policy's first two image features; later ones stay
     missing so ``prepare_images`` fills them as masked empty cameras, as in closed-loop eval."""
-    sources = ("observation.images.image", "observation.images.image2")
+    sources = [k for k in ("observation.images.image", "observation.images.image2") if k in batch]
+    if not sources:  # the lineage pre-processor already renamed them (rename_map in training)
+        return batch
     out = {k: v for k, v in batch.items() if k not in sources}
     out.update({target: batch[source] for source, target in zip(sources, image_features)})
     return out
