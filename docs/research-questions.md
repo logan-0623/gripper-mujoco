@@ -246,6 +246,15 @@
 - [LaMP](https://arxiv.org/html/2603.25399)（2026-06）：增加一个 motion expert，用 flow matching 生成 3D 场景流；action expert 以**只走了一步去噪**的运动隐藏状态为条件。LIBERO 98.3%，LIBERO-Plus OOD 79.3%。
 - [ALAM](https://arxiv.org/html/2605.10819)（2026-05）：从无动作标签的视频中学习潜在动作（帧重建），加上组合一致性和可逆一致性两个约束。MetaWorld 上 π₀ 从 47.9% 提升到 85.0%；探针显示可加性误差和可逆性误差降低 25–85 倍。
 
+**第三批（外部综述推荐，2026-10-12 逐条核对原文）**
+- [Butterfly Effects of SGD Noise](https://arxiv.org/abs/2310.11428)（Block et al., ICLR 2024）：BC 训练中，minibatch SGD 噪声在不稳定的闭环动力学中被放大，长时域回报剧烈振荡，而单步 loss 几乎不变；对参数做 EMA 能明显缓解。**对我们的影响：** F11、F12、F15 都是在比较单点 checkpoint，10k 是否只是一个振荡低谷需要排除。
+- [Stable-BC](https://arxiv.org/abs/2408.06246)（Mehta et al., 2024，arXiv 预印本）：在 BC 中加入稳定性损失，让专家数据成为吸引域。F12/F14 可以表述为：标准 BC 不加这个损失，物体附近也会随训练长出吸引域，但它与成功率同步出现，不是先导。
+- [Semantic Anchoring for Robotic Action Representations](https://arxiv.org/abs/2607.13597)（Xu et al., 2026-07）：在 LIBERO 上全量微调 π₀，每 5k 步取一个 checkpoint 直到 30k，探测动作表示与指令语义的对齐。对齐在微调早期急剧下降，之后只部分恢复，后期再下降；OOD 成功率与对齐同步（Spearman 0.964）。时间轴与我们的谱系几乎相同，但测的是语义对齐，不是几何或抓取。
+- [Does VLA Even Know the Basics?](https://arxiv.org/abs/2606.19297)（Kachaev et al., 2026-06）：用放置动作回答问题的方式（Act2Answer）测 7 个 VLA 保留的常识。逐层探针显示，与答案相关的信息在中间层最强、在上层减弱，与"知道 ≠ 做"的框架一致。
+- [Observing and Controlling Features in VLA Models](https://arxiv.org/abs/2603.05487)（Buurmeijer, Amo Alonso, Swann, Pavone；ICML 2026）：动作相关特征在 OpenVLA 中很难线性分离，在 π₀.₅ 中可以准确恢复。综述中写作"ICMLA 2026"，有误。
+- [VLA-Corrector](https://arxiv.org/abs/2607.01804)（Pan et al., 2026-07）：推理时检测预测与观测的视觉特征动态是否偏离，丢弃过时的动作并重新规划，从而得到自适应的动作块长度。**综述对它的描述"few-shot 微调缺少对偏离状态和恢复行为的覆盖"在摘要中找不到**；它针对的是固定长度开环执行带来的误差累积，不能当作"恢复能力需要额外数据"的引文。
+- Action Atlas（2603.19233）的作者是 Grant、Zhao、Wang。"expert 通路编码运动程序、VLM 通路编码目标语义，expert 注入的行为偏移约为 2 倍，两者占据可分离的子空间"已核对原文。F15（窗口内 expert 侧补回 0.91，VLM 侧 0.43）与之一致；F10 的"两侧都需要"是 5k↔25k、整条 episode 的结果，端点和范围不同。
+
 ## 从第二批论文得到的修正
 
 1. **逐 token 处理，不再做平均池化。** 我们所有探针和干预都在 50 个动作 token 上取了平均。Action Atlas 已经证明这会丢失动作所需的信息。
