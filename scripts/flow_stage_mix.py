@@ -27,6 +27,12 @@ on every chunk (``--noise-scope all``) or only on chunks computed inside the
 window (``window``). Noise is drawn before scaling, so random-number use is the
 same for every scale. With ``--donor-stages none`` the base acts alone, so an
 E7 arm is just ``--base <checkpoint> --donor-stages none --noise-scale s``.
+
+E8 (autoguidance, Karras et al. 2024): with ``--guide-weight w`` the donor is a
+*weaker* checkpoint (e.g. 5k) and flow steps in ``--donor-stages`` use
+v_donor + w * (v_base - v_donor), each model reading its own prefix cache
+(``--kv own``). w = 1 is the base, w = 0 the donor; w > 1 extrapolates along
+donor -> base.
 """
 from __future__ import annotations
 
@@ -77,7 +83,7 @@ def prefix_cache(flow, images, img_masks, lang_tokens, lang_masks, state):
 
 
 def install_mix(base, donor, window: GraspWindow, stages: frozenset[int], kv: str, live: dict,
-                noise_scale: float = 1.0, noise_scope: str = "all") -> None:
+                noise_scale: float = 1.0, noise_scope: str = "all", guide_weight: float | None = None) -> None:
     flow, other = base.model, donor.model
     real_sample, real_denoise = flow.sample_actions, flow.denoise_step
 
@@ -96,6 +102,12 @@ def install_mix(base, donor, window: GraspWindow, stages: frozenset[int], kv: st
         def denoise_step(prefix_pad_masks, past_key_values, x_t, timestep):
             k = calls[0]
             calls[0] += 1
+            if guide_weight is not None and k in stages:
+                own = real_denoise(prefix_pad_masks=prefix_pad_masks, past_key_values=past_key_values,
+                                   x_t=x_t, timestep=timestep)
+                weak = other.denoise_step(prefix_pad_masks=caches["donor"][0], past_key_values=caches["donor"][1],
+                                          x_t=x_t, timestep=timestep)
+                return weak + guide_weight * (own - weak)
             model = other if k in stages else flow
             if kv == "donor" or (kv == "own" and model is other):
                 prefix_pad_masks, past_key_values = caches["donor"]
@@ -180,7 +192,7 @@ def _run_task(args: argparse.Namespace) -> None:
         donor_cfg.pretrained_path = args.donor
         donor = real_make_policy(cfg=donor_cfg, **kwargs).eval()
         install_mix(base, donor, window, parse_stages(args.donor_stages, base.config.num_steps), args.kv, live,
-                    args.noise_scale, args.noise_scope)
+                    args.noise_scale, args.noise_scope, args.guide_weight)
         base_select, base_reset = base.select_action, base.reset
 
         def select_action(observation):
@@ -226,11 +238,14 @@ def main() -> None:
     p.add_argument("--push-action", type=float, default=1.0, help="E3b used 1.0")
     p.add_argument("--noise-scale", type=float, default=1.0, help="E7: multiply the initial flow noise")
     p.add_argument("--noise-scope", choices=("all", "window"), default="all")
+    p.add_argument("--guide-weight", type=float, help="E8: autoguide the base by the (weaker) donor on --donor-stages")
     p.add_argument("--single-task", action="store_true", help=argparse.SUPPRESS)
     args = p.parse_args()
     args.arm = (f"stages={args.donor_stages},kv={args.kv},push={args.push_steps},"
-                f"noise={args.noise_scale}@{args.noise_scope}")
+                f"noise={args.noise_scale}@{args.noise_scope},guide={args.guide_weight}")
     parse_stages(args.donor_stages, 10)
+    if args.guide_weight is not None and args.kv != "own":
+        raise ValueError("--guide-weight reads each model's own cache; use --kv own")
     if args.single_task:
         _run_task(args)
         return
@@ -251,7 +266,7 @@ def main() -> None:
         "initial_state_offset": args.initial_state_offset, "episodes": args.episodes,
         "initial_state_count": args.initial_state_count, "approach_distance_m": args.approach_distance,
         "lift_m": args.lift, "push_steps": args.push_steps, "push_action": args.push_action,
-        "noise_scale": args.noise_scale, "noise_scope": args.noise_scope,
+        "noise_scale": args.noise_scale, "noise_scope": args.noise_scope, "guide_weight": args.guide_weight,
         "seed_base": 2057736129, "shared_processors_sha256": processors})
     for task in args.task:
         subprocess.run([sys.executable, str(Path(__file__).resolve()), "--single-task", "--suite", args.suite,
@@ -262,7 +277,8 @@ def main() -> None:
                         "--episodes", str(args.episodes), "--initial-state-count", str(args.initial_state_count),
                         "--approach-distance", str(args.approach_distance), "--lift", str(args.lift),
                         "--push-steps", str(args.push_steps), "--push-action", str(args.push_action),
-                        "--noise-scale", str(args.noise_scale), "--noise-scope", args.noise_scope],
+                        "--noise-scale", str(args.noise_scale), "--noise-scope", args.noise_scope,
+                        *(["--guide-weight", str(args.guide_weight)] if args.guide_weight is not None else [])],
                        check=True)
     print(json.dumps({k: v for k, v in summarize(args.output, args.task).items() if k != "rows"}, indent=2),
           flush=True)
