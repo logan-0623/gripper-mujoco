@@ -1,0 +1,164 @@
+{
+  "contract": {
+    "checkpoints": {
+      "5k": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/005000/pretrained_model",
+      "10k": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/010000/pretrained_model",
+      "15k": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/015000/pretrained_model",
+      "20k": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/020000/pretrained_model",
+      "25k": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/025000/pretrained_model"
+    },
+    "suite": "libero_spatial",
+    "tasks": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "frames": 256,
+    "draws": 8,
+    "bands": {
+      "high": [
+        0.5,
+        1.0
+      ],
+      "low": [
+        0.0,
+        0.5
+      ]
+    },
+    "rho": 0.25,
+    "window": "E4 [first close - 20, first close + 25]",
+    "seed": 0,
+    "empty_cameras": 1,
+    "dataset_revision": "a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4",
+    "processor_from": "/root/autodl-tmp/smolvla-official-reproduction-v2/full_25k_seed1000/checkpoints/025000/pretrained_model",
+    "preprocessor_sha256": {
+      "policy_preprocessor.json": "122ec5106602b1bf129f49690d05ab2f49748a0ac6119de55ea0677d4e90d248",
+      "policy_preprocessor_step_5_normalizer_processor.safetensors": "bd2398347237fa143ff1915e14f16ac48dd9e2bc257a8969bedf3992cb0d1ee4"
+    }
+  },
+  "bands": {
+    "high": {
+      "rows": [
+        {
+          "checkpoint": "10k",
+          "prev": "5k",
+          "L_own": 0.47815391165204346,
+          "L_prev_vlm": 0.5015519565204158,
+          "L_prev_expert": 0.5131129728397354,
+          "M_V": 0.04893412831766047,
+          "M_E": 0.07311256968892473,
+          "R": 0.40094594214273754,
+          "R_ci": [
+            0.3156240649354391,
+            0.4956640814937716
+          ]
+        },
+        {
+          "checkpoint": "15k",
+          "prev": "10k",
+          "L_own": 0.4250519181077834,
+          "L_prev_vlm": 0.4477838355815038,
+          "L_prev_expert": 0.462528246716829,
+          "M_V": 0.05348033147319216,
+          "M_E": 0.0881688260010215,
+          "R": 0.37755488579540564,
+          "R_ci": [
+            0.304690508066365,
+            0.4425689692009954
+          ]
+        },
+        {
+          "checkpoint": "20k",
+          "prev": "15k",
+          "L_own": 0.3905010037997272,
+          "L_prev_vlm": 0.40870602856739424,
+          "L_prev_expert": 0.4094379635353107,
+          "M_V": 0.0466196618972168,
+          "M_E": 0.048494010390036146,
+          "R": 0.4901467977855033,
+          "R_ci": [
+            0.43508753010003787,
+            0.542654710055116
+          ]
+        },
+        {
+          "checkpoint": "25k",
+          "prev": "20k",
+          "L_own": 0.38443851191550493,
+          "L_prev_vlm": 0.3871053209004458,
+          "L_prev_expert": 0.38762361346744,
+          "M_V": 0.006936893423224478,
+          "M_E": 0.008285074083928212,
+          "R": 0.4557159526168272,
+          "R_ci": [
+            0.35210348136134767,
+            0.5882888136319283
+          ]
+        }
+      ],
+      "switch_point": null
+    },
+    "low": {
+      "rows": [
+        {
+          "checkpoint": "10k",
+          "prev": "5k",
+          "L_own": 0.5839899263810366,
+          "L_prev_vlm": 0.590944442898035,
+          "L_prev_expert": 0.6353794172173366,
+          "M_V": 0.011908624109486416,
+          "M_E": 0.08799722138146916,
+          "R": 0.11919847183080491,
+          "R_ci": [
+            0.09742068157813598,
+            0.14220728816073328
+          ]
+        },
+        {
+          "checkpoint": "15k",
+          "prev": "10k",
+          "L_own": 0.5489017019281164,
+          "L_prev_vlm": 0.553277445724234,
+          "L_prev_expert": 0.5819996016798541,
+          "M_V": 0.00797181677656858,
+          "M_E": 0.060298409779884744,
+          "R": 0.11676857070302245,
+          "R_ci": [
+            0.08598387641732974,
+            0.146763373168717
+          ]
+        },
+        {
+          "checkpoint": "20k",
+          "prev": "15k",
+          "L_own": 0.5321559776784852,
+          "L_prev_vlm": 0.5351059944368899,
+          "L_prev_expert": 0.5469091617269441,
+          "M_V": 0.005543518972151799,
+          "M_E": 0.02772342070236487,
+          "R": 0.1666374793230012,
+          "R_ci": [
+            0.12637212772519596,
+            0.20665232981936651
+          ]
+        },
+        {
+          "checkpoint": "25k",
+          "prev": "20k",
+          "L_own": 0.5296846181154251,
+          "L_prev_vlm": 0.5301731743384153,
+          "L_prev_expert": 0.5316693997010589,
+          "M_V": 0.0009223530498740904,
+          "M_E": 0.0037471006666107212,
+          "R": 0.19752911279918253,
+          "R_ci": [
+            0.12459603779243202,
+            0.27285869458965634
+          ]
+        }
+      ],
+      "switch_point": "10k"
+    }
+  }
+}
