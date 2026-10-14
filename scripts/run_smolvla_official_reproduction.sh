@@ -2,6 +2,7 @@
 set -euo pipefail
 
 MODE=${1:-smoke}
+SEED=${SEED:-1000}
 : "${BASE_CHECKPOINT:?set BASE_CHECKPOINT to the immutable lerobot/smolvla_base snapshot}"
 : "${DATASET_ROOT:?set DATASET_ROOT to the immutable lerobot/libero snapshot}"
 : "${OUTPUT_ROOT:?set OUTPUT_ROOT to an empty output root}"
@@ -24,9 +25,9 @@ case "$MODE" in
   full)
     STEPS=25000
     BATCH_SIZE=32
-    SAVE_FREQ=5000
+    SAVE_FREQ=${SAVE_FREQ:-5000}
     LOG_FREQ=200
-    OUTPUT_DIR="$OUTPUT_ROOT/full_25k_seed1000"
+    OUTPUT_DIR="$OUTPUT_ROOT/full_25k_seed$SEED"
     ;;
   *)
     echo "usage: $0 [smoke|full]" >&2
@@ -55,7 +56,7 @@ fi
   --steps="$STEPS" \
   --batch_size="$BATCH_SIZE" \
   --num_workers="${NUM_WORKERS:-4}" \
-  --seed=1000 \
+  --seed="$SEED" \
   --cudnn_deterministic=true \
   --env_eval_freq=0 \
   --save_checkpoint=true \
