@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Language sensitivity and grounding in SmolVLA · Research update</title>
+  <style>
+    :root { --bg:#f5f7fb; --paper:#fff; --ink:#152239; --muted:#526178; --blue:#1c569d; --soft:#edf4fe; --line:#dce4ef; --track:#e7edf5; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; }
+    main { max-width:1080px; margin:32px auto 60px; padding:0 24px; }
+    article { background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:42px 52px; box-shadow:0 10px 40px #15223906; }
+    .meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px 20px; font-size:13px; color:var(--muted); }
+    .meta strong { color:var(--blue); font-weight:650; }
+    h1 { font:500 clamp(30px,4.4vw,46px)/1.15 Georgia,"Times New Roman",serif; letter-spacing:-1px; margin:25px 0 15px; max-width:820px; }
+    h1 span { color:var(--blue); }
+    .lede { font-size:18px; color:var(--muted); max-width:810px; margin:0; }
+    .byline { margin:18px 0 0; font-size:13px; color:var(--muted); }
+    h2 { font-size:20px; line-height:1.35; letter-spacing:-.3px; margin:0 0 15px; }
+    h3 { font-size:16px; line-height:1.4; margin:0 0 8px; }
+    p { margin:0 0 12px; }
+    p:last-child { margin-bottom:0; }
+    section { margin-top:32px; }
+    .section-heading { display:flex; gap:12px; align-items:baseline; }
+    .section-heading .number { color:var(--blue); font-size:12px; font-weight:700; }
+    .setup { padding:21px 24px; border-block:1px solid var(--line); background:#f9fbfe; }
+    .setup p { font-size:15px; }
+    .setup strong { color:var(--ink); }
+    .facts { display:flex; flex-wrap:wrap; gap:8px 24px; padding:0; margin:15px 0 0; list-style:none; color:var(--muted); font-size:13px; }
+    .facts b { color:var(--ink); }
+    .evidence { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+    figure { margin:0; }
+    .panel { padding:23px; border:1px solid var(--line); border-radius:8px; min-width:0; }
+    .panel-label { color:var(--blue); font-size:12px; font-weight:650; margin-bottom:6px; }
+    .subhead { color:var(--muted); font-size:13px; margin:0 0 22px; }
+    .bars { display:grid; gap:18px; }
+    .bar-label { display:flex; justify-content:space-between; gap:12px; margin-bottom:5px; font-size:14px; }
+    .bar-value { white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .track { height:9px; background:var(--track); border-radius:2px; }
+    .fill { height:100%; background:var(--blue); border-radius:2px; }
+    .fill.altered { background:#526f95; }
+    .axis { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin:6px 0 14px; }
+    .note { font-size:13px; line-height:1.55; color:var(--muted); }
+    figcaption { margin-top:16px; }
+    .secondary { margin-top:17px; padding-top:15px; border-top:1px solid var(--line); font-size:13px; color:var(--muted); }
+    .secondary strong { color:var(--ink); }
+    .big-number { color:var(--blue); font-size:44px; font-weight:650; letter-spacing:-1.6px; line-height:1.15; margin:15px 0 7px; font-variant-numeric:tabular-nums; }
+    .trace-label { font-size:15px; margin-bottom:14px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+    caption { text-align:left; font-weight:600; margin:13px 0 7px; font-size:13px; }
+    th { font-weight:600; color:var(--muted); text-align:left; }
+    th,td { padding:7px 6px; border-bottom:1px solid var(--line); }
+    th:first-child,td:first-child { padding-left:0; }
+    .numeric { text-align:right; }
+    .source-distance { color:var(--blue); font-weight:650; }
+    .interpretation { border-left:3px solid var(--blue); background:var(--soft); padding:21px 24px; }
+    .interpretation h2 { margin-bottom:9px; }
+    .interpretation p { font-size:15px; }
+    .scope { padding-top:12px; margin-top:13px; border-top:1px solid #ccdaed; }
+    .scope strong { color:var(--ink); }
+    details { margin-top:14px; font-size:13px; color:var(--muted); }
+    summary { cursor:pointer; color:var(--blue); font-weight:600; padding:5px 0; }
+    details p { margin:8px 0 0; }
+    .related { display:grid; grid-template-columns:155px 1fr; gap:0 22px; font-size:14px; }
+    .related dt,.related dd { margin:0; padding:12px 0; border-bottom:1px solid var(--line); }
+    .related dt { font-weight:600; }
+    .related dd { color:var(--muted); }
+    a { color:var(--blue); text-decoration-thickness:1px; text-underline-offset:3px; }
+    a:hover { text-decoration-thickness:2px; }
+    a:focus-visible,summary:focus-visible { outline:2px solid var(--blue); outline-offset:4px; }
+    .next { padding-left:22px; font-size:15px; margin:0; }
+    .next li { padding-left:4px; margin:9px 0; }
+    .next li::marker { color:var(--blue); font-weight:650; }
+    footer { border-top:1px solid var(--line); margin-top:30px; padding-top:16px; color:var(--muted); font-size:12px; }
+    footer p { margin:6px 0; }
+    @media (max-width:760px) {
+      main { padding:0 12px; margin:12px auto 28px; }
+      article { padding:25px 22px; }
+      h1 { letter-spacing:-.6px; }
+      .lede { font-size:16px; }
+      .evidence { grid-template-columns:1fr; gap:16px; }
+      .setup,.panel,.interpretation { padding:18px; }
+      .related { grid-template-columns:1fr; }
+      .related dt { padding-bottom:0; border:0; }
+      .related dd { padding-top:5px; }
+    }
+    @media print {
+      @page { size:A4; margin:16mm; }
+      body { background:white; font-size:10pt; }
+      main { max-width:none; margin:0; padding:0; }
+      article { padding:0; border:0; border-radius:0; box-shadow:none; }
+      h1 { font-size:27pt; }
+      .lede { font-size:11pt; }
+      h2 { font-size:13pt; }
+      h3 { font-size:11pt; }
+      section { margin-top:20px; }
+      .setup,.panel,.interpretation { padding:14px; }
+      .evidence { grid-template-columns:1fr 1fr; gap:16px; }
+      .panel,.interpretation,.setup { break-inside:avoid; }
+      h2,h3,summary { break-after:avoid; }
+      .related { grid-template-columns:125px 1fr; }
+      .related dt { border-bottom:1px solid var(--line); padding:10px 0; }
+      .related dd { padding:10px 0; }
+      .fill,.interpretation,.setup { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+      a { color:var(--ink); }
+    }
+  </style>
+</head>
+<body>
+<main>
+<article>
+  <header>
+    <div class="meta"><strong>Research update · Preliminary findings</strong><time datetime="2026-10-13">13 October 2026</time></div>
+    <h1>Language changes behavior.<br><span>Does it ground the task?</span></h1>
+    <p class="lede">In one SmolVLA training run, swapped instructions produced approach paths closer to their source-task demonstrations. The next question is whether language selects a familiar action pattern or identifies the correct target in the current scene.</p>
+    <p class="byline">Zihong (Logan) Luo · SmolVLA · LIBERO Spatial, tasks 0–3</p>
+  </header>
+
+  <section class="setup" aria-labelledby="setup-title">
+    <h2 id="setup-title">Same initial scene. Different instruction.</h2>
+    <p>At each checkpoint, compare <strong>correct</strong>, <strong>empty</strong>, <strong>random-text</strong>, and <strong>other-task</strong> instructions using matched initial states and policy noise seeds. Other-task instructions rotate among the four tasks. Policy weights stay fixed during evaluation; subsequent observations evolve with the robot’s actions.</p>
+    <ul class="facts">
+      <li><b>5 checkpoints</b> · 5k–25k steps</li>
+      <li><b>40 initial states</b> per task</li>
+      <li><b>3,200 rollouts</b> in the main comparison</li>
+      <li><b>1 training seed</b></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="results-title">
+    <div class="section-heading"><span class="number" aria-hidden="true">01</span><h2 id="results-title">Two observations</h2></div>
+    <div class="evidence">
+      <figure class="panel" aria-labelledby="success-title">
+        <div class="panel-label">Task outcome</div>
+        <h3 id="success-title">Original-task success drops</h3>
+        <p class="subhead">25k checkpoint · 160 rollouts per condition</p>
+        <!-- Bar widths are percentages of the same 160-rollout denominator. -->
+        <div class="bars">
+          <div data-condition="correct" data-success="136" data-total="160">
+            <div class="bar-label"><span>Correct instruction</span><span class="bar-value"><strong>85.0%</strong> · 136/160</span></div>
+            <div class="track" aria-hidden="true"><div class="fill" style="width:85%"></div></div>
+          </div>
+          <div data-condition="empty" data-success="0" data-total="160">
+            <div class="bar-label"><span>Empty instruction</span><span class="bar-value">0% · 0/160</span></div>
+            <div class="track" aria-hidden="true"><div class="fill altered" style="width:0%"></div></div>
+          </div>
+          <div data-condition="gibberish" data-success="0" data-total="160">
+            <div class="bar-label"><span>Random text</span><span class="bar-value">0% · 0/160</span></div>
+            <div class="track" aria-hidden="true"><div class="fill altered" style="width:0%"></div></div>
+          </div>
+          <div data-condition="other" data-success="1" data-total="160">
+            <div class="bar-label"><span>Other task’s instruction</span><span class="bar-value">0.6% · 1/160</span></div>
+            <div class="track" aria-hidden="true"><div class="fill altered" style="width:0.625%"></div></div>
+          </div>
+        </div>
+        <div class="axis" aria-hidden="true"><span>0%</span><span>100%</span></div>
+        <figcaption class="note">Success is scored against the <strong>original task objective</strong>. This comparison does not measure successful execution of the substituted instruction.</figcaption>
+        <p class="secondary"><strong>Some manipulation remains:</strong> with an empty instruction, the original target bowl is stably grasped in 35/160 trials, although none completes the task.</p>
+      </figure>
+
+      <figure class="panel" aria-labelledby="trace-title">
+        <div class="panel-label">Approach trajectory</div>
+        <h3 id="trace-title">Paths resemble the instruction’s source task</h3>
+        <div class="big-number" data-source-closer="480" data-trace-total="480">480/480</div>
+        <p class="trace-label">swapped-instruction approaches are closer to source-task demonstrations than to current-task demonstrations.</p>
+        <p class="note">Separate trace evaluation: 5k, 15k, and 25k; four scenes; 40 initial states per scene. Distance compares the approach segment with the nearest demonstration in each task’s set.</p>
+        <table>
+          <caption>Median DTW distance in the two diagnostic scenes</caption>
+          <thead><tr><th scope="col">Checkpoint</th><th scope="col" class="numeric">Source task</th><th scope="col" class="numeric">Current task</th></tr></thead>
+          <tbody>
+            <tr data-checkpoint="5k"><th scope="row">5k</th><td class="numeric source-distance">0.8 cm</td><td class="numeric">2.7 cm</td></tr>
+            <tr data-checkpoint="15k"><th scope="row">15k</th><td class="numeric source-distance">0.8 cm</td><td class="numeric">2.6 cm</td></tr>
+            <tr data-checkpoint="25k"><th scope="row">25k</th><td class="numeric source-distance">0.8 cm</td><td class="numeric">2.4 cm</td></tr>
+          </tbody>
+        </table>
+        <figcaption class="note">Table: tasks 2–3, 80 rollouts per checkpoint, where the substituted instruction’s described bowl is absent. Smaller DTW distance means greater path similarity; it does not establish an internal retrieval mechanism.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="interpretation" aria-labelledby="interpretation-title">
+    <h2 id="interpretation-title">Working interpretation: language may cue familiar action patterns</h2>
+    <p>The results establish sensitivity to instruction input in this setting. The trajectory evidence is consistent with a language-to-trajectory shortcut: an instruction may select behavior associated with its training task.</p>
+    <p class="scope"><strong>The unresolved test is grounding.</strong> These swaps do not provide a clear alternative target that uniquely satisfies the new instruction in the current scene. Empty and random inputs are also outside the training instruction distribution. Correct execution under meaningful alternative instructions remains to be tested.</p>
+  </section>
+
+  <details>
+    <summary>Measurement details and scope</summary>
+    <p>The trace follow-up contains 480 swapped-instruction rollouts plus 160 correct-instruction calibration rollouts. These are separate from the 3,200-rollout main comparison. All checkpoints come from one training run, so the 480 trajectories are not independent training replications.</p>
+    <p>DTW compares end-effector approach paths through one step after the first close command, or through the lowest end-effector position if no close command occurs. Paths are resampled to 25 points. The reported distance is the accumulated DTW cost divided by the sum of the two sequence lengths.</p>
+    <p>A separate endpoint classification used a 5 cm preregistered radius, which failed calibration (102/136 successful correct-instruction rollouts within radius). A 6.6 cm radius, chosen from the correct-instruction calibration data after the swapped results were available, covered 123/136. Endpoint classifications depend on this radius and are not the basis of the headline claim. The 480/480 path-similarity result is independent of that radius.</p>
+  </details>
+
+  <section aria-labelledby="literature-title">
+    <div class="section-heading"><span class="number" aria-hidden="true">02</span><h2 id="literature-title">How this fits existing work</h2></div>
+    <p>Language sensitivity and reliable grounding are different properties. These preliminary results help distinguish how a policy responds to language.</p>
+    <dl class="related">
+      <dt>Language neglect</dt>
+      <dd><a href="https://arxiv.org/abs/2510.03827">LIBERO-PRO</a> and <a href="https://arxiv.org/abs/2510.13626">LIBERO-Plus</a> report settings where corrupted or removed language has little effect. The current SmolVLA run shows a different sensitivity pattern; the models and protocols are not matched.</dd>
+      <dt>Alternative targets</dt>
+      <dd><a href="https://arxiv.org/abs/2602.17659">LIBERO-CF</a> and <a href="https://arxiv.org/abs/2603.00592">LangGap</a> test alternative tasks in the same scene. These designs help evaluate whether changed instructions lead to the correct new target. LIBERO-CF also reports model-dependent performance drops after removing language.</dd>
+      <dt>Wording sensitivity</dt>
+      <dd><a href="https://arxiv.org/abs/2603.28301">LIBERO-Para</a> reports failures under meaning-preserving rewording, particularly changes to object references. This illustrates why a strong response to text can coexist with unreliable grounding.</dd>
+    </dl>
+  </section>
+
+  <section aria-labelledby="next-title">
+    <div class="section-heading"><span class="number" aria-hidden="true">03</span><h2 id="next-title">Next experiments</h2></div>
+    <ol class="next">
+      <li><strong>Keep meaning, change wording.</strong> Test paraphrases of the original instruction to measure dependence on familiar phrasing.</li>
+      <li><strong>Change the goal within the same scene.</strong> Use an unambiguous, reachable alternative target, placing it where grounding and a familiar source-task trajectory predict different actions. Score the new target and task.</li>
+      <li><strong>Check transfer to π₀.</strong> Repeat matched controls to test whether the observed pattern extends beyond this SmolVLA training run.</li>
+    </ol>
+  </section>
+</article>
+</main>
+</body>
+</html>
