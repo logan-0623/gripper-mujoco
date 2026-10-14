@@ -5,6 +5,8 @@
 * 0b: E6's N/A/E/L with E4 C@2500 as the base instead of 10k.
 * Matched-state retention: E6 pushed-8 outcomes restricted to the initial
   states where N, A, E and L all succeed unpushed (descriptive).
+* ``--replication ROOT``: the seed 2000 rerun of E6's N/A/E/L/V/X (preregistered
+  2026-10-14) plus the E8 smoke check (w = 1 against N, task 0); only this is reported.
 
 All rollouts: Spatial tasks 0-3. Bootstrap resamples (task, initial state)
 pairs within each task (task-stratified, as preregistered for stage 0), 5000 draws.
@@ -70,12 +72,33 @@ def block(arms: dict, rng) -> dict:
     return out
 
 
+def replication(root: Path, rng) -> dict:
+    arms = {name: arm(root, f"{name}_push0") for name in ("N", "A", "E", "L", "V", "X")}
+    rec = block(arms, rng)
+    gap_ok = rec["A"]["minus_N"][1] > 0
+    e_l, e = diff(arms["E"], arms["L"], rng), rec["E"]["recovered"][0]
+    smoke = outcomes([root / "smoke_G_w1_t0"])
+    return {"arms": rec, "E_minus_L": e_l, "V_minus_X": diff(arms["V"], arms["X"], rng),
+            "decision": {"gap_measurable": gap_ok,
+                         "replicates": gap_ok and e_l[1] > 0 and e >= 2 / 3,
+                         "partial": gap_ok and e_l[1] > 0 and e < 2 / 3,
+                         "not_replicated": gap_ok and e_l[1] <= 0},
+            "smoke_w1_vs_N": {"states": len(smoke),
+                              "mismatched": sorted(k[1] for k in smoke if smoke[k] != arms["N"].get(k))}}
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--replication", type=Path, help="seed 2000 E6 rerun directory")
     args = p.parse_args()
     rng = np.random.default_rng(0)
     report = {}
+    if args.replication:
+        report = replication(args.replication, rng)
+        args.output.write_text(json.dumps(report, indent=2) + "\n")
+        print(json.dumps(report, indent=2))
+        return
 
     e6 = {name: arm(E6, f"{name}_push0") for name in ("N", "A", "E", "L", "X")}
     e6c = {**e6, "XE": arm(STAGE0, "e6c_XE_push0"), "XL": arm(STAGE0, "e6c_XL_push0")}
