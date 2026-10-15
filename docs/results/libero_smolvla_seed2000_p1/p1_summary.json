@@ -1,0 +1,182 @@
+{
+  "002500": {
+    "success": [
+      27,
+      160
+    ],
+    "by_task": [
+      5,
+      3,
+      17,
+      2
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 118,
+      "lift_then_fail": 15,
+      "success": 27
+    }
+  },
+  "005000": {
+    "success": [
+      85,
+      160
+    ],
+    "by_task": [
+      22,
+      25,
+      28,
+      10
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 52,
+      "lift_then_fail": 23,
+      "success": 85
+    }
+  },
+  "007500": {
+    "success": [
+      26,
+      160
+    ],
+    "by_task": [
+      1,
+      16,
+      4,
+      5
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 113,
+      "lift_then_fail": 21,
+      "success": 26
+    }
+  },
+  "010000": {
+    "success": [
+      84,
+      160
+    ],
+    "by_task": [
+      20,
+      16,
+      27,
+      21
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 58,
+      "lift_then_fail": 18,
+      "success": 84
+    }
+  },
+  "012500": {
+    "success": [
+      72,
+      160
+    ],
+    "by_task": [
+      12,
+      13,
+      21,
+      26
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 64,
+      "lift_then_fail": 24,
+      "success": 72
+    }
+  },
+  "015000": {
+    "success": [
+      123,
+      160
+    ],
+    "by_task": [
+      29,
+      23,
+      37,
+      34
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 23,
+      "lift_then_fail": 14,
+      "success": 123
+    }
+  },
+  "017500": {
+    "success": [
+      118,
+      160
+    ],
+    "by_task": [
+      21,
+      37,
+      26,
+      34
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 33,
+      "lift_then_fail": 9,
+      "success": 118
+    }
+  },
+  "020000": {
+    "success": [
+      127,
+      160
+    ],
+    "by_task": [
+      27,
+      36,
+      30,
+      34
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 26,
+      "lift_then_fail": 7,
+      "success": 127
+    }
+  },
+  "022500": {
+    "success": [
+      131,
+      160
+    ],
+    "by_task": [
+      28,
+      38,
+      29,
+      36
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 25,
+      "lift_then_fail": 4,
+      "success": 131
+    }
+  },
+  "025000": {
+    "success": [
+      129,
+      160
+    ],
+    "by_task": [
+      29,
+      35,
+      30,
+      35
+    ],
+    "stages": {
+      "no_window": 0,
+      "window_no_lift": 25,
+      "lift_then_fail": 6,
+      "success": 129
+    }
+  }
+}
